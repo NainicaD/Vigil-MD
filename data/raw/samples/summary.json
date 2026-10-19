@@ -1,0 +1,8 @@
+{
+  "product_code": "FRN",
+  "enforcement": 200,
+  "recall": 200,
+  "maude": 200,
+  "gudid": 0,
+  "note": "These are development fixtures only. Not a representative sample. Replace with full scoped snapshot before modelling."
+}
