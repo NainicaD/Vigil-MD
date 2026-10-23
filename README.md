@@ -139,6 +139,8 @@ docker compose down -v                    # stop and wipe the DB (clean slate)
 | DAG missing from the UI | Check `docker compose logs airflow-dag-processor` for an import error |
 | Tasks fail on `import requests` | Set `_PIP_ADDITIONAL_REQUIREMENTS=requests` in `.env` |
 
+The UI (8080) and Flower (5555) are bound to `127.0.0.1`, so only your own machine can reach them. Change the default password in `.env` (`_AIRFLOW_WWW_USER_PASSWORD`) before first start.
+
 Local-development defaults only: don't expose this setup to a network or use it in production. Never commit `.env`.
 
 ## Testing
