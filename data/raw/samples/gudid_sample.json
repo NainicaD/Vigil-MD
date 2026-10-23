@@ -1,3 +1,2927 @@
 {
-  "records": []
+  "records": [
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "ef8c7a6d-0376-4adf-b3ae-0e0878b773fe",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 4,
+          "publicVersionDate": "2026-10-20T00:00:00.000Z",
+          "devicePublishDate": "2019-09-02T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "20763000273358",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              },
+              {
+                "deviceId": "00763000273354",
+                "deviceIdType": "Unit of Use",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              },
+              {
+                "deviceId": "40763000273352",
+                "deviceIdType": "Package",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": "20763000273358",
+                "pkgQuantity": 72,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": "In Commercial Distribution",
+                "pkgType": "CT"
+              }
+            ]
+          },
+          "brandName": "MiniMed\u2122 Reservoir",
+          "versionModelNumber": "MMT-332A",
+          "catalogNumber": null,
+          "dunsNumber": "849626338",
+          "companyName": "MEDTRONIC MINIMED, INC.",
+          "deviceCount": 10,
+          "deviceDescription": "SVR MMT-332A 10PK 3.0ML POB PS 21L",
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": true,
+          "lotBatch": true,
+          "serialNumber": false,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": {
+            "customerContact": [
+              {
+                "phone": "+1(800)633-8766",
+                "phoneExtension": null,
+                "email": "Corporate.UDI@medtronic.com"
+              }
+            ]
+          },
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K032005",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "35838",
+                "gmdnPTName": "Ambulatory insulin infusion pump reservoir",
+                "gmdnPTDefinition": "An insulin-filled receptacle (e.g., a cartridge similar to a syringe) intended to be used together with a body-worn insulin pump for the delivery of patient-controlled amounts of insulin to an ambulatory diabetic. This is a single-use device.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "OZP",
+                "productCodeName": "Automated insulin dosing device system, single hormonal control"
+              },
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": true,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "OZP",
+          "physicalState": "May include: Continuous glucose monitoring system, sensor, self monitoring blood glucose device, infusion pump, data management software",
+          "deviceClass": "3",
+          "thirdPartyFlag": "N",
+          "definition": "An insulin-only automated insulin dosing system that achieves a target glucose level by automatically increasing or reducing insulin infusion from an insulin pump. Insulin adjustments are based upon specified thresholds of measured glucose levels.",
+          "submissionTypeID": "2",
+          "reviewPanel": "CH",
+          "gmpExemptFlag": "N",
+          "technicalMethod": "Uses a glucose monitoring system to measure glucose levels and increases or reduces insulin infusion from an insulin pump",
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": "Not meant to act on a specific part of the body but works with other devices - Continuous glucose monitoring system, sensor, self monitoring blood glucose device, data management software",
+          "regulationNumber": null,
+          "deviceName": "Automated Insulin Dosing Device System, Single Hormonal Control",
+          "medicalSpecialty": null
+        },
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "20763000273358"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "6ea6d77b-d58f-49ed-b847-97aaa529633d",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 3,
+          "publicVersionDate": "2026-10-20T00:00:00.000Z",
+          "devicePublishDate": "2019-09-02T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "20763000273334",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              },
+              {
+                "deviceId": "00763000273330",
+                "deviceIdType": "Unit of Use",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "MiniMed\u2122 Reservoir",
+          "versionModelNumber": "MMT-326A",
+          "catalogNumber": null,
+          "dunsNumber": "849626338",
+          "companyName": "MEDTRONIC MINIMED, INC.",
+          "deviceCount": 10,
+          "deviceDescription": "RSVR MMT-326A 10PK 1.8ML POB PS 21L",
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": true,
+          "lotBatch": true,
+          "serialNumber": false,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": {
+            "customerContact": [
+              {
+                "phone": "+1(800)633-8766",
+                "phoneExtension": null,
+                "email": "Corporate.UDI@medtronic.com"
+              }
+            ]
+          },
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K001828",
+                "supplementNumber": "000"
+              },
+              {
+                "submissionNumber": "K032005",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "35838",
+                "gmdnPTName": "Ambulatory insulin infusion pump reservoir",
+                "gmdnPTDefinition": "An insulin-filled receptacle (e.g., a cartridge similar to a syringe) intended to be used together with a body-worn insulin pump for the delivery of patient-controlled amounts of insulin to an ambulatory diabetic. This is a single-use device.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "OZP",
+                "productCodeName": "Automated insulin dosing device system, single hormonal control"
+              },
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": true,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "OZP",
+          "physicalState": "May include: Continuous glucose monitoring system, sensor, self monitoring blood glucose device, infusion pump, data management software",
+          "deviceClass": "3",
+          "thirdPartyFlag": "N",
+          "definition": "An insulin-only automated insulin dosing system that achieves a target glucose level by automatically increasing or reducing insulin infusion from an insulin pump. Insulin adjustments are based upon specified thresholds of measured glucose levels.",
+          "submissionTypeID": "2",
+          "reviewPanel": "CH",
+          "gmpExemptFlag": "N",
+          "technicalMethod": "Uses a glucose monitoring system to measure glucose levels and increases or reduces insulin infusion from an insulin pump",
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": "Not meant to act on a specific part of the body but works with other devices - Continuous glucose monitoring system, sensor, self monitoring blood glucose device, data management software",
+          "regulationNumber": null,
+          "deviceName": "Automated Insulin Dosing Device System, Single Hormonal Control",
+          "medicalSpecialty": null
+        },
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "20763000273334"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "753fa5b0-6dba-42d3-8deb-f49e680e52fd",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 8,
+          "publicVersionDate": "2025-12-02T00:00:00.000Z",
+          "devicePublishDate": "2016-09-24T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "00085412498683",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "SIGMA Spectrum Infusion Pump",
+          "versionModelNumber": "35700BAX2",
+          "catalogNumber": "35700BAX2",
+          "dunsNumber": "005083209",
+          "companyName": "BAXTER HEALTHCARE CORPORATION",
+          "deviceCount": 1,
+          "deviceDescription": "The SIGMA Spectrum Infusion Pump with Master Drug Library is an infusion pump that provides delivery of fluids into a patient in a controlled manner. The pumping mechanism is of linear peristaltic design and uses inlet and outlet valves for flow control.  The Spectrum infusion pump is specifically manufactured and calibrated for use with Baxter administration sets.",
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "MR Unsafe",
+          "rx": true,
+          "otc": false,
+          "contacts": {
+            "customerContact": [
+              {
+                "phone": "+1(800)933-0303",
+                "phoneExtension": null,
+                "email": "Medinfo_medproducts@baxter.com"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "PHC",
+                "productCodeName": "Infusion safety management software"
+              },
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": {
+            "storageHandling": [
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Device Stored with Wireless Battery from 10 to 90 percent relative humidity"
+              },
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Device Stored with Wireless Battery from -10 to 49 degrees celsius"
+              },
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Device Stored with Standard Battery from -10 to 49 degrees celsius"
+              },
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Device Stored with Wireless Battery from 14 to 120 degrees fahrenheit"
+              },
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Remove the battery module from the pump when storing for extended periods of time"
+              },
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Device Stored with Standard Battery from 10 to 90 percent relative humidity"
+              },
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Device Stored with Standard Battery from 14 to 120 degrees fahrenheit"
+              }
+            ]
+          },
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "PHC",
+          "physicalState": "The device is a software application(s), which may be implemented as part of an infusion pump and may also be implemented onto a hospital information system for use with an infusion pump system.",
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": "Infusion safety management software is a prescription device intended for use with infusion pumps and may include one or more of the following capabilities: prepopulation of infusion programming parameters, data retrieval and analysis for tracking and trending, drug infusion error reduction algorithms, and alarm transmission.",
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": "Infusion safety management software may include one or more software applications that enforce safety control mechanisms through wireless or wired communication between the hospital information system, the infusion pump, and the healthcare provider.",
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": "Target area is according to the approved drug or biologic product labeling.",
+          "regulationNumber": "880.5725",
+          "deviceName": "Infusion Safety Management Software",
+          "medicalSpecialty": "HO"
+        },
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "00085412498683"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "9ff080ef-a422-4bee-a1b2-2d017361f6b1",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 8,
+          "publicVersionDate": "2024-05-09T00:00:00.000Z",
+          "devicePublishDate": "2016-12-08T00:00:00.000Z",
+          "deviceCommDistributionEndDate": "2023-07-21T00:00:00.000Z",
+          "deviceCommDistributionStatus": "Not in Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10885403810015",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "Alaris",
+          "versionModelNumber": "8100",
+          "catalogNumber": null,
+          "dunsNumber": "360624720",
+          "companyName": "CAREFUSION 303, INC.",
+          "deviceCount": 1,
+          "deviceDescription": "Alaris Pump Module",
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "MR Unsafe",
+          "rx": true,
+          "otc": false,
+          "contacts": {
+            "customerContact": [
+              {
+                "phone": "+1(888)812-3266",
+                "phoneExtension": null,
+                "email": "ProductComplaints@bd.com"
+              }
+            ]
+          },
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K072105",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": {
+            "storageHandling": [
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Storage Environment Atmospheric Pressure 760 Low to 375 High mmHg"
+              },
+              {
+                "storageHandlingType": "Storage Environment Temperature",
+                "storageHandlingHigh": {
+                  "unit": "Degrees Fahrenheit",
+                  "value": "140"
+                },
+                "storageHandlingLow": {
+                  "unit": "Degrees Fahrenheit",
+                  "value": "-4"
+                },
+                "storageHandlingSpecialConditionText": null
+              },
+              {
+                "storageHandlingType": "Storage Environment Humidity",
+                "storageHandlingHigh": {
+                  "unit": "Percent (%) Relative Humidity",
+                  "value": "85"
+                },
+                "storageHandlingLow": {
+                  "unit": "Percent (%) Relative Humidity",
+                  "value": "5"
+                },
+                "storageHandlingSpecialConditionText": null
+              }
+            ]
+          },
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10885403810015"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "69a66c4c-abf6-44fd-8a54-fe3ee772abbe",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 2,
+          "publicVersionDate": "2026-10-20T00:00:00.000Z",
+          "devicePublishDate": "2018-07-12T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "40643169771435",
+                "deviceIdType": "Package",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": "00643169771437",
+                "pkgQuantity": 72,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": "In Commercial Distribution",
+                "pkgType": "CT"
+              },
+              {
+                "deviceId": "00643169771437",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              },
+              {
+                "deviceId": "70643169771436",
+                "deviceIdType": "Unit of Use",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "MiniMed Reservoir",
+          "versionModelNumber": "MMT-326A",
+          "catalogNumber": null,
+          "dunsNumber": "849626338",
+          "companyName": "MEDTRONIC MINIMED, INC.",
+          "deviceCount": 10,
+          "deviceDescription": "RSVR MMT-326A 10PK PDGM 1.8ML 21L 3YR",
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": true,
+          "lotBatch": true,
+          "serialNumber": false,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": {
+            "customerContact": [
+              {
+                "phone": "+1(800)633-8766",
+                "phoneExtension": null,
+                "email": "Corporate.UDI@medtronic.com"
+              }
+            ]
+          },
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K001828",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "35838",
+                "gmdnPTName": "Ambulatory insulin infusion pump reservoir",
+                "gmdnPTDefinition": "An insulin-filled receptacle (e.g., a cartridge similar to a syringe) intended to be used together with a body-worn insulin pump for the delivery of patient-controlled amounts of insulin to an ambulatory diabetic. This is a single-use device.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "OZP",
+                "productCodeName": "Automated insulin dosing device system, single hormonal control"
+              },
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": true,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "OZP",
+          "physicalState": "May include: Continuous glucose monitoring system, sensor, self monitoring blood glucose device, infusion pump, data management software",
+          "deviceClass": "3",
+          "thirdPartyFlag": "N",
+          "definition": "An insulin-only automated insulin dosing system that achieves a target glucose level by automatically increasing or reducing insulin infusion from an insulin pump. Insulin adjustments are based upon specified thresholds of measured glucose levels.",
+          "submissionTypeID": "2",
+          "reviewPanel": "CH",
+          "gmpExemptFlag": "N",
+          "technicalMethod": "Uses a glucose monitoring system to measure glucose levels and increases or reduces insulin infusion from an insulin pump",
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": "Not meant to act on a specific part of the body but works with other devices - Continuous glucose monitoring system, sensor, self monitoring blood glucose device, data management software",
+          "regulationNumber": null,
+          "deviceName": "Automated Insulin Dosing Device System, Single Hormonal Control",
+          "medicalSpecialty": null
+        },
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "00643169771437"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "0e6e0ded-7a14-4e5d-85be-ddd7aa71e48a",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 6,
+          "publicVersionDate": "2025-04-16T00:00:00.000Z",
+          "devicePublishDate": "2016-11-16T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10610586041242",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "Medfusion",
+          "versionModelNumber": "3500-0600-01",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K111386",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13217",
+                "gmdnPTName": "Bedside syringe pump",
+                "gmdnPTDefinition": "A mains electricity (AC-powered) non-ambulatory device designed to precisely drive the plunger of a syringe down its barrel to infuse a solution when it must be administered with a high degree of volume accuracy and rate consistency. Because of the lower flow settings and flow resolution (e.g., 0.1 ml/hr), it is especially appropriate for neonatal, infant, and critical care applications in which small volumes of concentrated drugs are to be delivered over an extended period. It can also be used to administer epidural analgesia. It will typically have internal batteries to allow operation for a short period of time when no line power is available (e.g., during transport or a power outage).",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              },
+              {
+                "productCode": "MRZ",
+                "productCodeName": "ACCESSORIES, PUMP, INFUSION"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        },
+        {
+          "productCode": "MRZ",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Accessories, Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10610586041242"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "68bf6cde-5710-4685-b23d-14fd5ac7b8d4",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 6,
+          "publicVersionDate": "2025-04-16T00:00:00.000Z",
+          "devicePublishDate": "2016-11-16T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10610586032318",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "Medfusion",
+          "versionModelNumber": "3500-500",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K040899",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13217",
+                "gmdnPTName": "Bedside syringe pump",
+                "gmdnPTDefinition": "A mains electricity (AC-powered) non-ambulatory device designed to precisely drive the plunger of a syringe down its barrel to infuse a solution when it must be administered with a high degree of volume accuracy and rate consistency. Because of the lower flow settings and flow resolution (e.g., 0.1 ml/hr), it is especially appropriate for neonatal, infant, and critical care applications in which small volumes of concentrated drugs are to be delivered over an extended period. It can also be used to administer epidural analgesia. It will typically have internal batteries to allow operation for a short period of time when no line power is available (e.g., during transport or a power outage).",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10610586032318"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "caaedbc1-21e7-4e1e-870a-1b308f50a49a",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 7,
+          "publicVersionDate": "2025-04-16T00:00:00.000Z",
+          "devicePublishDate": "2016-10-13T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10610586019548",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "CADD",
+          "versionModelNumber": "21-6400-51",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K982838",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10610586019548"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "db056369-a5e8-4991-9a66-b4eb01b32590",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 6,
+          "publicVersionDate": "2025-04-23T00:00:00.000Z",
+          "devicePublishDate": "2017-12-20T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "15019517126587",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "CADD",
+          "versionModelNumber": "2120",
+          "catalogNumber": "21-2120-0104-01",
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "MR Unsafe",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K111275",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "15019517126587"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "79565ffb-3628-4ddb-a360-1979bd643ad8",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 8,
+          "publicVersionDate": "2025-04-16T00:00:00.000Z",
+          "devicePublishDate": "2016-11-16T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10610586029554",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "CADD",
+          "versionModelNumber": "21-7411-51",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K051568",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10610586029554"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "8cb11118-5cc6-4ca0-a56a-0523c4f37029",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 8,
+          "publicVersionDate": "2025-04-16T00:00:00.000Z",
+          "devicePublishDate": "2017-03-23T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10610586042829",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "CADD",
+          "versionModelNumber": "21-2120-0102-51",
+          "catalogNumber": "21-2120-0102-51",
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K111275",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10610586042829"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "4dd52550-9036-489d-932a-8c392e3fd741",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 3,
+          "publicVersionDate": "2026-10-20T00:00:00.000Z",
+          "devicePublishDate": "2018-05-31T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "40643169786552",
+                "deviceIdType": "Package",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": "00643169786554",
+                "pkgQuantity": 72,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": "In Commercial Distribution",
+                "pkgType": "CT"
+              },
+              {
+                "deviceId": "00643169786554",
+                "deviceIdType": "Package",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": "70643169771481",
+                "pkgQuantity": 10,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": "In Commercial Distribution",
+                "pkgType": "PK"
+              },
+              {
+                "deviceId": "70643169771481",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "MiniMed\u2122 Reservoir",
+          "versionModelNumber": "MMT-332A",
+          "catalogNumber": null,
+          "dunsNumber": "849626338",
+          "companyName": "MEDTRONIC MINIMED, INC.",
+          "deviceCount": 1,
+          "deviceDescription": "RSVR MMT-332A 10PK PRDGM 3ML 21L",
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": true,
+          "lotBatch": true,
+          "serialNumber": false,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": {
+            "customerContact": [
+              {
+                "phone": "+1(800)633-8766",
+                "phoneExtension": null,
+                "email": "Corporate.UDI@medtronic.com"
+              }
+            ]
+          },
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K032005",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "35838",
+                "gmdnPTName": "Ambulatory insulin infusion pump reservoir",
+                "gmdnPTDefinition": "An insulin-filled receptacle (e.g., a cartridge similar to a syringe) intended to be used together with a body-worn insulin pump for the delivery of patient-controlled amounts of insulin to an ambulatory diabetic. This is a single-use device.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "OZP",
+                "productCodeName": "Automated insulin dosing device system, single hormonal control"
+              },
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": true,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "OZP",
+          "physicalState": "May include: Continuous glucose monitoring system, sensor, self monitoring blood glucose device, infusion pump, data management software",
+          "deviceClass": "3",
+          "thirdPartyFlag": "N",
+          "definition": "An insulin-only automated insulin dosing system that achieves a target glucose level by automatically increasing or reducing insulin infusion from an insulin pump. Insulin adjustments are based upon specified thresholds of measured glucose levels.",
+          "submissionTypeID": "2",
+          "reviewPanel": "CH",
+          "gmpExemptFlag": "N",
+          "technicalMethod": "Uses a glucose monitoring system to measure glucose levels and increases or reduces insulin infusion from an insulin pump",
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": "Not meant to act on a specific part of the body but works with other devices - Continuous glucose monitoring system, sensor, self monitoring blood glucose device, data management software",
+          "regulationNumber": null,
+          "deviceName": "Automated Insulin Dosing Device System, Single Hormonal Control",
+          "medicalSpecialty": null
+        },
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "00643169786554"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "d161f6ff-ce37-499e-882a-c8c6dc30a53c",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 7,
+          "publicVersionDate": "2025-12-02T00:00:00.000Z",
+          "devicePublishDate": "2018-05-31T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "00085412610900",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "Spectrum IQ",
+          "versionModelNumber": "3570009",
+          "catalogNumber": "3570009",
+          "dunsNumber": "005083209",
+          "companyName": "BAXTER HEALTHCARE CORPORATION",
+          "deviceCount": 1,
+          "deviceDescription": "The Spectrum IQ Infusion System with Dose IQ Safety Software is an infusion pump that provides delivery of fluids into a patient in a controlled manner. The pumping mechanism is of linear peristaltic design and uses inlet and outlet valves for flow control. The Spectrum IQ infusion pump is specifically manufactured and calibrated for use with Baxter administration sets.",
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "MR Unsafe",
+          "rx": true,
+          "otc": false,
+          "contacts": {
+            "customerContact": [
+              {
+                "phone": "+1(800)933-0303",
+                "phoneExtension": null,
+                "email": "MEDINFO_MEDPRODUCTS@BAXTER.COM"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "PHC",
+                "productCodeName": "Infusion safety management software"
+              },
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": {
+            "storageHandling": [
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Device stored with wireless battery at -10 to 49 degrees Celsius, 14 to 120 degrees Fahrenheit, and 10 to 90 percent relative humidity"
+              }
+            ]
+          },
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "PHC",
+          "physicalState": "The device is a software application(s), which may be implemented as part of an infusion pump and may also be implemented onto a hospital information system for use with an infusion pump system.",
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": "Infusion safety management software is a prescription device intended for use with infusion pumps and may include one or more of the following capabilities: prepopulation of infusion programming parameters, data retrieval and analysis for tracking and trending, drug infusion error reduction algorithms, and alarm transmission.",
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": "Infusion safety management software may include one or more software applications that enforce safety control mechanisms through wireless or wired communication between the hospital information system, the infusion pump, and the healthcare provider.",
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": "Target area is according to the approved drug or biologic product labeling.",
+          "regulationNumber": "880.5725",
+          "deviceName": "Infusion Safety Management Software",
+          "medicalSpecialty": "HO"
+        },
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "00085412610900"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "55a2cadc-b594-4d88-90cd-ed58a1aef0cd",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 6,
+          "publicVersionDate": "2025-04-23T00:00:00.000Z",
+          "devicePublishDate": "2017-12-20T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "15019517126600",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "CADD",
+          "versionModelNumber": "2120",
+          "catalogNumber": "21-2127-0104-01",
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "MR Unsafe",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K111275",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "15019517126600"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "247e6771-bd7e-4204-b24b-0896d744a355",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 6,
+          "publicVersionDate": "2025-04-16T00:00:00.000Z",
+          "devicePublishDate": "2016-11-16T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10610586040818",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "Medfusion",
+          "versionModelNumber": "4000-0101-51",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K111386",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13217",
+                "gmdnPTName": "Bedside syringe pump",
+                "gmdnPTDefinition": "A mains electricity (AC-powered) non-ambulatory device designed to precisely drive the plunger of a syringe down its barrel to infuse a solution when it must be administered with a high degree of volume accuracy and rate consistency. Because of the lower flow settings and flow resolution (e.g., 0.1 ml/hr), it is especially appropriate for neonatal, infant, and critical care applications in which small volumes of concentrated drugs are to be delivered over an extended period. It can also be used to administer epidural analgesia. It will typically have internal batteries to allow operation for a short period of time when no line power is available (e.g., during transport or a power outage).",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              },
+              {
+                "productCode": "MRZ",
+                "productCodeName": "ACCESSORIES, PUMP, INFUSION"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        },
+        {
+          "productCode": "MRZ",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Accessories, Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10610586040818"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "acce253b-2577-4b0e-9ed4-1b1045547092",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 8,
+          "publicVersionDate": "2022-10-19T00:00:00.000Z",
+          "devicePublishDate": "2016-09-24T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "00085412091570",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "SPECTRUM WITH MDL",
+          "versionModelNumber": "35700BAX",
+          "catalogNumber": "35700BAX",
+          "dunsNumber": "079209157",
+          "companyName": "BAXTER INTERNATIONAL INC.",
+          "deviceCount": 1,
+          "deviceDescription": "The Spectrum infusion pump consists of electronic circuitry and mechanisms in a plastic enclosure. The operation is software controlled, with linear peristaltic pumping design. The Spectrum is designed for the application of standard gravity infusion sets as indicated by the Spectrums labeling.",
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "MR Unsafe",
+          "rx": true,
+          "otc": false,
+          "contacts": {
+            "customerContact": [
+              {
+                "phone": "+1(800)933-0303",
+                "phoneExtension": null,
+                "email": "Medinfo_medproducts@baxter.com"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": {
+            "storageHandling": [
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Device Stored with Stand. Battery from -4 to 120 deg F (-20 to 49 deg C), Device Stored with WiFi Battery from -4 to 120 deg F (-20 to 49 deg C), Device Stored with Standard Battery from 10 to 90 %RH"
+              }
+            ]
+          },
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "00085412091570"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "8ba984f2-2cc6-40fb-80c2-f7a16ba210a4",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 8,
+          "publicVersionDate": "2025-04-16T00:00:00.000Z",
+          "devicePublishDate": "2016-10-13T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10610586019449",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "CADD",
+          "versionModelNumber": "21-6300-51",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K982839",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "MEA",
+                "productCodeName": "Pump, infusion, pca"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "MEA",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion, Pca",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10610586019449"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "8390a567-a784-4bb1-886f-6fe4ada238d4",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 8,
+          "publicVersionDate": "2025-04-23T00:00:00.000Z",
+          "devicePublishDate": "2017-03-23T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "15019517096378",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "CADD",
+          "versionModelNumber": "21-2120-0103-51",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K111275",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "15019517096378"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "cf640294-2a18-48d0-9add-ddf283a672d0",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 6,
+          "publicVersionDate": "2025-04-16T00:00:00.000Z",
+          "devicePublishDate": "2016-11-16T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10610586043567",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "Medfusion",
+          "versionModelNumber": "4000-0105-51",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K111386",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13217",
+                "gmdnPTName": "Bedside syringe pump",
+                "gmdnPTDefinition": "A mains electricity (AC-powered) non-ambulatory device designed to precisely drive the plunger of a syringe down its barrel to infuse a solution when it must be administered with a high degree of volume accuracy and rate consistency. Because of the lower flow settings and flow resolution (e.g., 0.1 ml/hr), it is especially appropriate for neonatal, infant, and critical care applications in which small volumes of concentrated drugs are to be delivered over an extended period. It can also be used to administer epidural analgesia. It will typically have internal batteries to allow operation for a short period of time when no line power is available (e.g., during transport or a power outage).",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "MRZ",
+                "productCodeName": "ACCESSORIES, PUMP, INFUSION"
+              },
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "MRZ",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Accessories, Pump, Infusion",
+          "medicalSpecialty": "HO"
+        },
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10610586043567"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "07ce6fa2-6fec-4d61-b709-b6e3072818a3",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 8,
+          "publicVersionDate": "2025-04-16T00:00:00.000Z",
+          "devicePublishDate": "2016-10-13T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10610586019647",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "CADD",
+          "versionModelNumber": "21-6500-51",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "Labeling does not contain MRI Safety Information",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K982836",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10610586019647"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "721ddd42-6184-4685-a397-70a25b962622",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 7,
+          "publicVersionDate": "2024-05-06T00:00:00.000Z",
+          "devicePublishDate": "2016-12-08T00:00:00.000Z",
+          "deviceCommDistributionEndDate": "2023-07-21T00:00:00.000Z",
+          "deviceCommDistributionStatus": "Not in Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "10885403801518",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "Alaris",
+          "versionModelNumber": "8015",
+          "catalogNumber": null,
+          "dunsNumber": "360624720",
+          "companyName": "CAREFUSION 303, INC.",
+          "deviceCount": 1,
+          "deviceDescription": "Alaris PC Unit",
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": false,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "MR Unsafe",
+          "rx": true,
+          "otc": false,
+          "contacts": {
+            "customerContact": [
+              {
+                "phone": "+1(888)812-3266",
+                "phoneExtension": null,
+                "email": "ProductComplaints@bd.com"
+              }
+            ]
+          },
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K051641",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13215",
+                "gmdnPTName": "Bedside infusion pump, single-channel",
+                "gmdnPTDefinition": "An electrically-powered, non-ambulatory (bedside) device designed to facilitate the accurate and consistent administration of a single drug/solution which can be delivered via intravenous, subcutaneous, arterial, epidural, and intracavital routes using a dedicated infusion set; it is not dedicated to a specific treatment type. It is used to supply higher pressures than those provided by gravity infusion sets or infusion controllers (e.g., typical flow range of 1 to 999 ml/hour) and delivers solutions from a standard infusion bag or bottle of fluid. It is intended primarily for use at the bedside but typically has internal batteries that enable operation, e.g., during transportation.",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": {
+            "storageHandling": [
+              {
+                "storageHandlingType": "Special Storage Condition, Specify",
+                "storageHandlingHigh": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingLow": {
+                  "unit": "",
+                  "value": ""
+                },
+                "storageHandlingSpecialConditionText": "Storage Environment Atmospheric Pressure 760 Low to 375 High mmHg"
+              },
+              {
+                "storageHandlingType": "Storage Environment Humidity",
+                "storageHandlingHigh": {
+                  "unit": "Percent (%) Relative Humidity",
+                  "value": "85"
+                },
+                "storageHandlingLow": {
+                  "unit": "Percent (%) Relative Humidity",
+                  "value": "5"
+                },
+                "storageHandlingSpecialConditionText": null
+              },
+              {
+                "storageHandlingType": "Storage Environment Temperature",
+                "storageHandlingHigh": {
+                  "unit": "Degrees Fahrenheit",
+                  "value": "140"
+                },
+                "storageHandlingLow": {
+                  "unit": "Degrees Fahrenheit",
+                  "value": "-4"
+                },
+                "storageHandlingSpecialConditionText": null
+              }
+            ]
+          },
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "10885403801518"
+    },
+    {
+      "gudid": {
+        "device": {
+          "publicDeviceRecordKey": "46836dec-2176-4368-9643-f5464d0313b8",
+          "publicVersionStatus": "Update",
+          "deviceRecordStatus": "Published",
+          "publicVersionNumber": 7,
+          "publicVersionDate": "2025-04-23T00:00:00.000Z",
+          "devicePublishDate": "2017-02-07T00:00:00.000Z",
+          "deviceCommDistributionEndDate": null,
+          "deviceCommDistributionStatus": "In Commercial Distribution",
+          "identifiers": {
+            "identifier": [
+              {
+                "deviceId": "15019517069624",
+                "deviceIdType": "Primary",
+                "deviceIdIssuingAgency": "GS1",
+                "containsDINumber": null,
+                "pkgQuantity": null,
+                "pkgDiscontinueDate": null,
+                "pkgStatus": null,
+                "pkgType": null
+              }
+            ]
+          },
+          "brandName": "Medfusion",
+          "versionModelNumber": "4000-0106-01",
+          "catalogNumber": null,
+          "dunsNumber": "118380146",
+          "companyName": "ICU MEDICAL, INC.",
+          "deviceCount": 1,
+          "deviceDescription": null,
+          "DMExempt": false,
+          "premarketExempt": false,
+          "deviceHCTP": false,
+          "deviceKit": false,
+          "deviceCombinationProduct": false,
+          "singleUse": false,
+          "lotBatch": false,
+          "serialNumber": true,
+          "manufacturingDate": true,
+          "expirationDate": false,
+          "donationIdNumber": false,
+          "labeledContainsNRL": false,
+          "labeledNoNRL": false,
+          "MRISafetyStatus": "MR Conditional",
+          "rx": true,
+          "otc": false,
+          "contacts": null,
+          "premarketSubmissions": {
+            "premarketSubmission": [
+              {
+                "submissionNumber": "K111386",
+                "supplementNumber": "000"
+              }
+            ]
+          },
+          "gmdnTerms": {
+            "gmdn": [
+              {
+                "gmdnCode": "13217",
+                "gmdnPTName": "Bedside syringe pump",
+                "gmdnPTDefinition": "A mains electricity (AC-powered) non-ambulatory device designed to precisely drive the plunger of a syringe down its barrel to infuse a solution when it must be administered with a high degree of volume accuracy and rate consistency. Because of the lower flow settings and flow resolution (e.g., 0.1 ml/hr), it is especially appropriate for neonatal, infant, and critical care applications in which small volumes of concentrated drugs are to be delivered over an extended period. It can also be used to administer epidural analgesia. It will typically have internal batteries to allow operation for a short period of time when no line power is available (e.g., during transport or a power outage).",
+                "implantable": false,
+                "gmdnCodeStatus": "Active"
+              }
+            ]
+          },
+          "productCodes": {
+            "fdaProductCode": [
+              {
+                "productCode": "MRZ",
+                "productCodeName": "ACCESSORIES, PUMP, INFUSION"
+              },
+              {
+                "productCode": "FRN",
+                "productCodeName": "Pump, infusion"
+              }
+            ]
+          },
+          "deviceSizes": null,
+          "environmentalConditions": null,
+          "sterilization": {
+            "deviceSterile": false,
+            "sterilizationPriorToUse": false,
+            "methodTypes": null
+          }
+        }
+      },
+      "productCodes": [
+        {
+          "productCode": "MRZ",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Accessories, Pump, Infusion",
+          "medicalSpecialty": "HO"
+        },
+        {
+          "productCode": "FRN",
+          "physicalState": null,
+          "deviceClass": "2",
+          "thirdPartyFlag": "N",
+          "definition": null,
+          "submissionTypeID": "1",
+          "reviewPanel": "HO",
+          "gmpExemptFlag": "N",
+          "technicalMethod": null,
+          "reviewCode": null,
+          "lifeSustainSupportFlag": "N",
+          "unclassifiedReason": null,
+          "implantFlag": "N",
+          "targetArea": null,
+          "regulationNumber": "880.5725",
+          "deviceName": "Pump, Infusion",
+          "medicalSpecialty": "HO"
+        }
+      ],
+      "_source_udi_di": "15019517069624"
+    }
+  ]
 }
