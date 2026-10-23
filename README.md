@@ -84,11 +84,62 @@ docker compose up -d
 #   vigil_md_data_pipeline
 ```
 
+See [Running Airflow with Docker](#running-airflow-with-docker) for first-time setup.
+
 To reproduce outputs without Airflow:
 
 ```bash
 dvc repro
 ```
+
+## Running Airflow with Docker
+
+Airflow 3 runs from the repo's `docker-compose.yaml` (CeleryExecutor, Postgres, Redis). It uses the official `apache/airflow` image, so there is no custom image to share. The whole repo is mounted into the containers at `/opt/airflow/Vigil-MD`, and Airflow reads DAGs from `dags/`.
+
+**Requirements:** Docker with Compose v2 (on Windows, Docker Desktop with WSL integration enabled), at least 4 GB RAM for Docker, and port 8080 free. Don't run a local `airflow standalone` alongside it.
+
+**First-time setup**
+
+```bash
+git clone https://github.com/<your-username>/vigil-md.git
+cd vigil-md
+
+# 1. Create your .env
+cp .env.example .env
+#    set AIRFLOW_UID to the output of `id -u`
+
+# 2. Initialise the DB and admin user (once)
+docker compose up airflow-init
+
+# 3. Start everything
+docker compose up -d
+```
+
+Open http://localhost:8080 and log in with `airflow` / `airflow` (unless you changed it in `.env`). DAGs are paused when created: unpause the one you want and trigger it. New DAG files appear after about 30 seconds.
+
+**Sample-data DAG:** `pull_samples` pulls enforcement, recall, MAUDE and GUDID samples, one parallel task per source. It takes `limit` (max 200) and `product_code` (default `FRN`) when triggered. Output goes to `data/raw/samples/` in your clone, and each run overwrites the previous files.
+
+**Everyday commands**
+
+```bash
+docker compose ps                         # service status
+docker compose logs -f airflow-scheduler  # follow logs
+docker compose logs airflow-dag-processor # DAG import errors show up here
+docker compose down                       # stop, keep the DB
+docker compose down -v                    # stop and wipe the DB (clean slate)
+```
+
+**Troubleshooting**
+
+| Problem | Fix |
+|---|---|
+| `permission denied ... docker.sock` | `sudo usermod -aG docker $USER && newgrp docker` |
+| Port 8080 already in use | Stop the other Airflow, or change the `8080:8080` mapping under `airflow-apiserver` |
+| Task fails with `Permission denied` writing to `data/` | Set `AIRFLOW_UID` in `.env` to your `id -u`, then `docker compose down && docker compose up -d` |
+| DAG missing from the UI | Check `docker compose logs airflow-dag-processor` for an import error |
+| Tasks fail on `import requests` | Set `_PIP_ADDITIONAL_REQUIREMENTS=requests` in `.env` |
+
+Local-development defaults only: don't expose this setup to a network or use it in production. Never commit `.env`.
 
 ## Testing
 
