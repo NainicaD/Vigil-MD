@@ -23,9 +23,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator, BranchPythonOperator
-from airflow.operators.empty import EmptyOperator
-from airflow.utils.trigger_rule import TriggerRule
+from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
+from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.task.trigger_rule import TriggerRule
 
 log = logging.getLogger(__name__)
 
@@ -298,7 +298,7 @@ with DAG(
     description="Vigil MD — Pull all FDA sources and GUDID into GCS",
     default_args=default_args,
     start_date=datetime(2026, 10, 1),
-    schedule_interval="0 6 * * *",   # daily at 6am
+    schedule="0 6 * * *",   # daily at 6am
     catchup=False,
     tags=["vigil-md", "acquisition", "fda"],
 ) as dag:
