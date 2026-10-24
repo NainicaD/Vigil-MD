@@ -144,4 +144,50 @@ def compute_features(row_i: pd.Series, row_j: pd.Series,
             if row_i.get("udi_di") and row_j.get("udi_di")
             else None
         ),
-        "left_missing_model":
+                "left_missing_model":   pd.isna(row_i.get("model_number_raw")),
+        "right_missing_model":  pd.isna(row_j.get("model_number_raw")),
+        "left_missing_mfr":     pd.isna(row_i.get("manufacturer_name_norm")),
+        "right_missing_mfr":    pd.isna(row_j.get("manufacturer_name_norm")),
+    }
+
+
+def main():
+    df = load_all_sources()
+    blocks = build_blocks(df)
+    pairs = generate_pairs(blocks, df)
+
+    if not pairs:
+        log.warning("No candidate pairs generated.")
+        return
+
+    log.info("Computing features for %d pairs …", len(pairs))
+    rows = []
+    for i, j, rule in pairs:
+        features = compute_features(df.loc[i], df.loc[j], rule)
+        rows.append(features)
+
+    candidates = pd.DataFrame(rows)
+    out = INTERIM / "candidate_pairs.parquet"
+    candidates.to_parquet(out, index=False)
+    log.info("Saved %d candidate pairs → %s", len(candidates), out)
+
+    print("\n=== Candidate generation summary ===")
+    print(f"Total candidate pairs: {len(candidates)}")
+    print(f"\nPairs by source combination:")
+    combo = candidates["source_left"] + " ↔ " + candidates["source_right"]
+    print(combo.value_counts().to_string())
+    print(f"\nPairs by firing rule:")
+    print(candidates["firing_rule"].value_counts().to_string())
+
+    report = {
+        "total_candidates": len(candidates),
+        "by_source": combo.value_counts().to_dict(),
+        "by_rule":   candidates["firing_rule"].value_counts().to_dict(),
+    }
+    (INTERIM / "blocking_report.json").write_text(
+        json.dumps(report, indent=2))
+    log.info("Blocking report saved.")
+
+
+if __name__ == "__main__":
+    main()
