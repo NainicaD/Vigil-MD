@@ -1,9 +1,0 @@
-{
-  "product_code": "CBK",
-  "enforcement": 200,
-  "recall": 200,
-  "maude": 200,
-  "gudid": 22,
-  "gudid_method": "UDI-DI lookup from MAUDE records",
-  "note": "Development fixtures only. Not a representative sample. Replace with full scoped snapshot before modelling."
-}
