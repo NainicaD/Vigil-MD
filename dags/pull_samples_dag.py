@@ -65,10 +65,11 @@ def pull_samples_dag():
         limit = min(int(params["limit"]), 200)
         code = params["product_code"]
         ps = _load_module(code)
-        s = ps.session()
+        s = ps.make_session()
 
         if bucket["kind"] == "gudid":
-            records = ps.pull_gudid(s, limit)
+            maude_records = ps.pull_openfda(s, "event", limit, search=f'device.device_report_product_code:"{code}"')
+            records = ps.pull_gudid(s, maude_records, limit)
         else:
             search = ""
             if bucket.get("scoped"):
