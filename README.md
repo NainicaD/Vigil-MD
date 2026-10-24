@@ -4,159 +4,233 @@
 
 Vigil MD links medical device records from multiple FDA sources into one unified, evidence-linked database. It identifies when records from different sources describe the same manufacturer, device model, or recall, while keeping genuinely different devices and recalls separate. Users can then search a device's or manufacturer's recall history through a chat interface backed by the unified database.
 
-## Motivation
+Inspired by Kramer et al. (2012), *Security and Privacy Qualities of Medical Devices: An Analysis of FDA Postmarket Surveillance*, PLoS ONE.
 
-FDA device safety data is spread across separate databases that describe devices inconsistently. The same manufacturer or model can appear under different names, and multi-source analyses typically link these records by hand. Vigil MD builds a reusable, measured linkage layer so this work doesn't have to be repeated for every study.
-
-The project is inspired by Kramer et al. (2012), *Security and Privacy Qualities of Medical Devices: An Analysis of FDA Postmarket Surveillance*, PLoS ONE.
+---
 
 ## Data Sources
 
-| Source | Content | Role |
-|---|---|---|
-| openFDA Device Enforcement | Recall actions, classification, product descriptions | Recall evidence |
-| openFDA Device Recall | Recall details and corrective actions | Recall evidence |
-| openFDA Device Event (MAUDE) | Adverse event and malfunction reports | Adverse-event context |
-| GUDID | Device identifiers, brand, model, manufacturer | Reference device catalog |
+| Source | URL | Role | Update cadence |
+|---|---|---|---|
+| FDA Enforcement | https://open.fda.gov/apis/device/enforcement/ | Recall actions and classification | Weekly |
+| Device Recall | https://open.fda.gov/apis/device/recall/ | Recall details and corrective actions | Weekly |
+| MAUDE | https://open.fda.gov/apis/device/event/ | Adverse event and malfunction reports | Quarterly |
+| GUDID | https://accessgudid.nlm.nih.gov/download | Canonical device identifiers | Monthly |
 
-The current scope is limited to one device category and a fixed time window.
+Current scope: all device types, 2016–2026.
 
-## Pipeline Overview
-
-1. **Acquisition:** fetch a pinned snapshot from each source
-2. **Validation:** check schemas and generate data statistics
-3. **Normalization:** map sources to a unified schema; normalize names, model numbers, and dates
-4. **Exact linking:** link records that share reliable identifiers (recall numbers, UDIs)
-5. **Candidate generation:** create candidate record pairs using blocking rules
-6. **Feature engineering:** compute pair features (name similarity, model agreement, missing-field flags)
-7. **Scope extraction:** parse affected lots, serials, and software versions from recall text
-8. **Anomaly checks and alerts:** flag missing data, duplicates, and schema changes
-9. **Slice analysis and labeling export:** check coverage across data slices and export pairs for labeling
-
-The pipeline is orchestrated with Apache Airflow and versioned with DVC.
+---
 
 ## Project Structure
 
 ```
-Data-Pipeline/
-├── dags/           # Airflow DAG definitions
+Vigil-MD/
+├── dags/
+│   ├── pull_samples_dag.py          # development DAG — 200 sample records
+│   └── vigil_md_acquisition.py      # production DAG — full pull to GCS
 ├── scripts/
 │   ├── acquisition/
+│   │   ├── pull_samples.py          # pull 200 sample records per source
+│   │   ├── fetch_sources.py         # full bulk download → GCS
+│   │   ├── upload_samples_to_gcs.py # upload sample NDJSON to GCS
+│   │   ├── load_samples_to_bq.py    # load raw samples into BigQuery
+│   │   └── load_interim_to_bq.py    # load processed Parquet into BigQuery
 │   ├── preprocessing/
-│   ├── matching/
-│   ├── validation/
-│   └── analysis/
-├── tests/          # pytest unit tests
-├── data/           # DVC-tracked data
-├── logs/
-├── dvc.yaml
-└── README.md
+│   │   ├── schema_map.py            # unified field mapping for all sources
+│   │   └── flatten_to_parquet.py    # normalize and flatten to Parquet
+│   └── matching/
+│       └── exact_linking.py         # UDI and recall-number exact joins
+├── tests/                           # pytest unit tests
+├── data/                            # DVC-tracked (not in Git)
+│   ├── raw/samples/                 # 200-record sample JSON files
+│   └── interim/                     # flattened Parquet + linking outputs
+├── config.yaml                      # GCP project, bucket, scope settings
+├── docker-compose.yaml              # Airflow with CeleryExecutor
+├── .env.example                     # environment variable template
+├── dvc.yaml                         # DVC pipeline stages
+└── requirements.txt
 ```
+
+---
+
+## GCP Resources
+
+| Resource | Name |
+|---|---|
+| Project | vigil-md-1792696816 |
+| GCS bucket | vigil-md-raw-nd |
+| BigQuery (raw) | vigil_md_raw |
+| BigQuery (processed) | vigil_md_processed |
+
+---
+
+## Branch Guide
+
+| Branch | Purpose |
+|---|---|
+| `main` | Stable code — all scripts |
+| `airflow-integration` | All scripts + Docker + both DAGs |
+| `airflow-setup` | Teammate's original Docker setup |
+| `sample-data-pull` | Original sample pull work |
+
+---
 
 ## Setup
 
-**Requirements:** Python 3.10+, Docker (for Airflow), Git, DVC
+**Requirements:** Python 3.9+, Docker, Git, Google Cloud SDK
 
 ```bash
-# Clone the repo
-git clone https://github.com/<your-username>/vigil-md.git
-cd vigil-md
+# Clone and set up environment
+git clone https://github.com/NainicaD/Vigil-MD.git
+cd Vigil-MD
+git checkout airflow-integration
 
-# Create a virtual environment and install dependencies
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+pip install "dvc[gs]"
+```
 
-# Set your openFDA API key (free; raises rate limits)
-export OPENFDA_API_KEY=<your-key>
+**GCP authentication:**
 
-# Pull versioned data
+```bash
+gcloud auth login
+gcloud auth application-default login
+gcloud config set project vigil-md-1792696816
+gcloud auth application-default set-quota-project vigil-md-1792696816
+```
+
+**Pull versioned data with DVC:**
+
+```bash
 dvc pull
 ```
 
+This downloads all sample JSON files and processed Parquet files from GCS. No need to re-run acquisition scripts.
+
+---
+
 ## Running the Pipeline
 
-```bash
-# Start Airflow
-docker compose up -d
-
-# Open the Airflow UI at http://localhost:8080 and trigger the DAG:
-#   vigil_md_data_pipeline
-```
-
-See [Running Airflow with Docker](#running-airflow-with-docker) for first-time setup.
-
-To reproduce outputs without Airflow:
+### Option A — Manual (step by step)
 
 ```bash
-dvc repro
+# 1. Pull 200 sample records per source
+python scripts/acquisition/pull_samples.py --limit 200
+
+# 2. Flatten and normalize
+python scripts/preprocessing/flatten_to_parquet.py
+
+# 3. Exact linking
+python scripts/matching/exact_linking.py
+
+# 4. Upload samples to GCS
+python scripts/acquisition/upload_samples_to_gcs.py --bucket vigil-md-raw-nd
+
+# 5. Load to BigQuery
+python scripts/acquisition/load_interim_to_bq.py \
+    --project vigil-md-1792696816 \
+    --bucket vigil-md-raw-nd
 ```
+
+### Option B — Full data pull (2016–2026)
+
+```bash
+python scripts/acquisition/fetch_sources.py \
+    --bucket vigil-md-raw-nd \
+    --start-year 2016 \
+    --end-year 2026
+```
+
+Streams all FDA sources directly to GCS. Takes 20–40 minutes. Re-running is safe — files already in GCS are skipped automatically. Use `--dry-run` to preview what will be downloaded without downloading anything.
+
+---
 
 ## Running Airflow with Docker
 
-Airflow 3 runs from the repo's `docker-compose.yaml` (CeleryExecutor, Postgres, Redis). It uses the official `apache/airflow` image, so there is no custom image to share. The whole repo is mounted into the containers at `/opt/airflow/Vigil-MD`, and Airflow reads DAGs from `dags/`.
-
-**Requirements:** Docker with Compose v2 (on Windows, Docker Desktop with WSL integration enabled), at least 4 GB RAM for Docker, and port 8080 free. Don't run a local `airflow standalone` alongside it.
-
-**First-time setup**
-
 ```bash
-git clone https://github.com/<your-username>/vigil-md.git
-cd vigil-md
-
 # 1. Create your .env
 cp .env.example .env
-#    set AIRFLOW_UID to the output of `id -u`
 
-# 2. Initialise the DB and admin user (once)
+# 2. Initialize the database (first time only)
 docker compose up airflow-init
 
-# 3. Start everything
+# 3. Start all services
 docker compose up -d
+
+# 4. Open the UI
+open http://localhost:8080
+# Login: airflow / airflow
 ```
 
-Open http://localhost:8080 and log in with `airflow` / `airflow` (unless you changed it in `.env`). DAGs are paused when created: unpause the one you want and trigger it. New DAG files appear after about 30 seconds.
+**DAGs:**
 
-**Sample-data DAG:** `pull_samples` pulls enforcement, recall, MAUDE and GUDID samples, one parallel task per source. It takes `limit` (max 200) and `product_code` (default `FRN`) when triggered. Output goes to `data/raw/samples/` in your clone, and each run overwrites the previous files.
+| DAG | Purpose | When to use |
+|---|---|---|
+| `pull_samples` | Pulls 200 sample records per source | Development and testing |
+| `vigil_md_acquisition` | Full pull to GCS with validation | Production |
 
-**Everyday commands**
+**Everyday commands:**
 
 ```bash
-docker compose ps                         # service status
-docker compose logs -f airflow-scheduler  # follow logs
-docker compose logs airflow-dag-processor # DAG import errors show up here
-docker compose down                       # stop, keep the DB
-docker compose down -v                    # stop and wipe the DB (clean slate)
+docker compose ps                          # service status
+docker compose logs -f airflow-scheduler   # follow scheduler logs
+docker compose logs airflow-dag-processor  # DAG import errors
+docker compose down                        # stop, keep database
+docker compose down -v                     # stop and wipe database
 ```
 
-**Troubleshooting**
+**Troubleshooting:**
 
 | Problem | Fix |
 |---|---|
-| `permission denied ... docker.sock` | `sudo usermod -aG docker $USER && newgrp docker` |
-| Port 8080 already in use | Stop the other Airflow, or change the `8080:8080` mapping under `airflow-apiserver` |
-| Task fails with `Permission denied` writing to `data/` | Set `AIRFLOW_UID` in `.env` to your `id -u`, then `docker compose down && docker compose up -d` |
-| DAG missing from the UI | Check `docker compose logs airflow-dag-processor` for an import error |
-| Tasks fail on `import requests` | Set `_PIP_ADDITIONAL_REQUIREMENTS=requests` in `.env` |
+| Port 8080 in use | Change `8080:8080` mapping in `docker-compose.yaml` |
+| Task fails writing to `data/` | Set `AIRFLOW_UID` in `.env` to your `id -u`, restart |
+| DAG missing from UI | Check `docker compose logs airflow-dag-processor` |
+| `import requests` fails in task | Add `requests` to `_PIP_ADDITIONAL_REQUIREMENTS` in `.env` |
 
-The UI (8080) and Flower (5555) are bound to `127.0.0.1`, so only your own machine can reach them. Change the default password in `.env` (`_AIRFLOW_WWW_USER_PASSWORD`) before first start.
+---
 
-Local-development defaults only: don't expose this setup to a network or use it in production. Never commit `.env`.
+## Data Versioning with DVC
+
+```bash
+# After changing data files
+dvc add data/raw/samples
+dvc add data/interim
+dvc push
+
+# Commit the pointer files
+git add data/raw/samples.dvc data/interim.dvc
+git commit -m "chore: update DVC tracking"
+git push
+```
+
+---
 
 ## Testing
 
 ```bash
-pytest tests/
+pytest tests/ -v
 ```
+
+---
 
 ## Roadmap
 
-- [ ] Data pipeline (acquisition, normalization, validation, versioning)
-- [ ] Labeled benchmark of candidate pairs
-- [ ] Entity-resolution models (rules, fuzzy matching, learned matcher)
-- [ ] Unified database with source provenance
+- [x] Sample data pull (all 4 sources)
+- [x] Preprocessing and normalization
+- [x] Exact linking — 108 MAUDE–GUDID links confirmed
+- [x] GCS and BigQuery integration
+- [x] Full bulk download (2016–2026)
+- [x] Airflow DAG with Docker
+- [x] DVC data versioning
+- [ ] Test modules
+- [ ] Candidate generation and ML matching
+- [ ] Unified BigQuery database with provenance
 - [ ] Chat interface for recall history search
+
+---
 
 ## Disclaimer
 
-Vigil MD is a course project for research and educational purposes. It is not a medical tool and should not be used to make decisions about medical care. FDA data from openFDA is unvalidated, and adverse event reports alone do not establish that a device caused an outcome.
+Vigil MD is a course project for research and educational purposes. It is not a medical tool. FDA data from openFDA is unvalidated, and adverse event reports alone do not establish that a device caused an outcome. Always consult a clinician and the official FDA source for decisions about medical devices.
