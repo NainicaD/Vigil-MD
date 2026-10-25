@@ -23,6 +23,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from airflow import DAG
+from airflow.sdk import TaskGroup
 from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
 from airflow.task.trigger_rule import TriggerRule
@@ -129,18 +130,16 @@ def check_manifest(**context):
 
 # ── Task 2 — Fetch all sources ────────────────────────────────────────────────
 
-def fetch_all_sources(**context):
-    """
-    Run fetch_sources.py — streams all sources directly to GCS.
-    Skips files already present. Handles retries internally.
-    """
+def fetch_one_source(source: str, **context):
+    """Run fetch_sources.py for a single source."""
     run_script(
         "scripts/acquisition/fetch_sources.py",
         "--bucket",     BUCKET,
+        "--source",     source,
         "--start-year", str(START_YEAR),
         "--end-year",   str(END_YEAR),
     )
-    log.info("fetch_sources.py completed successfully")
+    log.info("%s fetch completed successfully", source)
 
 
 # ── Task 3 — Validate GCS ────────────────────────────────────────────────────
@@ -312,10 +311,34 @@ with DAG(
     no_update = EmptyOperator(task_id="no_update")
 
     # ── Fetch ─────────────────────────────────────────────────────────────────
-    fetch = PythonOperator(
-        task_id="fetch_all_sources",
-        python_callable=fetch_all_sources,
-    )
+    #from airflow.utils.task_group import TaskGroup
+
+        # ── Fetch (4 parallel tasks) ──────────────────────────────────────────────
+    with TaskGroup("fetch", dag=dag) as fetch_group:
+        fetch_enforcement = PythonOperator(
+            task_id="fetch_enforcement",
+            python_callable=fetch_one_source,
+            op_kwargs={"source": "enforcement"},
+            retries=3,
+        )
+        fetch_recall = PythonOperator(
+            task_id="fetch_recall",
+            python_callable=fetch_one_source,
+            op_kwargs={"source": "recall"},
+            retries=3,
+        )
+        fetch_maude = PythonOperator(
+            task_id="fetch_maude",
+            python_callable=fetch_one_source,
+            op_kwargs={"source": "maude"},
+            retries=5,
+        )
+        fetch_gudid = PythonOperator(
+            task_id="fetch_gudid",
+            python_callable=fetch_one_source,
+            op_kwargs={"source": "gudid"},
+            retries=5,
+        )
 
     # ── Validate ──────────────────────────────────────────────────────────────
     validate = PythonOperator(
@@ -337,6 +360,6 @@ with DAG(
     )
 
     # ── Dependencies ──────────────────────────────────────────────────────────
-    check >> [fetch, no_update]
-    fetch >> validate >> summary
-    [fetch, validate, summary] >> alert
+    check >> [fetch_group, no_update]
+    fetch_group >> validate >> summary
+    [fetch_group, validate, summary] >> alert
