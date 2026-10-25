@@ -40,11 +40,10 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(message)s",
-)
-log = logging.getLogger("fetch_sources")
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.logger import get_logger
+log = get_logger("fetch_sources")
 
 MANIFEST_URL  = "https://api.fda.gov/download.json"
 GUDID_RSS_URL = "https://accessgudid.nlm.nih.gov/download.rss?files=full"

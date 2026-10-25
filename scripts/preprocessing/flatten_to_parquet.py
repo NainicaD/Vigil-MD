@@ -17,8 +17,10 @@ import re
 from pathlib import Path
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-log = logging.getLogger("flatten")
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.logger import get_logger
+log = get_logger("flatten")
 
 SAMPLES = Path("data/raw/samples")
 INTERIM = Path("data/interim")
