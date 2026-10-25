@@ -168,6 +168,9 @@ def check_manifest(**context):
         return "no_update"
 
 
+    
+
+
 # ── Task 2 — Fetch all sources ────────────────────────────────────────────────
 
 def fetch_one_source(source: str, **context):
@@ -239,24 +242,59 @@ def log_summary(**context):
     log.info("=" * 50)
 
 
+
 # ── Task 5 — Alert on failure ─────────────────────────────────────────────────
 
-def alert_on_failure(**context):
-    """
-    Called when any upstream task fails.
-    Logs the failure details. Extend this to send Slack/email alerts.
-    """
-    failed_task = context.get("task_instance").task_id
-    dag_run     = context.get("dag_run")
-    log.error(
-        "PIPELINE FAILURE: task '%s' failed in DAG run %s",
-        failed_task, dag_run.run_id if dag_run else "unknown"
+def build_failure_message(dag_id: str, run_id: str, failed_task_ids: list[str],
+                          url: str) -> tuple[str, str]:
+    """Build the email subject and HTML body. Pure function, easy to test."""
+    items = "".join(f"<li>{t}</li>" for t in failed_task_ids) or \
+        "<li>unknown (see Airflow UI)</li>"
+    subject = f"[Vigil-MD] FAILED: {dag_id}"
+    html = (
+        f"<p>DAG <b>{dag_id}</b> failed.</p>"
+        f"<p>Run: <code>{run_id}</code></p>"
+        f"<p>Failed tasks:</p><ul>{items}</ul>"
+        f'<p><a href="{url}">Open in Airflow</a></p>'
     )
-    log.error(
-        "Check logs at: http://localhost:8080/dags/vigil_md_acquisition/grid"
-    )
-    # TODO: add Slack webhook or email here when ready
+    return subject, html
 
+
+def alert_on_failure(**context):
+    """Runs when any upstream task fails. Logs it and sends an email."""
+    ti = context["ti"]
+    dag_run = context.get("dag_run")
+    run_id = dag_run.run_id if dag_run else "unknown"
+
+    failed: list[str] = []
+    try:
+        states = ti.get_task_states(
+            dag_id=ti.dag_id,
+            run_ids=[run_id],
+            task_ids=[t for t in ti.task.dag.task_ids if t != ti.task_id],
+        )
+        failed = [
+            t for t, s in states.get(run_id, {}).items()
+            if str(getattr(s, "value", s)) in ("failed", "upstream_failed")
+        ]
+    except Exception:
+        log.exception("Could not look up failed tasks")
+
+    url = (f"{os.environ.get('VIGIL_AIRFLOW_URL', 'http://localhost:8080')}"
+           f"/dags/{ti.dag_id}/grid")
+    log.error("PIPELINE FAILURE in run %s. Failed tasks: %s",
+              run_id, failed or "unknown")
+
+    to = os.environ.get("VIGIL_ALERT_EMAIL_TO")
+    if not to:
+        log.warning("VIGIL_ALERT_EMAIL_TO is not set, skipping email")
+        return
+
+    from airflow.providers.smtp.hooks.smtp import SmtpHook
+
+    subject, html = build_failure_message(ti.dag_id, run_id, failed, url)
+    with SmtpHook(smtp_conn_id="smtp_default") as hook:
+        hook.send_email_smtp(to=to, subject=subject, html_content=html)
 
 # ── DAG ───────────────────────────────────────────────────────────────────────
 
