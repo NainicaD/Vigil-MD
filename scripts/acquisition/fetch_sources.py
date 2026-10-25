@@ -41,6 +41,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 import sys as _sys
+
+from tests.test_raw_data_integration import bucket
 _sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.logger import get_logger
 log = get_logger("fetch_sources")
@@ -317,7 +319,15 @@ def main() -> None:
         log.info("Pull manifest → gs://%s/%s", args.bucket, manifest_blob)
 
     # ── 7. Update state ───────────────────────────────────────────────────────
-    new_state = dict(state)  # start from existing state
+    # Re-read current state from GCS right before writing
+# to avoid race condition when 4 parallel tasks all write
+    try:
+        current_blob = bucket.blob(STATE_BLOB)
+        current_state = json.loads(current_blob.download_as_text())
+    except Exception:
+        current_state = dict(state)
+    new_state = current_state
+    
     if args.source in ("all", "enforcement"):
         new_state["openfda_enforcement_export_date"] = enf_info["export_date"]
     if args.source in ("all", "recall"):
