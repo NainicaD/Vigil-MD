@@ -42,8 +42,8 @@ END_YEAR   = 2026
 
 default_args = {
     "owner":            "nainica",
-    "retries":          2,
-    "retry_delay":      timedelta(minutes=5),
+    "retries":          0,
+    "retry_delay":      timedelta(seconds=30),
     "email_on_failure": False,
 }
 
@@ -175,6 +175,7 @@ def check_manifest(**context):
 
 def fetch_one_source(source: str, **context):
     """Run fetch_sources.py for a single source."""
+    raise Exception("TEST FAILURE — remove this line after testing alerts")
     run_script(
         "scripts/acquisition/fetch_sources.py",
         "--bucket",     BUCKET,
@@ -261,40 +262,51 @@ def build_failure_message(dag_id: str, run_id: str, failed_task_ids: list[str],
 
 
 def alert_on_failure(**context):
-    """Runs when any upstream task fails. Logs it and sends an email."""
+    """Runs when any upstream task fails. Sends email alert."""
+    import smtplib
+    from email.mime.text import MIMEText
+
     ti = context["ti"]
     dag_run = context.get("dag_run")
     run_id = dag_run.run_id if dag_run else "unknown"
 
-    failed: list[str] = []
-    try:
-        states = ti.get_task_states(
-            dag_id=ti.dag_id,
-            run_ids=[run_id],
-            task_ids=[t for t in ti.task.dag.task_ids if t != ti.task_id],
-        )
-        failed = [
-            t for t, s in states.get(run_id, {}).items()
-            if str(getattr(s, "value", s)) in ("failed", "upstream_failed")
-        ]
-    except Exception:
-        log.exception("Could not look up failed tasks")
-
     url = (f"{os.environ.get('VIGIL_AIRFLOW_URL', 'http://localhost:8080')}"
            f"/dags/{ti.dag_id}/grid")
-    log.error("PIPELINE FAILURE in run %s. Failed tasks: %s",
-              run_id, failed or "unknown")
+
+    log.error("PIPELINE FAILURE in run %s", run_id)
 
     to = os.environ.get("VIGIL_ALERT_EMAIL_TO")
+    smtp_user = os.environ.get("AIRFLOW__SMTP__SMTP_USER")
+    smtp_password = os.environ.get("AIRFLOW__SMTP__SMTP_PASSWORD")
+
     if not to:
-        log.warning("VIGIL_ALERT_EMAIL_TO is not set, skipping email")
+        log.warning("VIGIL_ALERT_EMAIL_TO not set, skipping email")
+        return
+    if not smtp_user or not smtp_password:
+        log.warning("SMTP credentials not set, skipping email")
         return
 
-    from airflow.providers.smtp.hooks.smtp import SmtpHook
+    subject = f"[Vigil-MD] FAILED: {ti.dag_id}"
+    html = (
+        f"<p>DAG <b>{ti.dag_id}</b> failed.</p>"
+        f"<p>Run: <code>{run_id}</code></p>"
+        f'<p><a href="{url}">Open in Airflow</a></p>'
+    )
 
-    subject, html = build_failure_message(ti.dag_id, run_id, failed, url)
-    with SmtpHook(smtp_conn_id="smtp_default") as hook:
-        hook.send_email_smtp(to=to, subject=subject, html_content=html)
+    msg = MIMEText(html, "html")
+    msg["Subject"] = subject
+    msg["From"] = smtp_user
+    msg["To"] = to
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as s:
+            s.ehlo()
+            s.starttls()
+            s.login(smtp_user, smtp_password)
+            s.send_message(msg)
+        log.info("Alert email sent to %s", to)
+    except Exception:
+        log.exception("Failed to send alert email")
 
 # ── DAG ───────────────────────────────────────────────────────────────────────
 
@@ -325,25 +337,25 @@ with DAG(
             task_id="fetch_enforcement",
             python_callable=fetch_one_source,
             op_kwargs={"source": "enforcement"},
-            retries=3,
+            retries=1,
         )
         fetch_recall = PythonOperator(
             task_id="fetch_recall",
             python_callable=fetch_one_source,
             op_kwargs={"source": "recall"},
-            retries=3,
+            retries=1,
         )
         fetch_maude = PythonOperator(
             task_id="fetch_maude",
             python_callable=fetch_one_source,
             op_kwargs={"source": "maude"},
-            retries=5,
+            retries=1,
         )
         fetch_gudid = PythonOperator(
             task_id="fetch_gudid",
             python_callable=fetch_one_source,
             op_kwargs={"source": "gudid"},
-            retries=5,
+            retries=1,
         )
 
     # ── Validate ──────────────────────────────────────────────────────────────
