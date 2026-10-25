@@ -2,6 +2,7 @@
 
 Pure data checks. No GCP.
 """
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -66,6 +67,31 @@ def test_gudid_merge_key_is_public_device_record_key():
 def test_protected_tables_are_refused(table_id):
     with pytest.raises(ValueError, match="protected"):
         schemas.assert_not_protected(table_id)
+
+
+def test_default_datasets_have_no_suffix():
+    assert schemas.DATASET_SUFFIX == ""
+    assert schemas.raw_table("p", "maude") == "p.vigil_md_raw.maude_raw"
+
+
+def run_with_suffix(suffix):
+    code = ("from scripts.warehouse import schemas;"
+            "print(schemas.raw_table('p','maude'), schemas.load_log_table('p'))")
+    env = {**os.environ, "VIGIL_BQ_DATASET_SUFFIX": suffix}
+    return subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env,
+                          capture_output=True, text=True)
+
+
+def test_dataset_suffix_isolates_every_dataset():
+    r = run_with_suffix("_test")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.split() == ["p.vigil_md_raw_test.maude_raw", "p.vigil_md_ops_test.load_log"]
+
+
+@pytest.mark.parametrize("bad", ["test", "_Test", "_te-st", "_test; drop"])
+def test_bad_dataset_suffix_is_rejected(bad):
+    r = run_with_suffix(bad)
+    assert r.returncode != 0 and "VIGIL_BQ_DATASET_SUFFIX" in r.stderr
 
 
 def test_create_tables_print_only_makes_no_gcp_call():

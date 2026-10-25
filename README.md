@@ -29,7 +29,8 @@ Vigil-MD/
 │   ├── pull_samples_dag.py          # development DAG — 200 sample records
 │   ├── vigil_md_acquisition.py      # daily: FDA + GUDID → GCS, then starts vigil_md_load
 │   ├── vigil_md_load.py             # triggered: GCS → RAW → STAGING → PROD (BigQuery)
-│   └── vigil_md_full_load.py        # manual: first load, backfill, rebuild
+│   ├── vigil_md_full_load.py        # manual: first load, backfill, rebuild
+│   └── vigil_md_sample_test.py      # manual: end-to-end test on sample records (test bucket + *_test datasets)
 ├── scripts/
 │   ├── acquisition/
 │   │   ├── pull_samples.py          # pull 200 sample records per source
@@ -47,6 +48,7 @@ Vigil-MD/
 │   │   ├── load_raw_to_bq.py        # step 2: NDJSON → RAW (idempotent, load_log)
 │   │   ├── build_staging.py         # step 3: RAW → STAGING (flatten, cast, dedup)
 │   │   ├── merge_prod.py            # step 4: STAGING → PROD (MERGE / --rebuild)
+│   │   ├── sample_test.py           # end-to-end test on sample records (isolated)
 │   │   └── sql/staging_*.sql        # per-source staging SQL (port of flatten_to_parquet.py)
 │   ├── preprocessing/
 │   │   ├── schema_map.py            # unified field mapping for all sources
@@ -390,6 +392,7 @@ those pipeline runs. Elasticsearch data persists in a Docker volume
 | `vigil_md_acquisition` | Daily incremental pull to GCS with validation; starts `vigil_md_load` | Production |
 | `vigil_md_load` | GCS → RAW → STAGING → PROD | Production (started by acquisition) |
 | `vigil_md_full_load` | First load, backfill, rebuild | Manual |
+| `vigil_md_sample_test` | Warehouse test on sample records (test bucket + `_test` datasets) | Manual, before go-live or after a change |
 
 **Everyday commands:**
 
@@ -439,7 +442,7 @@ All GCP calls are mocked: **no test touches real GCS or BigQuery**. Test logs ne
 # Everything except the two pandas-based files
 ~/.venvs/vigil-airflow/bin/python -m pytest tests \
     --ignore=tests/test_data_quality.py --ignore=tests/test_preprocessing.py
-# 2026-10-25: 293 passed, 50 skipped (no local data/interim), 21 deselected (integration)
+# 2026-10-25: 311 passed, 50 skipped (no local data/interim), 21 deselected (integration)
 
 # Real-GCS checks of the raw files (needs credentials; run by the validate_gcs task)
 ~/.venvs/vigil-airflow/bin/python -m pytest tests -m integration
@@ -448,6 +451,26 @@ All GCP calls are mocked: **no test touches real GCS or BigQuery**. Test logs ne
 The warehouse conversion tests need `ijson` (in `requirements.txt`). The WSL venvs are made with `uv` and have no `pip`: `~/.local/bin/uv pip install --python ~/.venvs/vigil-airflow/bin/python ijson`.
 
 The BigQuery SQL is checked by hand with free dry runs. See "Manual checks" in `tests/TEST_CASES.md`.
+
+### End-to-end test on the sample records (real GCS + BigQuery, isolated)
+
+Trigger the manual DAG **`vigil_md_sample_test`** in the Airflow UI (unpause it first; it does not need the `vigil_warehouse` pool). It runs the real warehouse scripts on `gs://vigil-md-raw-nd/samples/` and never writes production:
+
+| Writes to | Test resource |
+|---|---|
+| GCS | `gs://vigil-md-test-nd` |
+| BigQuery | `vigil_md_raw_test`, `vigil_md_staging_test`, `vigil_md_prod_test`, `vigil_md_ops_test` |
+
+Tasks: `reset` (empty the test bucket, drop the `_test` datasets) → `seed` → `create_tables` → `load.*` per source → `check` → `scenarios` (idempotency, content hash, one changed record). The test resources are kept after the run for inspection; the next run resets them.
+
+The isolation comes from `VIGIL_BQ_DATASET_SUFFIX=_test` (see `scripts/warehouse/schemas.py`), which the DAG sets only for the scripts it starts. `scripts/warehouse/sample_test.py` refuses to run without it. The same test from a terminal (nothing appears in Kibana):
+
+```bash
+docker exec -e VIGIL_BQ_DATASET_SUFFIX=_test -w /opt/airflow/Vigil-MD \
+  vigik-md-airflow-airflow-worker-1 python scripts/warehouse/sample_test.py all
+```
+
+Result on 2026-10-25: 25/25 checks passed (raw 200 / 200 / 200 / 100 = staging = prod; second run loads nothing and changes 0 rows; same records under a new zip → `skip_load`; one changed record → exactly 1 prod update).
 
 ---
 

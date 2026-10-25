@@ -7,14 +7,23 @@ See docs/WAREHOUSE_PLAN.md ("BigQuery tables").
 """
 from __future__ import annotations
 
+import os
+import re
+
 LOCATION = "US"
 SOURCES  = ["enforcement", "recall", "maude", "gudid"]
 
+# Optional suffix for an isolated test run, e.g. VIGIL_BQ_DATASET_SUFFIX=_test
+# → vigil_md_raw_test, … Empty (the default, and what the DAGs use) = production.
+DATASET_SUFFIX = os.environ.get("VIGIL_BQ_DATASET_SUFFIX", "")
+if not re.fullmatch(r"(_[a-z0-9]+)?", DATASET_SUFFIX):
+    raise ValueError(f"VIGIL_BQ_DATASET_SUFFIX must look like '_test', got {DATASET_SUFFIX!r}")
+
 DATASETS = {
-    "raw":     "vigil_md_raw",        # exists; holds *_sample tables too
-    "staging": "vigil_md_staging",
-    "prod":    "vigil_md_prod",
-    "ops":     "vigil_md_ops",
+    "raw":     "vigil_md_raw" + DATASET_SUFFIX,       # exists; holds *_sample tables too
+    "staging": "vigil_md_staging" + DATASET_SUFFIX,
+    "prod":    "vigil_md_prod" + DATASET_SUFFIX,
+    "ops":     "vigil_md_ops" + DATASET_SUFFIX,
 }
 
 # Existing tables that no warehouse script may touch (guardrail G12)

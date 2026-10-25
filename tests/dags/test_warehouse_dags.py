@@ -57,7 +57,49 @@ def tasks(dag):
 
 def test_all_warehouse_dags_parse(dagbag):
     assert dagbag.import_errors == {}
-    assert {"vigil_md_acquisition", "vigil_md_load", "vigil_md_full_load"} <= set(dagbag.dag_ids)
+    assert {"vigil_md_acquisition", "vigil_md_load", "vigil_md_full_load",
+            "vigil_md_sample_test"} <= set(dagbag.dag_ids)
+
+
+# ── vigil_md_sample_test ─────────────────────────────────────────────────────
+
+@pytest.fixture
+def sample():
+    return load_module("vigil_md_sample_test")
+
+
+def test_sample_test_dag_is_manual_and_sequential(dagbag):
+    dag = dagbag.get_dag("vigil_md_sample_test")
+    assert type(dag.timetable).__name__ == "NullTimetable" and dag.max_active_runs == 1
+    t = tasks(dag)
+    order = ["reset", "seed", "create_tables"]
+    for s in SOURCES:
+        order += [f"load.{step}_{s}" for step in STEPS]
+    order += ["check", "scenarios"]
+    for up, down in zip(order, order[1:]):
+        assert t[down].upstream_task_ids == {up}, (down, t[down].upstream_task_ids)
+
+
+def test_sample_test_load_args_use_only_the_test_bucket(sample):
+    for step in STEPS:
+        for s in SOURCES:
+            args = sample.test_load_args(step, s)
+            assert "vigil-md-raw-nd" not in args
+            if "--bucket" in args:
+                assert args[args.index("--bucket") + 1] == "vigil-md-test-nd"
+
+
+def test_sample_test_suffix_is_set_only_for_child_scripts(sample, monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw["env"])
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+    monkeypatch.setattr(sample.subprocess, "run", fake_run)
+    sample.run_sample_step("check")
+    assert seen["VIGIL_BQ_DATASET_SUFFIX"] == "_test"
+    import os
+    assert "VIGIL_BQ_DATASET_SUFFIX" not in os.environ      # the Airflow process is untouched
 
 
 # ── vigil_md_acquisition ─────────────────────────────────────────────────────

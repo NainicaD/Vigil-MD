@@ -1,6 +1,6 @@
 # Vigil-MD test cases
 
-408 collected test cases across 18 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
+426 collected test cases across 19 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
 
 Files 9–18 cover the RAW → STAGING → PROD warehouse (`docs/WAREHOUSE_PLAN.md`), added by `docs/TESTS_PLAN.md`.
 
@@ -37,7 +37,8 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_schemas.py` | Warehouse table definitions | 24 | pass |
 | `test_build_staging.py` | STAGING SQL (flatten, cast, dedup) | 30 | pass |
 | `test_merge_prod.py` | MERGE into PROD and `--rebuild` | 33 | pass |
-| `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 47 | pass |
+| `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load`, `vigil_md_sample_test` | 50 | pass |
+| `test_sample_test.py` | Safety rules and helpers of the sample end-to-end test | 9 | pass |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 
@@ -287,6 +288,7 @@ These need real BigQuery, so they are not tests (no real GCP in pytest). They we
 | Parity: `norm_date` / `norm_mfr` vs `normalize_date` / `normalize_manufacturer`, on inline values (0 bytes read) | Match on 23 of 24 values. The impossible date `20241399` gives NULL in SQL (intended). The suffix bugs are copied on purpose (`docs/issue.md` #13) |
 | Parity: each staging SELECT vs `flatten_*` on inline payloads | Enforcement, recall and MAUDE: 0 cell differences. GUDID: matches hand-written expectations |
 | GUDID fetch-time conversion on a real GCS sample (`samples/gudid/gudid_sample_20261001.zip`) | T1–T4 pass after the #12 fix |
+| End-to-end warehouse on the sample records (`scripts/warehouse/sample_test.py all`, or the `vigil_md_sample_test` DAG; test bucket + `_test` datasets) | 25/25 checks pass: counts per layer, load_log, GUDID fields, idempotency, content hash, one changed record |
 
 ## Known open issues
 
