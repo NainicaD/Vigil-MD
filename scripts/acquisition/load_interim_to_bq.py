@@ -26,6 +26,13 @@ def main():
     parser.add_argument("--bucket", required=True)
     args = parser.parse_args()
 
+    required = [INTERIM / f"{s}_flat.parquet" for s in SOURCES]
+    required.append(INTERIM / "links_maude_gudid.parquet")
+    missing = [str(p) for p in required if not p.exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Missing interim files (run flatten_to_parquet.py first): {missing}")
+
     from google.cloud import bigquery, storage
 
     # ── Upload Parquet files to GCS ───────────────────────────────────────────
@@ -36,9 +43,6 @@ def main():
     uris = {}
     for source in SOURCES:
         local = INTERIM / f"{source}_flat.parquet"
-        if not local.exists():
-            log.warning("Missing %s — run flatten_to_parquet.py first", local)
-            continue
         blob_name = f"interim/{source}_flat.parquet"
         blob = bucket.blob(blob_name)
         blob.upload_from_filename(str(local))
@@ -74,6 +78,8 @@ def main():
         job = client.load_table_from_uri(uri, table_id, job_config=job_config)
         job.result()
         table = client.get_table(table_id)
+        if not table.num_rows:
+            raise RuntimeError(f"{table_id} loaded 0 rows")
         log.info("  Loaded %d rows, %d columns",
                  table.num_rows, len(table.schema))
 
@@ -89,6 +95,8 @@ def main():
         links_uri, links_table, job_config=job_config)
     job.result()
     table = client.get_table(links_table)
+    if not table.num_rows:
+        raise RuntimeError(f"{links_table} loaded 0 rows")
     log.info("  Loaded %d rows, %d columns", table.num_rows, len(table.schema))
 
     print("\n=== All processed tables loaded into BigQuery ===")

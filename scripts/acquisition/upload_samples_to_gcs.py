@@ -23,10 +23,19 @@ def to_ndjson(source: str) -> Path:
     src = SAMPLES / f"{source}_sample.json"
     dst = SAMPLES / f"{source}_sample.ndjson"
 
-    data = json.loads(src.read_text())
-    records = data.get("records", [])
+    data = json.loads(src.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or "records" not in data:
+        raise ValueError(f"{src}: expected an object with a 'records' key")
+    records = data["records"]
+    if not isinstance(records, list):
+        raise ValueError(f"{src}: 'records' must be a list")
+    if not records:
+        raise ValueError(f"{src}: 'records' is empty")
+    for i, rec in enumerate(records):
+        if not isinstance(rec, dict):
+            raise ValueError(f"{src}: record {i} is not an object")
 
-    with open(dst, "w") as f:
+    with open(dst, "w", encoding="utf-8") as f:
         for rec in records:
             f.write(json.dumps(rec) + "\n")
 
@@ -35,6 +44,8 @@ def to_ndjson(source: str) -> Path:
 
 
 def upload(local_path: Path, bucket: str) -> str:
+    if not local_path.exists():
+        raise FileNotFoundError(local_path)
     from google.cloud import storage
     client = storage.Client()
     b = client.bucket(bucket)

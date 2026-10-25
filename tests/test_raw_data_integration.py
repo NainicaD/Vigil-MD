@@ -3,10 +3,15 @@
 Requires GCP credentials and the vigil-md-raw-nd bucket to be accessible.
 Run after fetch_sources.py completes to confirm the pull was successful.
 
-Skip with: pytest tests/test_gcs_fetch.py --ignore=tests/test_gcs_fetch.py
-or mark as integration: pytest -m "not integration"
+Marked `integration` and deselected by default (see pytest.ini).
+Run explicitly with: pytest -m integration
+The vigil_md_acquisition DAG runs this file in its validate_gcs task and sets
+VIGIL_START_YEAR / VIGIL_END_YEAR to the fetched year range.
 """
 import json
+import os
+import warnings
+
 import pytest
 
 try:
@@ -16,10 +21,15 @@ except ImportError:
     GCS_AVAILABLE = False
 
 BUCKET = "vigil-md-raw-nd"
-pytestmark = pytest.mark.skipif(
-    not GCS_AVAILABLE,
-    reason="google-cloud-storage not installed"
-)
+START_YEAR = int(os.environ.get("VIGIL_START_YEAR", "2016"))
+END_YEAR = int(os.environ.get("VIGIL_END_YEAR", "2026"))
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not GCS_AVAILABLE,
+        reason="google-cloud-storage not installed"
+    ),
+]
 
 
 @pytest.fixture(scope="module")
@@ -85,12 +95,15 @@ def test_recall_files_not_empty(gcs_client, manifest_state):
 
 # ── MAUDE ─────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("quarter", ["2024q1", "2024q2", "2024q3", "2024q4"])
-def test_maude_2024_quarters_exist(gcs_client, manifest_state, quarter):
+@pytest.mark.parametrize("year", range(START_YEAR, END_YEAR + 1))
+def test_maude_year_exists(gcs_client, manifest_state, year):
     export_date = manifest_state.get("openfda_event_export_date", "")
     blobs = list(gcs_client.list_blobs(
-        BUCKET, prefix=f"raw/event/{export_date}/{quarter}/"))
-    assert len(blobs) > 0, f"No MAUDE files for {quarter}"
+        BUCKET, prefix=f"raw/event/{export_date}/{year}"))
+    if not blobs and year == END_YEAR:
+        warnings.warn(f"No MAUDE files for {year} (may be a partial year)")
+        return
+    assert len(blobs) > 0, f"No MAUDE files for {year}"
 
 
 def test_maude_files_not_empty(gcs_client, manifest_state):

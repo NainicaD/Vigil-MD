@@ -5,7 +5,7 @@ Runs daily, skips if nothing changed (fetch_sources.py handles this).
 
 Tasks:
   1. check_manifest    — check if FDA data has updated
-  2. fetch_all_sources — run fetch_sources.py, stream to GCS
+  2. fetch.*           — run fetch_sources.py per source, stream to GCS
   3. validate_gcs      — confirm expected files landed in GCS
   4. log_summary       — log file counts and sizes to Airflow
   5. alert_on_failure  — triggered only if any task fails
@@ -17,8 +17,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
+import tempfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -31,7 +34,7 @@ from airflow.task.trigger_rule import TriggerRule
 log = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-REPO       = Path("/Users/nainicadasari/Vigil-MD")
+REPO       = Path(__file__).resolve().parents[1]
 PYTHON     = sys.executable
 BUCKET     = "vigil-md-raw-nd"
 START_YEAR = 2016
@@ -65,12 +68,50 @@ def run_script(script: str, *args: str) -> str:
     return result.stdout
 
 
+def run_pytest(test_path: str, marker: str, env: dict[str, str] | None = None) -> None:
+    """Run a pytest file as a subprocess. Raises on failure, skips, or no tests.
+
+    A skipped test means a check did not run (e.g. a missing library), so it
+    counts as a failure here.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        report = Path(tmp) / "report.xml"
+        cmd = [PYTHON, "-m", "pytest", test_path, "-m", marker,
+               "-v", "-p", "no:cacheprovider", f"--junitxml={report}"]
+        log.info("Running: %s", " ".join(cmd))
+        result = subprocess.run(
+            cmd, cwd=str(REPO),
+            capture_output=True, text=True,
+            env={**os.environ, **(env or {})},
+        )
+        if result.stdout:
+            log.info(result.stdout)
+        if result.stderr:
+            log.warning(result.stderr)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"pytest {test_path} failed (exit {result.returncode})\n"
+                f"{result.stdout[-3000:]}"
+            )
+        suite = ET.parse(report).getroot()
+        if suite.tag == "testsuites":
+            suite = suite[0]
+        tests = int(suite.get("tests", 0))
+        skipped = int(suite.get("skipped", 0))
+    if tests == 0 or skipped:
+        raise RuntimeError(
+            f"pytest {test_path}: {tests} tests, {skipped} skipped. "
+            "Every check must run."
+        )
+    log.info("pytest %s: %d tests passed", test_path, tests)
+
+
 # ── Task 1 — Check manifest ───────────────────────────────────────────────────
 
 def check_manifest(**context):
     """
     Hit openFDA download.json and compare export_dates to last run.
-    Returns 'fetch_all_sources' if anything changed, 'no_update' if not.
+    Returns the four fetch.* task IDs if anything changed, 'no_update' if not.
     """
     import requests
     from google.cloud import storage
@@ -100,7 +141,6 @@ def check_manifest(**context):
             log.info("%s unchanged: %s", endpoint, new_date)
 
     # Also check GUDID via RSS
-    import xml.etree.ElementTree as ET
     import re
     rss = requests.get(
         "https://accessgudid.nlm.nih.gov/download.rss?files=full",
@@ -122,7 +162,7 @@ def check_manifest(**context):
 
     if changed:
         log.info("Changes detected — triggering full fetch")
-        return "fetch_all_sources"
+        return [f"fetch.fetch_{s}" for s in ("enforcement", "recall", "maude", "gudid")]
     else:
         log.info("No changes — skipping fetch")
         return "no_update"
@@ -147,87 +187,15 @@ def fetch_one_source(source: str, **context):
 def validate_gcs(**context):
     """
     Test that expected files landed in GCS correctly.
-    Checks:
-      - enforcement zip exists
-      - recall zip exists
-      - at least one MAUDE quarterly file per year in range
-      - GUDID zip exists
+    Runs tests/test_raw_data_integration.py (the single source for these
+    checks): enforcement, recall, MAUDE per year in range, GUDID, manifest.
     Raises on any failure so Airflow marks the task red.
     """
-    from google.cloud import storage
-    client  = storage.Client()
-    bucket  = client.bucket(BUCKET)
-    errors  = []
-    passed  = 0
-
-    # Load manifest to get export_date
-    state_blob = bucket.blob("manifests/manifest_state.json")
-    state = (
-        json.loads(state_blob.download_as_text())
-        if state_blob.exists() else {}
+    run_pytest(
+        "tests/test_raw_data_integration.py", "integration",
+        env={"VIGIL_START_YEAR": str(START_YEAR),
+             "VIGIL_END_YEAR": str(END_YEAR)},
     )
-    export_date = state.get("openfda_enforcement_export_date", "*")
-
-    # ── Test 1: enforcement zip exists ───────────────────────────────────────
-    enf_prefix = f"raw/enforcement/{export_date}/"
-    enf_blobs  = list(client.list_blobs(BUCKET, prefix=enf_prefix))
-    if enf_blobs:
-        log.info("✓ Enforcement: %d file(s) found", len(enf_blobs))
-        passed += 1
-    else:
-        errors.append(f"✗ Enforcement: no files found under {enf_prefix}")
-
-    # ── Test 2: recall zip exists ────────────────────────────────────────────
-    rec_prefix = f"raw/recall/{export_date}/"
-    rec_blobs  = list(client.list_blobs(BUCKET, prefix=rec_prefix))
-    if rec_blobs:
-        log.info("✓ Recall: %d file(s) found", len(rec_blobs))
-        passed += 1
-    else:
-        errors.append(f"✗ Recall: no files found under {rec_prefix}")
-
-    # ── Test 3: MAUDE has files for each year in range ───────────────────────
-    evt_export = state.get("openfda_event_export_date", export_date)
-    for year in range(START_YEAR, END_YEAR + 1):
-        year_prefix = f"raw/event/{evt_export}/{year}"
-        year_blobs  = list(client.list_blobs(BUCKET, prefix=year_prefix))
-        if year_blobs:
-            log.info("✓ MAUDE %d: %d file(s) found", year, len(year_blobs))
-            passed += 1
-        else:
-            if year == END_YEAR:
-                log.warning("⚠ MAUDE %d: no files (may be partial year)", year)
-            else:
-                errors.append(
-                    f"✗ MAUDE {year}: no files found under {year_prefix}"
-                )
-
-    # ── Test 4: GUDID zip exists ─────────────────────────────────────────────
-    gudid_snapshot = state.get("gudid_snapshot", "")
-    gudid_prefix   = f"raw/gudid/{gudid_snapshot}/"
-    gudid_blobs    = list(client.list_blobs(BUCKET, prefix=gudid_prefix))
-    if gudid_blobs:
-        log.info("✓ GUDID: %d file(s) found (snapshot %s)",
-                 len(gudid_blobs), gudid_snapshot)
-        passed += 1
-    else:
-        errors.append(
-            f"✗ GUDID: no files found under {gudid_prefix}"
-        )
-
-    # ── Summary ───────────────────────────────────────────────────────────────
-    total = passed + len(errors)
-    log.info("Validation: %d/%d checks passed", passed, total)
-
-    if errors:
-        for e in errors:
-            log.error(e)
-        raise ValueError(
-            f"GCS validation failed: {len(errors)} error(s)\n"
-            + "\n".join(errors)
-        )
-
-    log.info("All GCS validation checks passed ✓")
 
 
 # ── Task 4 — Log summary ──────────────────────────────────────────────────────

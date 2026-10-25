@@ -76,6 +76,9 @@ def pull_samples_dag():
                 search = f'device.device_report_product_code:"{code}"'
             records = ps.pull_openfda(s, bucket["endpoint"], limit, search=search)
 
+        if not records:
+            raise ValueError(f"{bucket['name']}: pulled 0 records")
+
         ps.save(bucket["name"], records)
         return {"name": bucket["name"], "count": len(records)}
 

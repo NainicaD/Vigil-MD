@@ -141,31 +141,6 @@ def test_record_date_coverage(flat_tables):
             f"{source}: record_date coverage {coverage:.0%} below {threshold:.0%}"
 
 
-# ── Schema shape ──────────────────────────────────────────────────────────────
-
-def test_all_sources_have_source_column(flat_tables):
-    for source, df in flat_tables.items():
-        assert "source" in df.columns, f"{source}: missing 'source' column"
-        assert (df["source"] == source).all(), \
-            f"{source}: 'source' column has unexpected values"
-
-
-def test_raw_json_column_exists(flat_tables):
-    """Every table should have raw_json for traceability."""
-    for source, df in flat_tables.items():
-        assert "raw_json" in df.columns, \
-            f"{source}: missing 'raw_json' column — can't trace back to source"
-
-
-def test_links_file_exists():
-    path = INTERIM / "links_maude_gudid.parquet"
-    assert path.exists(), "links_maude_gudid.parquet not found"
-
-
-def test_links_count_reasonable():
-    path = INTERIM / "links_maude_gudid.parquet"
-    if not path.exists():
-        pytest.skip("links file not found")
-    df = pd.read_parquet(path)
-    assert len(df) > 0, "No MAUDE-GUDID links found"
+# Schema-shape checks (source column, raw_json, links file) live in
+# test_data_contract.py.
     assert len(df) <= 500, f"Unexpectedly many links: {len(df)}"
