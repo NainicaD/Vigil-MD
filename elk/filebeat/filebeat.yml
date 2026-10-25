@@ -1,0 +1,21 @@
+filebeat.inputs:
+  - type: log
+    enabled: true
+    paths:
+      - /airflow-logs/dag_id=*/**/*.log
+    fields:
+      source: airflow
+    fields_under_root: true
+    multiline:
+      pattern: '^\['
+      negate: true
+      match: after
+
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+
+output.logstash:
+  hosts: ["logstash:5045"]
+
+logging.level: info

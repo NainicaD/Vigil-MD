@@ -163,6 +163,38 @@ open http://localhost:8080
 # Login: airflow / airflow
 ```
 
+## Running ELK Stack (Logging)
+
+ELK (Elasticsearch, Logstash, Kibana) runs separately from Airflow.
+Start it when you want to search and visualize pipeline logs.
+
+**Start ELK:**
+```bash
+docker compose -f docker-compose.elk.yml up -d
+```
+
+**Open Kibana:** http://localhost:5601
+
+**What it collects:**
+- All Airflow task logs (including historical logs from previous runs)
+- Structured logs from Python scripts (fetch_sources.py, flatten_to_parquet.py, etc.)
+
+**Search logs in Kibana:**
+1. Go to http://localhost:5601
+2. Click Discover in the left sidebar
+3. Create index pattern: `vigil-md-logs-*`
+4. Search by field: `dag_id`, `task_id`, `source`, `log_level`
+
+**Stop ELK:**
+```bash
+docker compose -f docker-compose.elk.yml down
+```
+
+**Note:** Historical logs are preserved in the `logs/` folder and will be
+indexed automatically when ELK starts, even if it wasn't running during
+those pipeline runs. Elasticsearch data persists in a Docker volume
+(`elasticsearch-data`) across restarts.
+
 **DAGs:**
 
 | DAG | Purpose | When to use |
