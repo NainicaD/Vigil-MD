@@ -154,7 +154,13 @@ activemq-data/
 
 # Environments
 .env
+!.env.example
 .envrc
+
+# Airflow (docker compose)
+/logs/
+/config/
+/plugins/
 .venv
 env/
 venv/
@@ -221,3 +227,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Docs
+/docs

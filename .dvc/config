@@ -1,0 +1,5 @@
+[core]
+    remote = vigil-remote
+['remote "vigil-remote"']
+    url = gs://vigil-md-raw-nd/dvc-store
+    projectname = vigil-md-1792696816

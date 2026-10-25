@@ -26,6 +26,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from email import parser
 import hashlib
 import json
 import logging
@@ -39,11 +40,11 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(message)s",
-)
-log = logging.getLogger("fetch_sources")
+import sys as _sys
+
+_sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.logger import get_logger
+log = get_logger("fetch_sources")
 
 MANIFEST_URL  = "https://api.fda.gov/download.json"
 GUDID_RSS_URL = "https://accessgudid.nlm.nih.gov/download.rss?files=full"
@@ -239,11 +240,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Stream all FDA sources directly to GCS.")
     parser.add_argument("--bucket",     required=True,
-                        help="GCS bucket name, e.g. vigil-md-raw-nd")
+                    help="GCS bucket name, e.g. vigil-md-raw-nd")
+    parser.add_argument("--source",     required=False, default="all",
+                    choices=["all", "enforcement", "recall", "maude", "gudid"],
+                    help="Which source to fetch. Default: all")
     parser.add_argument("--start-year", type=int, default=2016)
     parser.add_argument("--end-year",   type=int, default=2026)
     parser.add_argument("--dry-run",    action="store_true",
-                        help="Show what would be downloaded without downloading")
+                    help="Show what would be downloaded without downloading")
     args = parser.parse_args()
 
     from google.cloud import storage
@@ -259,41 +263,49 @@ def main() -> None:
     manifest = session.get(MANIFEST_URL, timeout=60).json()
     device   = manifest["results"]["device"]
 
-    # ── 2. Enforcement ────────────────────────────────────────────────────────
-    log.info("── Enforcement ──")
-    enf_info    = device["enforcement"]
-    enf_entries = fetch_openfda_endpoint(
-        session, bucket, "enforcement",
-        enf_info["partitions"], enf_info["export_date"],
-        args.start_year, args.end_year, state, args.dry_run,
-    )
-    all_entries.extend(enf_entries)
+    # ── 2. Enforcement ────────────────────────────────────────────────────────────
+    enf_info = device["enforcement"]
+    enf_entries = []
+    if args.source in ("all", "enforcement"):
+        log.info("── Enforcement ──")
+        enf_entries = fetch_openfda_endpoint(
+            session, bucket, "enforcement",
+            enf_info["partitions"], enf_info["export_date"],
+            args.start_year, args.end_year, state, args.dry_run,
+        )
+        all_entries.extend(enf_entries)
 
-    # ── 3. Recall ─────────────────────────────────────────────────────────────
-    log.info("── Recall ──")
-    rec_info    = device["recall"]
-    rec_entries = fetch_openfda_endpoint(
-        session, bucket, "recall",
-        rec_info["partitions"], rec_info["export_date"],
-        args.start_year, args.end_year, state, args.dry_run,
-    )
-    all_entries.extend(rec_entries)
+# ── 3. Recall ─────────────────────────────────────────────────────────────────
+    rec_info = device["recall"]
+    rec_entries = []
+    if args.source in ("all", "recall"):
+        log.info("── Recall ──")
+        rec_entries = fetch_openfda_endpoint(
+            session, bucket, "recall",
+            rec_info["partitions"], rec_info["export_date"],
+            args.start_year, args.end_year, state, args.dry_run,
+        )
+        all_entries.extend(rec_entries)
 
-    # ── 4. MAUDE (event) ──────────────────────────────────────────────────────
-    log.info("── MAUDE (device/event) %d–%d ──",
+# ── 4. MAUDE (event) ──────────────────────────────────────────────────────────
+    evt_info = device["event"]
+    evt_entries = []
+    if args.source in ("all", "maude"):
+        log.info("── MAUDE (device/event) %d–%d ──",
              args.start_year, args.end_year)
-    evt_info    = device["event"]
-    evt_entries = fetch_openfda_endpoint(
+        evt_entries = fetch_openfda_endpoint(
         session, bucket, "event",
         evt_info["partitions"], evt_info["export_date"],
         args.start_year, args.end_year, state, args.dry_run,
-    )
-    all_entries.extend(evt_entries)
+        )
+        all_entries.extend(evt_entries)
 
-    # ── 5. GUDID ──────────────────────────────────────────────────────────────
-    log.info("── GUDID ──")
-    gudid_entry = fetch_gudid(session, bucket, state, args.dry_run)
-    all_entries.append(gudid_entry)
+# ── 5. GUDID ──────────────────────────────────────────────────────────────────
+    gudid_entry = None
+    if args.source in ("all", "gudid"):
+        log.info("── GUDID ──")
+        gudid_entry = fetch_gudid(session, bucket, state, args.dry_run)
+        all_entries.append(gudid_entry)
 
     # ── 6. Save manifest ──────────────────────────────────────────────────────
     run_time   = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -306,15 +318,26 @@ def main() -> None:
         log.info("Pull manifest → gs://%s/%s", args.bucket, manifest_blob)
 
     # ── 7. Update state ───────────────────────────────────────────────────────
-    new_state = {
-        "openfda_enforcement_export_date": enf_info["export_date"],
-        "openfda_recall_export_date":      rec_info["export_date"],
-        "openfda_event_export_date":       evt_info["export_date"],
-        "gudid_snapshot":                  gudid_entry["snapshot"],
-        "last_pull":                       run_time,
-        "start_year":                      args.start_year,
-        "end_year":                        args.end_year,
-    }
+    # Re-read current state from GCS right before writing
+# to avoid race condition when 4 parallel tasks all write
+    try:
+        current_blob = bucket.blob(STATE_BLOB)
+        current_state = json.loads(current_blob.download_as_text())
+    except Exception:
+        current_state = dict(state)
+    new_state = current_state
+    
+    if args.source in ("all", "enforcement"):
+        new_state["openfda_enforcement_export_date"] = enf_info["export_date"]
+    if args.source in ("all", "recall"):
+        new_state["openfda_recall_export_date"] = rec_info["export_date"]
+    if args.source in ("all", "maude"):
+        new_state["openfda_event_export_date"] = evt_info["export_date"]
+    if args.source in ("all", "gudid") and gudid_entry:
+        new_state["gudid_snapshot"] = gudid_entry["snapshot"]
+    new_state["last_pull"] = run_time
+    new_state["start_year"] = args.start_year
+    new_state["end_year"] = args.end_year   
     if not args.dry_run:
         save_state(bucket, new_state)
 

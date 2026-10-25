@@ -1,0 +1,6 @@
+outs:
+- md5: c9743f8f0f8c0d4bc9522b4c27853290.dir
+  size: 10216878
+  nfiles: 6
+  hash: md5
+  path: interim

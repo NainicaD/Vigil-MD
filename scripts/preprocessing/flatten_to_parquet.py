@@ -17,8 +17,10 @@ import re
 from pathlib import Path
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-log = logging.getLogger("flatten")
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.logger import get_logger
+log = get_logger("flatten")
 
 SAMPLES = Path("data/raw/samples")
 INTERIM = Path("data/interim")
@@ -179,11 +181,12 @@ def flatten_gudid(records: list) -> pd.DataFrame:
             "catalog_number":        clean(dev.get("catalogNumber")),
             "product_codes":         product_codes or None,
             "device_record_status":  clean(dev.get("deviceRecordStatus")),
-            "publish_date":          normalize_date(dev.get("devicePublishDate")),
+            "publish_date":          normalize_date(dev.get("devicePublishDate")) or None,
             "distribution_status":   clean(dev.get("deviceCommDistributionStatus")),
             "raw_json":              json.dumps(r),
         })
     df = pd.DataFrame(rows)
+    df["publish_date"] = df["publish_date"].astype("string")
     log.info("gudid: %d rows, %d columns", len(df), len(df.columns))
     return df
 

@@ -18,8 +18,10 @@ from pathlib import Path
 
 import pandas as pd
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-log = logging.getLogger("exact_linking")
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from scripts.logger import get_logger
+log = get_logger("exact_linking")
 
 INTERIM = Path("data/interim")
 
