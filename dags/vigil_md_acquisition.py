@@ -42,8 +42,8 @@ END_YEAR   = 2026
 
 default_args = {
     "owner":            "nainica",
-    "retries":          0,
-    "retry_delay":      timedelta(seconds=30),
+    "retries":          2,
+    "retry_delay":      timedelta(minutes=5),
     "email_on_failure": False,
 }
 
@@ -175,7 +175,6 @@ def check_manifest(**context):
 
 def fetch_one_source(source: str, **context):
     """Run fetch_sources.py for a single source."""
-    raise Exception("TEST FAILURE — remove this line after testing alerts")
     run_script(
         "scripts/acquisition/fetch_sources.py",
         "--bucket",     BUCKET,
@@ -337,25 +336,25 @@ with DAG(
             task_id="fetch_enforcement",
             python_callable=fetch_one_source,
             op_kwargs={"source": "enforcement"},
-            retries=1,
+            retries=3,
         )
         fetch_recall = PythonOperator(
             task_id="fetch_recall",
             python_callable=fetch_one_source,
             op_kwargs={"source": "recall"},
-            retries=1,
+            retries=3,
         )
         fetch_maude = PythonOperator(
             task_id="fetch_maude",
             python_callable=fetch_one_source,
             op_kwargs={"source": "maude"},
-            retries=1,
+            retries=5,
         )
         fetch_gudid = PythonOperator(
             task_id="fetch_gudid",
             python_callable=fetch_one_source,
             op_kwargs={"source": "gudid"},
-            retries=1,
+            retries=5,
         )
 
     # ── Validate ──────────────────────────────────────────────────────────────
