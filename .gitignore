@@ -228,5 +228,13 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# Docs
-/docs
+# Docs: docs/*.md are tracked (WAREHOUSE_PLAN.md, TESTS_PLAN.md, issue.md).
+# Only build output is ignored (docs/_build/ is listed under Sphinx above).
+
+# Vigil MD local files
+.DS_Store
+# Local copies of GCS/FDA downloads (e.g. a GUDID release for inspection)
+/*.zip
+/*.ndjson
+# Per-user Claude Code settings
+.claude/settings.local.json

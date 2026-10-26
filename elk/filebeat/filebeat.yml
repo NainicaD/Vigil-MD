@@ -6,10 +6,8 @@ filebeat.inputs:
     fields:
       source: airflow
     fields_under_root: true
-    multiline:
-      pattern: '^\['
-      negate: true
-      match: after
+    # No multiline: Airflow 3 writes one JSON object per line,
+    # and tracebacks are already inside that JSON.
 
 filebeat.config.modules:
   path: ${path.config}/modules.d/*.yml

@@ -17,7 +17,7 @@ Inspired by Kramer et al. (2012), *Security and Privacy Qualities of Medical Dev
 | MAUDE | https://open.fda.gov/apis/device/event/ | Adverse event and malfunction reports | Quarterly |
 | GUDID | https://accessgudid.nlm.nih.gov/download | Canonical device identifiers | Monthly |
 
-Current scope: all device types, 2016–2026.
+Current scope: all device types, MAUDE 2016–2026. Enforcement, recall and GUDID are loaded in full.
 
 ---
 
@@ -27,27 +27,44 @@ Current scope: all device types, 2016–2026.
 Vigil-MD/
 ├── dags/
 │   ├── pull_samples_dag.py          # development DAG — 200 sample records
-│   └── vigil_md_acquisition.py      # production DAG — full pull to GCS
+│   ├── vigil_md_acquisition.py      # daily: FDA + GUDID → GCS, then starts vigil_md_load
+│   ├── vigil_md_load.py             # triggered: GCS → RAW → STAGING → PROD (BigQuery)
+│   └── vigil_md_full_load.py        # manual: first load, backfill, rebuild
 ├── scripts/
 │   ├── acquisition/
 │   │   ├── pull_samples.py          # pull 200 sample records per source
-│   │   ├── fetch_sources.py         # full bulk download → GCS
+│   │   ├── fetch_sources.py         # bulk download → GCS (--mode incremental | full)
+│   │   ├── gudid_convert.py         # GUDID: download once, keep zip, XML → NDJSON locally
 │   │   ├── upload_samples_to_gcs.py # upload sample NDJSON to GCS
-│   │   ├── load_samples_to_bq.py    # load raw samples into BigQuery
-│   │   └── load_interim_to_bq.py    # load processed Parquet into BigQuery
+│   │   ├── load_samples_to_bq.py    # load raw samples into BigQuery (sample tables)
+│   │   └── load_interim_to_bq.py    # load processed sample Parquet into BigQuery
+│   ├── warehouse/                   # RAW → STAGING → PROD (see "GCS → BigQuery pipeline")
+│   │   ├── schemas.py               # every warehouse table: columns, partitions, keys
+│   │   ├── create_tables.py         # create the datasets and tables (safe to re-run)
+│   │   ├── convert.py               # zip → {"payload": record} NDJSON (openFDA JSON, GUDID XML)
+│   │   ├── common.py                # shared GCS paths and pending-manifest helpers
+│   │   ├── unzip_to_ndjson.py       # step 1: zip in GCS → NDJSON in GCS
+│   │   ├── load_raw_to_bq.py        # step 2: NDJSON → RAW (idempotent, load_log)
+│   │   ├── build_staging.py         # step 3: RAW → STAGING (flatten, cast, dedup)
+│   │   ├── merge_prod.py            # step 4: STAGING → PROD (MERGE / --rebuild)
+│   │   └── sql/staging_*.sql        # per-source staging SQL (port of flatten_to_parquet.py)
 │   ├── preprocessing/
 │   │   ├── schema_map.py            # unified field mapping for all sources
-│   │   └── flatten_to_parquet.py    # normalize and flatten to Parquet
-│   └── matching/
-│       └── exact_linking.py         # UDI and recall-number exact joins
-├── tests/                           # pytest unit tests
+│   │   └── flatten_to_parquet.py    # normalize and flatten sample data to Parquet
+│   ├── matching/
+│   │   └── exact_linking.py         # UDI and recall-number exact joins
+│   └── logger.py                    # console + Logstash logger
+├── tests/                           # pytest (all GCP calls mocked) — see tests/TEST_CASES.md
+├── docs/
+│   ├── WAREHOUSE_PLAN.md            # warehouse design, decisions, and the go-live Runbook
+│   ├── TESTS_PLAN.md                # test plan for the warehouse code
+│   └── issue.md                     # known issues and limitations
 ├── data/                            # DVC-tracked (not in Git)
 │   ├── raw/samples/                 # 200-record sample JSON files
 │   └── interim/                     # flattened Parquet + linking outputs
-├── config.yaml                      # GCP project, bucket, scope settings
 ├── docker-compose.yaml              # Airflow with CeleryExecutor
+├── docker-compose.elk.yml           # Elasticsearch, Logstash, Kibana
 ├── .env.example                     # environment variable template
-├── dvc.yaml                         # DVC pipeline stages
 └── requirements.txt
 ```
 
@@ -55,12 +72,170 @@ Vigil-MD/
 
 ## GCP Resources
 
-| Resource | Name |
+| Resource | Name | Used by |
+|---|---|---|
+| Project | `vigil-md-1792696816` | everything |
+| GCS bucket | `vigil-md-raw-nd` | raw zips, NDJSON, manifests |
+| BigQuery `vigil_md_raw` | `*_raw` tables (warehouse) and `*_sample` tables (samples) | RAW layer |
+| BigQuery `vigil_md_staging` | `*_stg` tables | STAGING layer |
+| BigQuery `vigil_md_prod` | `enforcement`, `recall`, `maude`, `gudid` | PROD (source of truth) |
+| BigQuery `vigil_md_ops` | `load_log`, temporary `_tmp_*` tables | load bookkeeping |
+| BigQuery `vigil_md_processed` | `*_flat`, `links_maude_gudid` | sample pipeline (unchanged) |
+
+---
+
+## GCS → BigQuery pipeline
+
+Full design and decisions: [`docs/WAREHOUSE_PLAN.md`](docs/WAREHOUSE_PLAN.md).
+
+### Three DAGs
+
+| DAG | Schedule | What it does |
+|---|---|---|
+| `vigil_md_acquisition` | daily 06:00 UTC | Checks the FDA manifests. Fetches **only the sources that changed** to GCS (incremental). Validates GCS, logs a summary, then its last task `trigger_load` starts `vigil_md_load` with the same date. |
+| `vigil_md_load` | none (triggered) | Runs **only after acquisition is done**. Per source: unzip → load RAW → build STAGING → MERGE into PROD. |
+| `vigil_md_full_load` | none (manual) | First load, backfill, rebuild or recovery. Params: `sources`, `refetch`, `rebuild_prod`. |
+
+```
+vigil_md_acquisition (daily)                         vigil_md_load (triggered)
+check_manifest ─┬─ fetch.<changed sources> ─ validate_gcs ─ log_summary ─┐
+                ├─ (pending files only) ─────────────────────────────────┴─ trigger_load ──▶ load.<source>: unzip → load_raw → staging → merge
+                └─ no_update (nothing to do: no loading run)
+```
+
+When does `vigil_md_load` run?
+
+| Day | Loading run? |
 |---|---|
-| Project | vigil-md-1792696816 |
-| GCS bucket | vigil-md-raw-nd |
-| BigQuery (raw) | vigil_md_raw |
-| BigQuery (processed) | vigil_md_processed |
+| A source changed | Yes, after `log_summary` |
+| No FDA change, but files from an earlier failed load are pending | Yes (retry) |
+| No FDA change, nothing pending | No |
+| Acquisition failed (fetch, validation or summary) | No |
+| An acquisition run is cleared or retried | No second run (fixed `trigger_run_id`, `skip_when_already_exists`) |
+
+### How the incremental rules work
+
+| Rule | How |
+|---|---|
+| Incremental ingestion | Per partition (MAUDE quarter file, GUDID release), `records` + `size_mb` from `download.json` are compared with the saved state in `gs://vigil-md-raw-nd/manifests/partitions/{source}.json`. Unchanged → server-side copy in GCS, no download. |
+| Content-hash check | Changed or new → download and SHA-256. Same hash as last load → no load, even if the export path is new. A second hash on the unzipped records catches a new zip with the same records. |
+| Partition pruning | RAW and STAGING are partitioned by `_ingest_date` and **require a partition filter**. Staging reads one day of RAW. The MERGE limits PROD to the staging date range. |
+| Idempotent loading | `vigil_md_ops.load_log` records every loaded file + content hash. The raw load deletes and inserts one file's rows for one day in a single transaction. Staging replaces one day. The MERGE updates a row only when `record_hash` changed. |
+
+GUDID is an XML release (210 parts, about 5.2 million devices). It is converted to NDJSON **during the fetch** from a local temp copy, so it is never read back out of GCS. openFDA files are converted in the unzip step.
+
+### GCS layout
+
+| Path | What |
+|---|---|
+| `raw/{endpoint}/{export_date}/{quarter}/{file}.zip`, `raw/gudid/{snapshot}/{file}.zip` | Original downloads (source of record) |
+| `ndjson/{source}/{date}/{partition_key}.ndjson` | One line per record: `{"payload": <record>}` |
+| `manifests/manifest_state.json` | Export dates per source (read by `check_manifest`) |
+| `manifests/partitions/{source}.json` | Per-partition fingerprint and hashes (incremental state) |
+| `manifests/pending/{source}/*.json` | Files waiting to load. Deleted after the raw load commits. |
+| `_incoming/` | Temporary, during a download |
+
+### Going live (first time)
+
+Follow the **Runbook** at the end of [`docs/WAREHOUSE_PLAN.md`](docs/WAREHOUSE_PLAN.md). Short version:
+
+```bash
+# 1. Pool: one BigQuery writer at a time (shared by vigil_md_load and vigil_md_full_load)
+docker exec vigik-md-airflow-airflow-scheduler-1 airflow pools set vigil_warehouse 1 "BigQuery writers"
+
+# 2. Tables (already created; safe to re-run)
+docker exec -w /opt/airflow/Vigil-MD vigik-md-airflow-airflow-worker-1 \
+  python scripts/warehouse/create_tables.py --project vigil-md-1792696816
+
+# 3. Trigger vigil_md_full_load in the UI (try {"sources": ["recall"]} first),
+#    keep both daily DAGs paused while it runs, then check row counts (Runbook step 4)
+
+# 4. Unpause the loading DAG first, then acquisition
+docker exec vigik-md-airflow-airflow-scheduler-1 airflow dags unpause vigil_md_load
+docker exec vigik-md-airflow-airflow-scheduler-1 airflow dags unpause vigil_md_acquisition
+```
+
+Why this order: the incremental fetch **stops with an error** until a full load has written `manifests/partitions/*.json`.
+
+### Running a warehouse step by hand
+
+Every warehouse script has `--print-only`: it prints the plan and SQL and makes **no GCP call**. Run scripts inside the Airflow worker (it has the GCP libraries and credentials):
+
+```bash
+W="docker exec -w /opt/airflow/Vigil-MD vigik-md-airflow-airflow-worker-1 python"
+$W scripts/warehouse/unzip_to_ndjson.py --bucket vigil-md-raw-nd --source maude --scope changed --ingest-date 2026-10-25 --print-only
+$W scripts/warehouse/load_raw_to_bq.py  --project vigil-md-1792696816 --bucket vigil-md-raw-nd --source maude --scope changed --ingest-date 2026-10-25 --print-only
+$W scripts/warehouse/build_staging.py   --project vigil-md-1792696816 --source maude --ingest-date 2026-10-25 --print-only
+$W scripts/warehouse/merge_prod.py      --project vigil-md-1792696816 --source maude --ingest-date 2026-10-25 --print-only
+```
+
+To load one day by hand, trigger `vigil_md_load` with `{"ingest_date": "YYYY-MM-DD"}`. To rebuild PROD for a source, trigger `vigil_md_full_load` with `{"sources": ["maude"], "rebuild_prod": true}` (`merge_prod.py --rebuild` refuses to run without `--yes-rebuild`).
+
+---
+
+## BigQuery tables
+
+Defined in one place: [`scripts/warehouse/schemas.py`](scripts/warehouse/schemas.py). `create_tables.py` creates them and **raises if an existing table has different columns**. It never touches `vigil_md_processed.*` or `*_sample` tables.
+
+### Layers
+
+| Table | Partition | Cluster | Key | Contents |
+|---|---|---|---|---|
+| `vigil_md_raw.{source}_raw` | `_ingest_date` (DAY), filter required | `_source_file` | — | One row per source record, unchanged, in `payload` (JSON). Plus `_source_file`, `_source_partition`, `_zip_sha256`, `_content_sha256`, `_loaded_at`. |
+| `vigil_md_staging.{source}_stg` | `_ingest_date` (DAY), filter required | merge key | merge key | Flattened and typed columns, deduplicated per day, `record_hash`. |
+| `vigil_md_prod.{enforcement,recall,maude}` | `_part_date` (MONTH) = `COALESCE(record_date, 1900-01-01)` | merge key | merge key | Upserted source of truth. `first_loaded_at`, `last_updated_at`. |
+| `vigil_md_prod.gudid` | none (its dates change) | `source_record_id` | `source_record_id` | Same as above. |
+| `vigil_md_ops.load_log` | none | `source` | — | One row per loaded file: `source_file`, `zip_sha256`, `content_sha256`, `ingest_date`, `row_count`, `mode`, `loaded_at`. |
+
+`{source}` is `enforcement`, `recall`, `maude` or `gudid`.
+
+### Merge keys
+
+| Source | Merge key | Notes |
+|---|---|---|
+| enforcement | `source_record_id` (= `recall_number`) | |
+| recall | `source_record_id` (= `product_res_number`) | |
+| maude | `source_record_id` (= `mdr_report_key`) + `device_seq` | One row per device in `device[]`. A report with no devices keeps one row (`device_seq` 0). |
+| gudid | `source_record_id` (= `publicDeviceRecordKey`) | `udi_di` = the Primary `deviceId`. |
+
+Rows with a NULL merge key are not staged (a warning with the count is logged). RAW keeps them.
+
+### Columns (staging and prod)
+
+Same names as `flatten_to_parquet.py`. `record_date` / `publish_date` are DATE. Full lists: `schemas.FLAT_COLUMNS`.
+
+| Source | Columns |
+|---|---|
+| enforcement | `source`, `source_record_id`, `link_key`, `event_id`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `recall_class`, `reason_text`, `scope_text`, `record_date`, `status`, `distribution_pattern` |
+| recall | `source`, `source_record_id`, `link_key`, `res_event_number`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `product_code`, `reason_text`, `scope_text`, `record_date`, `recall_status`, `root_cause`, `action` |
+| maude | `source`, `source_record_id`, `device_seq`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `model_number_raw`, `catalog_number`, `lot_number`, `udi_di`, `product_code`, `record_date`, `event_type`, `adverse_event_flag`, `report_number` |
+| gudid | `source`, `source_record_id`, `udi_di`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `model_number_raw`, `catalog_number`, `product_codes` (ARRAY), `device_record_status`, `publish_date`, `distribution_status` |
+
+### Querying
+
+RAW and STAGING **reject queries without a filter on `_ingest_date`** (this keeps scans small):
+
+```sql
+-- PROD: the source of truth (no filter needed; filter on _part_date to scan less)
+SELECT source_record_id, manufacturer_name_norm, recall_class, record_date
+FROM `vigil-md-1792696816.vigil_md_prod.enforcement`
+WHERE _part_date >= '2024-01-01';
+
+-- RAW: the original record for one day
+SELECT JSON_VALUE(payload, '$.recall_number') AS recall_number, payload
+FROM `vigil-md-1792696816.vigil_md_raw.enforcement_raw`
+WHERE _ingest_date = '2026-10-26'
+LIMIT 10;
+
+-- All history (any filter on the partition column works)
+SELECT COUNT(*) FROM `vigil-md-1792696816.vigil_md_staging.maude_stg`
+WHERE _ingest_date >= '1900-01-01';
+
+-- What was loaded, per source
+SELECT source, COUNT(*) AS files, SUM(row_count) AS rows, MAX(loaded_at) AS last_load
+FROM `vigil-md-1792696816.vigil_md_ops.load_log`
+GROUP BY source;
+```
 
 ---
 
@@ -69,7 +244,7 @@ Vigil-MD/
 | Branch | Purpose |
 |---|---|
 | `main` | Stable code — all scripts |
-| `airflow-integration` | All scripts + Docker + both DAGs |
+| `airflow-integration` | All scripts + Docker + DAGs + the GCS → BigQuery warehouse |
 | `airflow-setup` | Teammate's original Docker setup |
 | `sample-data-pull` | Original sample pull work |
 
@@ -100,6 +275,8 @@ gcloud config set project vigil-md-1792696816
 gcloud auth application-default set-quota-project vigil-md-1792696816
 ```
 
+The Airflow containers mount `~/.config/gcloud` read-only. They need `~/.config/gcloud/application_default_credentials.json`, which `gcloud auth application-default login` creates.
+
 **Pull versioned data with DVC:**
 
 ```bash
@@ -112,7 +289,7 @@ This downloads all sample JSON files and processed Parquet files from GCS. No ne
 
 ## Running the Pipeline
 
-### Option A — Manual (step by step)
+### Option A — Manual (step by step, sample data)
 
 ```bash
 # 1. Pull 200 sample records per source
@@ -133,16 +310,23 @@ python scripts/acquisition/load_interim_to_bq.py \
     --bucket vigil-md-raw-nd
 ```
 
-### Option B — Full data pull (2016–2026)
+### Option B — Full data pull to GCS (2016–2026)
 
 ```bash
 python scripts/acquisition/fetch_sources.py \
     --bucket vigil-md-raw-nd \
     --start-year 2016 \
-    --end-year 2026
+    --end-year 2026 \
+    --mode full
 ```
 
-Streams all FDA sources directly to GCS. Takes 20–40 minutes. Re-running is safe — files already in GCS are skipped automatically. Use `--dry-run` to preview what will be downloaded without downloading anything.
+Streams all FDA sources directly to GCS. Re-running is safe — files already in GCS are skipped automatically. Use `--dry-run` to preview what will be downloaded without downloading anything.
+
+`--mode incremental` is the default (used by the daily DAG). It **raises** until a full load has written the partition state, so use `--mode full` for a first pull.
+
+### Option C — GCS → BigQuery
+
+Use the DAGs (see "GCS → BigQuery pipeline"). For one step by hand, see "Running a warehouse step by hand".
 
 ---
 
@@ -161,6 +345,9 @@ docker compose up -d
 # 4. Open the UI
 open http://localhost:8080
 # Login: airflow / airflow
+
+# 5. Create the warehouse pool (first time only)
+docker exec vigik-md-airflow-airflow-scheduler-1 airflow pools set vigil_warehouse 1 "BigQuery writers"
 ```
 
 ## Running ELK Stack (Logging)
@@ -200,7 +387,9 @@ those pipeline runs. Elasticsearch data persists in a Docker volume
 | DAG | Purpose | When to use |
 |---|---|---|
 | `pull_samples` | Pulls 200 sample records per source | Development and testing |
-| `vigil_md_acquisition` | Full pull to GCS with validation | Production |
+| `vigil_md_acquisition` | Daily incremental pull to GCS with validation; starts `vigil_md_load` | Production |
+| `vigil_md_load` | GCS → RAW → STAGING → PROD | Production (started by acquisition) |
+| `vigil_md_full_load` | First load, backfill, rebuild | Manual |
 
 **Everyday commands:**
 
@@ -218,8 +407,11 @@ docker compose down -v                     # stop and wipe database
 |---|---|
 | Port 8080 in use | Change `8080:8080` mapping in `docker-compose.yaml` |
 | Task fails writing to `data/` | Set `AIRFLOW_UID` in `.env` to your `id -u`, restart |
-| DAG missing from UI | Check `docker compose logs airflow-dag-processor` |
+| DAG missing from UI | Check `docker compose logs airflow-dag-processor`. New DAG files are picked up within 5 minutes. |
 | `import requests` fails in task | Add `requests` to `_PIP_ADDITIONAL_REQUIREMENTS` in `.env` |
+| Warehouse tasks never start | Create the `vigil_warehouse` pool (see above) |
+| `No partition state for <source>. Run vigil_md_full_load first.` | Run the full load once (Runbook) |
+| GCS calls fail with an auth error in tasks | Run `gcloud auth application-default login` on the host |
 
 ---
 
@@ -241,9 +433,42 @@ git push
 
 ## Testing
 
+All GCP calls are mocked: **no test touches real GCS or BigQuery**. Test logs never reach Logstash (an autouse fixture). The case list is in [`tests/TEST_CASES.md`](tests/TEST_CASES.md).
+
 ```bash
-pytest tests/ -v
+# Everything except the two pandas-based files
+~/.venvs/vigil-airflow/bin/python -m pytest tests \
+    --ignore=tests/test_data_quality.py --ignore=tests/test_preprocessing.py
+# 2026-10-25: 293 passed, 50 skipped (no local data/interim), 21 deselected (integration)
+
+# Real-GCS checks of the raw files (needs credentials; run by the validate_gcs task)
+~/.venvs/vigil-airflow/bin/python -m pytest tests -m integration
 ```
+
+The warehouse conversion tests need `ijson` (in `requirements.txt`). The WSL venvs are made with `uv` and have no `pip`: `~/.local/bin/uv pip install --python ~/.venvs/vigil-airflow/bin/python ijson`.
+
+The BigQuery SQL is checked by hand with free dry runs. See "Manual checks" in `tests/TEST_CASES.md`.
+
+---
+
+## Known limitations and issues
+
+- **MAUDE scope is 2016–2026 by design** (`START_YEAR` / `END_YEAR` in the DAGs). Quarters from 2027 on are not fetched. To extend it, change `END_YEAR` in `vigil_md_acquisition.py` and `vigil_md_full_load.py`.
+- Open issues are tracked in [`docs/issue.md`](docs/issue.md). Examples: the parallel fetch tasks can overwrite `manifest_state.json` keys (#5), task logs appear only when a task ends (#8), and the manufacturer suffix rule turns `"Tesco"` into `"tes"` (#13).
+
+---
+
+## Changes
+
+### 2026-10-25 — GCS → BigQuery warehouse (RAW → STAGING → PROD)
+
+- **New BigQuery layers:** `vigil_md_raw.*_raw`, `vigil_md_staging.*_stg`, `vigil_md_prod.*`, `vigil_md_ops.load_log` (`scripts/warehouse/`). Existing `*_sample` and `vigil_md_processed.*` tables are unchanged.
+- **Incremental fetch:** `fetch_sources.py --mode incremental` (new default) with per-partition fingerprint and SHA-256 checks, pending manifests, and a server-side copy for unchanged files. `--mode full` keeps the old behaviour.
+- **GUDID:** the bulk release is XML, not JSON. It is converted to NDJSON during the fetch (`gudid_convert.py`), from a local copy, with part and record counts checked against the XML header.
+- **DAGs:** `vigil_md_acquisition` now fetches only changed sources and starts the new `vigil_md_load` when it is done. New manual `vigil_md_full_load`. All BigQuery writers share the 1-slot pool `vigil_warehouse`.
+- **Tests:** 238 new mocked tests (`tests/test_*` for the warehouse, `tests/dags/test_warehouse_dags.py`), shared in-memory GCS / HTTP fakes, and a Logstash guard in `tests/conftest.py`.
+- **Docs:** `docs/WAREHOUSE_PLAN.md` (design + Runbook), `docs/TESTS_PLAN.md`, `docs/issue.md`. `docs/` is no longer ignored by git.
+- **Fixed during the work:** a failed conversion could leave a partial NDJSON file in GCS (`docs/issue.md` #12); the GUDID MERGE bounds query used an untyped NULL.
 
 ---
 
@@ -256,7 +481,8 @@ pytest tests/ -v
 - [x] Full bulk download (2016–2026)
 - [x] Airflow DAG with Docker
 - [x] DVC data versioning
-- [ ] Test modules
+- [x] Test modules
+- [x] Incremental RAW → STAGING → PROD warehouse in BigQuery (go-live: Runbook)
 - [ ] Candidate generation and ML matching
 - [ ] Unified BigQuery database with provenance
 - [ ] Chat interface for recall history search

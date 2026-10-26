@@ -1,6 +1,8 @@
 # Vigil-MD test cases
 
-170 collected test cases across 8 files. All GCP calls are mocked (`fake_gcp` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`).
+408 collected test cases across 18 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
+
+Files 9–18 cover the RAW → STAGING → PROD warehouse (`docs/WAREHOUSE_PLAN.md`), added by `docs/TESTS_PLAN.md`.
 
 ## How to run
 
@@ -11,6 +13,8 @@
 | Real-GCS integration checks only (needs credentials) | `~/.venvs/vigil-airflow/bin/python -m pytest tests -m integration` |
 
 `test_data_quality.py` and `test_preprocessing.py` need pandas, which neither venv has yet. Until it's installed, add `--ignore=tests/test_data_quality.py --ignore=tests/test_preprocessing.py`.
+
+The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-airflow` (with `~/.local/bin/uv pip install --python ~/.venvs/vigil-airflow/bin/python ijson`; the venv has no pip).
 
 ## Summary
 
@@ -24,6 +28,16 @@
 | `test_data_quality.py` | Data quality on `data/interim/*.parquet` | 19 | not run (pandas not installed in test venvs) |
 | `test_preprocessing.py` | Normalization helpers | 25 | not run (pandas not installed in test venvs) |
 | `test_raw_data_integration.py` | Raw files in the `vigil-md-raw-nd` GCS bucket | 21 | deselected by default (integration); run by the `validate_gcs` task |
+| `test_fakes.py` | The shared test fakes and the Logstash guard | 13 | pass |
+| `test_convert.py` | zip → `{"payload": record}` NDJSON (openFDA JSON, GUDID XML) | 17 | pass |
+| `test_gudid_convert.py` | GUDID: download once, keep the zip, convert locally | 8 | pass |
+| `test_fetch_incremental.py` | `fetch_sources.py` incremental mode | 29 | pass |
+| `test_unzip_to_ndjson.py` | Unzip step and `--scope all` file list | 14 | pass |
+| `test_load_raw_to_bq.py` | Idempotent RAW load into BigQuery (mocked) | 23 | pass |
+| `test_schemas.py` | Warehouse table definitions | 24 | pass |
+| `test_build_staging.py` | STAGING SQL (flatten, cast, dedup) | 30 | pass |
+| `test_merge_prod.py` | MERGE into PROD and `--rebuild` | 33 | pass |
+| `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 47 | pass |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 
@@ -147,6 +161,133 @@ Runs only with `-m integration`, and needs `google-cloud-storage` and credential
 | `test_manifest_state_exists` | 1 | `manifests/manifest_state.json` exists |
 | `test_manifest_has_all_export_dates` | 1 | The manifest records every export date |
 
+## 9. `test_fakes.py`: shared fakes (no GCP)
+
+The fakes model google-cloud-storage 3.14. A fake that did not hid a real bug (`docs/issue.md` #12).
+
+| Test | What it checks |
+|---|---|
+| `test_logstash_handler_never_connects` | With the autouse guard, logging never opens a Logstash connection |
+| `test_wb_write_is_stored_on_success` / `test_wb_write_leaves_no_object_on_error` | `open("wb")`: stored on success, no object after an exception (BlobWriter terminate) |
+| `test_wt_write_is_finalized_even_on_error` | `open("wt")`: finalized even after an exception (the real TextIOWrapper behaviour) |
+| `test_rb_reads_and_missing_object_raises`, `test_upload_download_delete`, `test_copy_and_rename`, `test_metadata_patch_persists`, `test_list_blobs_filters_sorts_and_limits` | The rest of the FakeBucket / FakeBlob API |
+| `test_session_routes_records_and_streams` | FakeSession routes, records calls, streams chunks, raises on 4xx/5xx |
+| `test_openfda_zip_*`, `test_gudid_zip_*` | The zip builders produce the real file layouts and header counts |
+
+## 10. `test_convert.py`: zip → NDJSON (no GCP)
+
+| Test | What it checks |
+|---|---|
+| `test_openfda_payload_equals_source_records`, `test_openfda_floats_stay_floats` | Records come out unchanged; floats stay floats (`ijson use_float`) |
+| `test_openfda_zero_records_raises`, `test_openfda_needs_exactly_one_json_member` (2) | 0 records, or 0 / 2 `.json` members, raise |
+| `test_hash_is_stable_across_meta_key_order_and_member_name`, `test_hash_changes_when_one_record_changes` | The content hash ignores meta, key order and file name, and changes with any record |
+| `test_gudid_device_fields`, `test_gudid_plural_wrappers_are_always_lists`, `test_xml_to_value_repeated_tags_and_attributes` | XML → dict: namespace stripped, `xsi:nil` → null, text exact, wrappers always lists, repeated tags → lists, attributes → `@name` |
+| `test_gudid_parts_are_read_in_part_order`, `test_gudid_parts_rejects_missing_part`, `test_gudid_parts_rejects_mixed_totals` | Parts 1..N in order; a missing part or mixed totals raise |
+| `test_gudid_part_count_must_match_header`, `test_gudid_total_must_match_header` | Device counts must match `numberRecordXML` and `numberRecordsDatabase` |
+| `test_gudid_hash_is_stable_across_new_part_names` | A new release date in the part names does not change the hash |
+| `test_utf8_writer_encodes_and_never_closes` | `Utf8Writer` writes UTF-8 and has no `close` |
+
+## 11. `test_gudid_convert.py`: GUDID during the fetch (FakeBucket, FakeSession)
+
+| Test | What it checks |
+|---|---|
+| `test_new_release_loads` | `load`: original zip kept, NDJSON written, hashes in blob metadata |
+| `test_same_zip_bytes_copies_server_side_and_does_not_convert` | `unchanged_hash`: server-side copy, no NDJSON |
+| `test_new_bytes_same_records_removes_ndjson` | `unchanged_content`: NDJSON removed, zip kept |
+| `test_conversion_error_raises_and_leaves_no_ndjson` | Regression #12: an error leaves no NDJSON object |
+| `test_ndjson_is_written_in_binary_mode` | Regression #12: the NDJSON blob is opened `"wb"`, never `"wt"` |
+| `test_put_zip_skips_existing_object`, `test_fetch_and_convert_downloads_once_and_cleans_temp`, `test_ndjson_name_uses_snapshot_and_fixed_key` | No re-upload; one download; temp file removed; NDJSON path |
+
+## 12. `test_fetch_incremental.py`: incremental fetch (FakeBucket, FakeSession, fake_gcp)
+
+| Test | What it checks |
+|---|---|
+| `test_classify_partition` (6), `test_classify_partition_gudid_fingerprint`, `test_openfda_partition_key_is_quarter_and_file` | Change detection, including nulls and the GUDID release-date fingerprint |
+| `test_same_fingerprint_copies_without_download`, `test_same_fingerprint_and_target_exists_is_skipped` | Unchanged partition: server-side copy or skip, 0 downloads |
+| `test_changed_fingerprint_same_hash_is_not_pending`, `test_null_fingerprint_downloads_and_compares` | Same SHA-256 under a new path: nothing pending, `_incoming/` cleaned |
+| `test_new_content_is_pending_and_state_untouched`, `test_new_partition_loads`, `test_dry_run_downloads_and_writes_nothing` | New content: pending entry; hashes not written before the raw load |
+| `test_missing_partition_state_raises`, `test_empty_pending_writes_nothing`, `test_pending_and_partition_state_paths` | State helpers |
+| `test_gudid_*` (6) | GUDID: converted pending entry, same snapshot not downloaded, `unchanged_content`, `unchanged_hash`, dry run, full mode does not convert |
+| `test_main_incremental_checks_all_state_before_any_download`, `test_main_incremental_new_partition_writes_pending`, `test_main_full_mode_never_reads_partition_state`, `test_main_keeps_every_manifest_state_key` (2) | `main()` orchestration; `manifest_state.json` keeps every key |
+
+## 13. `test_unzip_to_ndjson.py`: unzip step (FakeBucket, fake_gcp)
+
+| Test | What it checks |
+|---|---|
+| `test_pick_latest_*` (4) | `--scope all`: newest export folder only, GUDID fixed key, 2 GUDID zips raise, empty |
+| `test_apply_content_check` (3) | New / changed / unchanged → `skip_load` |
+| `test_process_entry_*` (3) | NDJSON written and entry filled; zip hash mismatch raises; unchanged content refreshes pointers, never `content_sha256` |
+| `test_main_changed_skips_entries_already_converted`, `test_main_all_writes_a_full_manifest`, `test_main_nothing_pending_writes_nothing` | `main()` scopes |
+| `test_print_only_imports_no_gcp` | `--print-only` loads no `google.cloud` |
+
+## 14. `test_load_raw_to_bq.py`: idempotent RAW load (fake_gcp, FakeBucket)
+
+| Test | What it checks |
+|---|---|
+| `test_delete_is_limited_to_one_day_and_one_file`, `test_row_count_check_comes_before_the_transaction`, `test_statement_order`, `test_every_sql_parameter_is_bound`, `test_query_params_values` | SQL structure and parameters |
+| `test_manifest_in_scope` (4), `test_check_entry_*` (3), `test_tmp_table_is_always_in_ops_dataset`, `test_state_after_load_has_the_hashes` | Helpers |
+| `test_load_entry_loads_runs_script_and_drops_temp`, `test_load_entry_drops_temp_even_on_error`, `test_already_loaded_reads_the_count` (2) | BigQuery calls (mocked); temp table dropped in `finally` |
+| `test_main_*` (5) | New file loads; already loaded → skipped, state healed; `skip_load` not loaded; each scope deletes only its own manifest; a load error keeps the manifest |
+
+## 15. `test_schemas.py`: table definitions (no GCP)
+
+| Test | What it checks |
+|---|---|
+| `test_thirteen_tables` | 4 raw, 4 staging, 4 prod, 1 load_log |
+| `test_cluster_and_partition_fields_are_columns` (13), `test_merge_keys_are_staging_and_prod_columns` (4) | Every cluster, partition and merge key field exists; staging/prod cluster on the merge key |
+| `test_raw_and_staging_require_a_partition_filter`, `test_prod_partitioning`, `test_gudid_merge_key_is_public_device_record_key` | Partitioning rules; GUDID key |
+| `test_protected_tables_are_refused` (2) | `vigil_md_processed.*` and `*_sample` are refused |
+| `test_create_tables_print_only_makes_no_gcp_call` | `create_tables.py --print-only` |
+
+## 16. `test_build_staging.py`: STAGING SQL (fake_gcp)
+
+| Test | What it checks |
+|---|---|
+| `test_source_sql_is_valid`, `test_insert_columns_match_schemas`, `test_reads_one_raw_partition_and_writes_one_staging_partition`, `test_dedup_and_null_key_filter`, `test_statement_order`, `test_record_hash_covers_business_columns_only` (4 each) | Per source: columns = `schemas.py`, one partition in and out, dedup on the merge key, null keys dropped, order, hash on business columns only |
+| `test_maude_keeps_reports_without_devices` | Empty `device[]` keeps one row |
+| `test_validator_rejects_bad_sql` (3) | Missing partition filter, missing column, missing raw-table token |
+| `test_empty_raw_partition_runs_no_script`, `test_staging_script_runs_after_the_count` | `main()`: empty day → no script; counts in the summary |
+
+## 17. `test_merge_prod.py`: MERGE and rebuild (fake_gcp)
+
+| Test | What it checks |
+|---|---|
+| `test_prune_only_date_partitioned_sources` | `PRUNE_BY_DATE` only for date-partitioned prod tables |
+| `test_on_clause`, `test_insert_columns_equal_prod_columns`, `test_update_changes_only_changed_rows_and_keeps_first_loaded_at`, `test_daily_merge_never_deletes`, `test_merge_and_duplicate_check_share_one_transaction`, `test_rebuild_keeps_the_table` (4 each) | Per source: ON clause, columns, UPDATE rules, no deletes, one transaction with the duplicate check, rebuild keeps the table |
+| `test_bounds_for_gudid_uses_a_typed_null` | Regression: untyped NULL (INT64) vs DATE failed in BigQuery |
+| `test_bounds_for_date_sources_skip_the_sentinel` | The NULL-date sentinel does not widen the range |
+| `test_rebuild_without_confirmation_refuses`, `test_ingest_date_required_without_rebuild`, `test_empty_staging_partition_runs_no_merge` | CLI guards |
+| `test_merge_gets_the_staging_date_range`, `test_all_null_dates_match_only_the_sentinel`, `test_gudid_merge_has_no_date_params` | Query parameters passed to the MERGE |
+
+## 18. `dags/test_warehouse_dags.py`: warehouse DAGs
+
+Skipped when Airflow isn't installed. No `dag.test()`: the tasks call real scripts.
+
+| Test | What it checks |
+|---|---|
+| `test_all_warehouse_dags_parse` | The 3 DAGs load with no import errors |
+| `test_acquisition_schedule_is_unchanged`, `test_acquisition_branch_targets`, `test_acquisition_trigger_rules`, `test_acquisition_has_no_warehouse_tasks`, `test_fetch_one_source_uses_incremental_mode` | Acquisition DAG: schedule, branch targets (`trigger_load`), trigger rules, no loading tasks left, incremental fetch |
+| `test_trigger_load_starts_the_loading_dag_once` | `trigger_load` starts `vigil_md_load` with `conf={"ingest_date": "{{ ds }}"}`, a fixed run id and `skip_when_already_exists`, so a retried acquisition does not load twice |
+| `test_branch_*` (4) | `check_manifest`: changed sources only, new GUDID snapshot, pending files only (→ `trigger_load`), no update |
+| `test_load_dag_is_triggered_only`, `test_load_dag_chain` (4) | Loading DAG: no schedule, `max_active_runs=1`, 4 chains in pool `vigil_warehouse`, each chain → alert |
+| `test_resolve_ingest_date` (3), `test_resolve_ingest_date_rejects_missing_or_bad` (2), `test_load_step_uses_the_triggered_ingest_date` | `ingest_date`: trigger conf, then param, then `ds`; missing or bad dates raise |
+| `test_warehouse_args_parse` (4), `test_full_load_args_parse` (5), `test_full_load_args_modes` | Every argument list is accepted by its script (`--print-only`, subprocess) |
+| `test_full_load_is_manual_with_params`, `test_full_load_chain` (4), `test_selected_sources_rejects_bad_params` (3) | Full-load DAG: manual, params, chains |
+| `test_guard_passes_when_no_daily_run`, `test_guard_fails_when_a_daily_dag_runs` (2), `test_refetch_*` (2), `test_unselected_source_is_skipped`, `test_rebuild_flags_only_on_merge` | Guard (checks both daily DAGs), refetch, skip and rebuild logic |
+
+## Manual checks (real BigQuery, not in pytest)
+
+These need real BigQuery, so they are not tests (no real GCP in pytest). They were run by hand on 2026-10-25 with the user's approval. Re-run them after any SQL change.
+
+| Check | Result on 2026-10-25 |
+|---|---|
+| Dry run of the RAW load script and each statement (`load_raw_to_bq.py`) | Pass. A DELETE without the `_ingest_date` filter is rejected, as intended |
+| Dry run of the 4 staging scripts (`build_staging.py`) | Pass |
+| Dry run of bounds, MERGE, rebuild and date-stability SQL (`merge_prod.py`) | Pass after a fix (GUDID typed NULL) |
+| Parity: `norm_date` / `norm_mfr` vs `normalize_date` / `normalize_manufacturer`, on inline values (0 bytes read) | Match on 23 of 24 values. The impossible date `20241399` gives NULL in SQL (intended). The suffix bugs are copied on purpose (`docs/issue.md` #13) |
+| Parity: each staging SELECT vs `flatten_*` on inline payloads | Enforcement, recall and MAUDE: 0 cell differences. GUDID: matches hand-written expectations |
+| GUDID fetch-time conversion on a real GCS sample (`samples/gudid/gudid_sample_20261001.zip`) | T1–T4 pass after the #12 fix |
+
 ## Known open issues
 
 1. **Null-typed Parquet column (unverified here):** on test-cases data, `gudid_flat.parquet` had `publish_date` typed `null`, which BigQuery probably can't load. If it recurs, the fix belongs in `flatten_to_parquet.py`: cast all-null columns to an explicit type.
@@ -154,6 +295,7 @@ Runs only with `-m integration`, and needs `google-cloud-storage` and credential
 
 ## Not covered
 
-- Real BigQuery behavior, and real GCS outside the opt-in integration file (deliberately avoided; see the mocking note at the top).
+- Real BigQuery behavior, and real GCS outside the opt-in integration file (deliberately avoided; see the mocking note at the top). The warehouse SQL is checked by hand instead (see "Manual checks").
+- End-to-end DAG runs of `vigil_md_acquisition` and `vigil_md_full_load` (`dag.test()` would run the real scripts).
 - `flatten_to_parquet.py` is covered only through its helper functions in `test_preprocessing.py`.
 - `pull_samples.py` and `exact_linking.py` have no unit tests yet.

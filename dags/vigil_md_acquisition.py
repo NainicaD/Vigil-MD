@@ -1,17 +1,22 @@
-"""Vigil MD — Data Acquisition DAG
+"""Vigil MD — Daily acquisition DAG: FDA + GUDID → GCS
 
-Handles the full data pull from FDA and GUDID into GCS.
-Runs daily, skips if nothing changed (fetch_sources.py handles this).
+Runs daily. Fetches only sources that changed, then starts the loading DAG
+(vigil_md_load.py: GCS → RAW → STAGING → PROD). See docs/WAREHOUSE_PLAN.md.
 
 Tasks:
-  1. check_manifest    — check if FDA data has updated
-  2. fetch.*           — run fetch_sources.py per source, stream to GCS
+  1. check_manifest    — branch: changed sources' fetch tasks + trigger_load,
+                         or trigger_load alone (pending files from an earlier
+                         failed load), or no_update
+  2. fetch.*           — fetch_sources.py --mode incremental per changed source
+                         (fingerprint + SHA-256 checks, pending manifests;
+                         GUDID converts XML → NDJSON during the fetch)
   3. validate_gcs      — confirm expected files landed in GCS
   4. log_summary       — log file counts and sizes to Airflow
-  5. alert_on_failure  — triggered only if any task fails
+  5. trigger_load      — start vigil_md_load with conf {"ingest_date": ds},
+                         only after acquisition is done
+  6. alert_on_failure  — triggered only if any task fails
 
-Teammate's DAG (vigil_md_pipeline.py) picks up from GCS
-and handles preprocessing, entity resolution, and BigQuery loading.
+The full load / backfill is a separate manual DAG (vigil_md_full_load.py).
 """
 from __future__ import annotations
 
@@ -29,6 +34,7 @@ from airflow import DAG
 from airflow.sdk import TaskGroup
 from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
 from airflow.providers.standard.operators.empty import EmptyOperator
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.task.trigger_rule import TriggerRule
 
 log = logging.getLogger(__name__)
@@ -39,6 +45,7 @@ PYTHON     = sys.executable
 BUCKET     = "vigil-md-raw-nd"
 START_YEAR = 2016
 END_YEAR   = 2026
+LOAD_DAG_ID = "vigil_md_load"          # started by trigger_load
 
 default_args = {
     "owner":            "nainica",
@@ -111,7 +118,15 @@ def run_pytest(test_path: str, marker: str, env: dict[str, str] | None = None) -
 def check_manifest(**context):
     """
     Hit openFDA download.json and compare export_dates to last run.
-    Returns the four fetch.* task IDs if anything changed, 'no_update' if not.
+
+    Returns:
+      changed sources' fetch.* task IDs + "trigger_load"   (something changed)
+      "trigger_load"      (nothing changed, but pending files wait to load)
+      "no_update"         (nothing to do; no loading run)
+
+    trigger_load is listed with the fetch tasks on purpose: a branch skips
+    every direct downstream task it does not return, and trigger_load is one.
+    It still waits for log_summary before it runs.
     """
     import requests
     from google.cloud import storage
@@ -130,13 +145,14 @@ def check_manifest(**context):
         if state_blob.exists() else {}
     )
 
-    changed = False
-    for endpoint in ["enforcement", "recall", "event"]:
+    changed: list[str] = []
+    for endpoint, source in [("enforcement", "enforcement"),
+                             ("recall", "recall"), ("event", "maude")]:
         new_date = device[endpoint]["export_date"]
         old_date = state.get(f"openfda_{endpoint}_export_date")
         if new_date != old_date:
             log.info("%s changed: %s → %s", endpoint, old_date, new_date)
-            changed = True
+            changed.append(source)
         else:
             log.info("%s unchanged: %s", endpoint, new_date)
 
@@ -155,17 +171,23 @@ def check_manifest(**context):
             if snapshot != state.get("gudid_snapshot"):
                 log.info("GUDID changed: %s → %s",
                          state.get("gudid_snapshot"), snapshot)
-                changed = True
+                changed.append("gudid")
             else:
                 log.info("GUDID unchanged: %s", snapshot)
             break
 
     if changed:
-        log.info("Changes detected — triggering full fetch")
-        return [f"fetch.fetch_{s}" for s in ("enforcement", "recall", "maude", "gudid")]
-    else:
-        log.info("No changes — skipping fetch")
-        return "no_update"
+        log.info("Changes detected — fetching: %s", ", ".join(changed))
+        return [f"fetch.fetch_{s}" for s in changed] + ["trigger_load"]
+
+    # Nothing new upstream, but an earlier load may have left files to load
+    pending = list(client.list_blobs(BUCKET, prefix="manifests/pending/", max_results=1))
+    if pending:
+        log.info("No changes, but pending manifests exist (%s) — triggering the load",
+                 pending[0].name)
+        return "trigger_load"
+    log.info("No changes — skipping fetch")
+    return "no_update"
 
 
     
@@ -174,13 +196,14 @@ def check_manifest(**context):
 # ── Task 2 — Fetch all sources ────────────────────────────────────────────────
 
 def fetch_one_source(source: str, **context):
-    """Run fetch_sources.py for a single source."""
+    """Run fetch_sources.py for a single source (incremental mode)."""
     run_script(
         "scripts/acquisition/fetch_sources.py",
         "--bucket",     BUCKET,
         "--source",     source,
         "--start-year", str(START_YEAR),
         "--end-year",   str(END_YEAR),
+        "--mode",       "incremental",
     )
     log.info("%s fetch completed successfully", source)
 
@@ -311,11 +334,12 @@ def alert_on_failure(**context):
 
 with DAG(
     dag_id="vigil_md_acquisition",
-    description="Vigil MD — Pull all FDA sources and GUDID into GCS",
+    description="Vigil MD — Incremental FDA + GUDID pull into GCS, then starts vigil_md_load",
     default_args=default_args,
     start_date=datetime(2026, 10, 1),
     schedule="0 6 * * *",   # daily at 6am
     catchup=False,
+    max_active_runs=1,
     tags=["vigil-md", "acquisition", "fda"],
 ) as dag:
 
@@ -361,12 +385,30 @@ with DAG(
     validate = PythonOperator(
         task_id="validate_gcs",
         python_callable=validate_gcs,
+        # Only changed sources are fetched; the others are skipped by the branch
+        trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
     )
 
     # ── Log summary ───────────────────────────────────────────────────────────
     summary = PythonOperator(
         task_id="log_summary",
         python_callable=log_summary,
+    )
+
+    # ── Start the loading DAG (only after acquisition is done) ────────────────
+    # Runs after log_summary (sources fetched), or straight from the branch when
+    # only pending files from an earlier failed load are left. A failed fetch,
+    # validation or summary means no loading run.
+    # trigger_run_id + skip_when_already_exists: a cleared or retried
+    # acquisition run does not start a second loading run.
+    trigger_load = TriggerDagRunOperator(
+        task_id="trigger_load",
+        trigger_dag_id=LOAD_DAG_ID,
+        trigger_run_id="acq__{{ run_id }}",
+        conf={"ingest_date": "{{ ds }}"},
+        skip_when_already_exists=True,
+        wait_for_completion=False,
+        trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
     )
 
     # ── Alert on failure ──────────────────────────────────────────────────────
@@ -377,6 +419,6 @@ with DAG(
     )
 
     # ── Dependencies ──────────────────────────────────────────────────────────
-    check >> [fetch_group, no_update]
-    fetch_group >> validate >> summary
-    [fetch_group, validate, summary] >> alert
+    check >> [fetch_group, no_update, trigger_load]
+    fetch_group >> validate >> summary >> trigger_load
+    [fetch_group, validate, summary, trigger_load] >> alert
