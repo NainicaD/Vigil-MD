@@ -55,8 +55,11 @@ RULES: dict[str, dict] = {
     },
     "gudid": {
         "in_set":  {"device_record_status": (["Published"], 0.99)},
-        # baseline: UDI-DI lengths 7 to 23 (different issuing agencies)
-        "lengths": {"udi_di": ((7, 23), 1.0)},
+        # UDI-DI lengths 6 to 23. The 2026-10-26 baseline (top 20 lengths) showed
+        # 7-23, but the full check found 312 six-character IDs (e.g. ABCRA1), all
+        # HIBCC: 4-char labeler code + product code + 1-digit unit of measure,
+        # so 6 is the shortest valid HIBCC device identifier.
+        "lengths": {"udi_di": ((6, 23), 1.0)},
         "dates":   ["publish_date"],
     },
 }
