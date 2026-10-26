@@ -6,7 +6,7 @@ This module downloads the zip from AccessGUDID to a local temp file once:
 
   1. upload the original zip to raw/gudid/{snapshot}/   (source of record)
   2. convert the XML from the local file, stream NDJSON to
-     ndjson/gudid/{snapshot}/full_release.ndjson        (no GCS read-back)
+     ndjson/gudid/{snapshot}/full_release.ndjson.gz     (no GCS read-back)
 
 Hash checks (same rules as the other sources):
   zip SHA-256 == saved zip_sha256        → "unchanged_hash"    no convert, no load
@@ -25,7 +25,8 @@ from pathlib import Path
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.logger import get_logger
-from scripts.warehouse.convert import NDJSON_PREFIX, Utf8Writer, convert_zip
+from scripts.warehouse.convert import (NDJSON_PREFIX, NDJSON_SUFFIX, Utf8Writer,
+                                       convert_zip, convert_zip_gz)
 log = get_logger("gudid_convert")
 
 CHUNK_SIZE      = 8 * 1024 * 1024   # same as fetch_sources.py
@@ -33,7 +34,7 @@ GUDID_PARTITION = "full_release"    # same key as fetch_sources.GUDID_PARTITION
 
 
 def ndjson_name_for(snapshot: str) -> str:
-    return f"{NDJSON_PREFIX}/gudid/{snapshot}/{GUDID_PARTITION}.ndjson"
+    return f"{NDJSON_PREFIX}/gudid/{snapshot}/{GUDID_PARTITION}{NDJSON_SUFFIX}"
 
 
 # ── Steps ─────────────────────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ def convert_local_zip(bucket, local_path: str, ndjson_name: str,
     """
     blob = bucket.blob(ndjson_name)
     with open(local_path, "rb") as zf, blob.open("wb") as raw:
-        rows, content_sha = convert_zip(zf, Utf8Writer(raw), "gudid")
+        rows, content_sha = convert_zip_gz(zf, raw, "gudid")
     blob.metadata = {"zip_sha256": zip_sha, "content_sha256": content_sha,
                      "row_count": str(rows)}
     blob.patch()

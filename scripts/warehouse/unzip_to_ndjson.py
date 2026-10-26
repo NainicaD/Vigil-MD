@@ -36,13 +36,12 @@ import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from google.cloud.storage.retry import DEFAULT_RETRY
-
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.logger import get_logger
 from scripts.warehouse import common
 from scripts.warehouse.convert import (  # noqa: F401  (re-exported for callers)
+    convert_zip_gz,
     Utf8Writer,
     apply_content_check,
     convert_zip,
@@ -80,14 +79,15 @@ def process_entry(bucket, source: str, ingest_date: str, entry: dict,
                 f"{entry['gcs_path']}: SHA-256 differs from the pending entry "
                 f"({zip_sha[:12]}… vs {entry['zip_sha256'][:12]}…)")
         entry["zip_sha256"] = zip_sha
-        # "wb" + Utf8Writer: an error cancels the upload ("wt" would finalize it)
+        from google.cloud.storage.retry import DEFAULT_RETRY  # lazy: --print-only must not import GCP
+        # "wb" + gzip: an error cancels the upload ("wt" would finalize it)
         with bucket.blob(ndjson_name).open(
             "wb",
             chunk_size=8 * 1024 * 1024,              # 8 MB chunks: ~10 s each at home upload speed
             timeout=300,                             # per-request socket timeout
             retry=DEFAULT_RETRY.with_timeout(900),   # keep retrying a chunk for up to 15 min
         ) as raw:
-            rows, content_sha = convert_zip(tmp, Utf8Writer(raw), source)
+            rows, content_sha = convert_zip_gz(tmp, raw, source)
 
     must_load = apply_content_check(
         entry, rows, content_sha, ndjson_name, part_state.get(entry["partition_key"]))
