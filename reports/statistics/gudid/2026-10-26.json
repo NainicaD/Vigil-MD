@@ -1,0 +1,274 @@
+{
+  "table": "vigil-md-1792696816.vigil_md_staging.gudid_stg",
+  "source": "gudid",
+  "ingest_date": "2026-10-26",
+  "generated_at": "2026-10-26T23:01:41.947454+00:00",
+  "rows": 5238573,
+  "columns": {
+    "source": {
+      "non_null": 5238573,
+      "null_pct": 0.0,
+      "distinct_approx": 1,
+      "blank": 0,
+      "len_min": 5,
+      "len_p50": 5,
+      "len_p99": 5,
+      "len_max": 5,
+      "top_values": [
+        {
+          "value": "gudid",
+          "count": 5238573
+        }
+      ]
+    },
+    "source_record_id": {
+      "non_null": 5238573,
+      "null_pct": 0.0,
+      "distinct_approx": 5254470,
+      "blank": 0,
+      "len_min": 36,
+      "len_p50": 36,
+      "len_p99": 36,
+      "len_max": 36
+    },
+    "udi_di": {
+      "non_null": 5238573,
+      "null_pct": 0.0,
+      "distinct_approx": 5198720,
+      "blank": 0,
+      "len_min": 6,
+      "len_p50": 14,
+      "len_p99": 17,
+      "len_max": 23,
+      "top_values": [
+        {
+          "value": "ZBAC1401",
+          "count": 1
+        },
+        {
+          "value": "ZB200001000",
+          "count": 1
+        },
+        {
+          "value": "XXXX50221089",
+          "count": 1
+        },
+        {
+          "value": "W41844300PSTT165",
+          "count": 1
+        },
+        {
+          "value": "W4184428025T0473",
+          "count": 1
+        }
+      ]
+    },
+    "manufacturer_name_raw": {
+      "non_null": 5238565,
+      "null_pct": 0.0002,
+      "distinct_approx": 12308,
+      "blank": 0,
+      "len_min": 3,
+      "len_p50": 22,
+      "len_p99": 47,
+      "len_max": 112,
+      "top_values": [
+        {
+          "value": "Cardinal Health 200, LLC",
+          "count": 382057
+        },
+        {
+          "value": "MEDLINE INDUSTRIES, INC.",
+          "count": 252012
+        },
+        {
+          "value": "FGX INTERNATIONAL INC.",
+          "count": 74463
+        },
+        {
+          "value": "ICU MEDICAL, INC.",
+          "count": 64778
+        },
+        {
+          "value": "Bauerfeind AG",
+          "count": 55911
+        }
+      ]
+    },
+    "manufacturer_name_norm": {
+      "non_null": 5238565,
+      "null_pct": 0.0002,
+      "distinct_approx": 12192,
+      "blank": 0,
+      "len_min": 2,
+      "len_p50": 17,
+      "len_p99": 45,
+      "len_max": 112,
+      "top_values": [
+        {
+          "value": "cardinal health 200",
+          "count": 382718
+        },
+        {
+          "value": "medline industries",
+          "count": 252012
+        },
+        {
+          "value": "fgx international",
+          "count": 74463
+        },
+        {
+          "value": "icu medical",
+          "count": 65099
+        },
+        {
+          "value": "bauerfeind ag",
+          "count": 55911
+        }
+      ]
+    },
+    "device_name_raw": {
+      "non_null": 5238573,
+      "null_pct": 0.0,
+      "distinct_approx": 339876,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 14,
+      "len_p99": 54,
+      "len_max": 80,
+      "top_values": [
+        {
+          "value": "CARDINAL HEALTH",
+          "count": 376548
+        },
+        {
+          "value": "Medline Industries, Inc.",
+          "count": 217524
+        },
+        {
+          "value": "NA",
+          "count": 105588
+        },
+        {
+          "value": "Bivona",
+          "count": 54187
+        },
+        {
+          "value": "N/A",
+          "count": 41737
+        }
+      ]
+    },
+    "model_number_raw": {
+      "non_null": 5238545,
+      "null_pct": 0.0005,
+      "distinct_approx": 4555331,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 9,
+      "len_p99": 31,
+      "len_max": 80,
+      "top_values": [
+        {
+          "value": "1",
+          "count": 38204
+        },
+        {
+          "value": "A",
+          "count": 10257
+        },
+        {
+          "value": "Perfusion Pack",
+          "count": 4975
+        },
+        {
+          "value": "N/A",
+          "count": 4242
+        },
+        {
+          "value": "rev 01",
+          "count": 3600
+        }
+      ]
+    },
+    "catalog_number": {
+      "non_null": 3011607,
+      "null_pct": 42.5109,
+      "distinct_approx": 2681844,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 9,
+      "len_p99": 16,
+      "len_max": 80,
+      "top_values": [
+        {
+          "value": null,
+          "count": 2226966
+        },
+        {
+          "value": "N/A",
+          "count": 2692
+        },
+        {
+          "value": "16116",
+          "count": 1673
+        },
+        {
+          "value": "NA",
+          "count": 1489
+        },
+        {
+          "value": "PEEK-IM1004",
+          "count": 1095
+        }
+      ]
+    },
+    "product_codes": {
+      "avg_items": 1.2519543012954062,
+      "empty_pct": 0.6359
+    },
+    "device_record_status": {
+      "non_null": 5238573,
+      "null_pct": 0.0,
+      "distinct_approx": 1,
+      "blank": 0,
+      "len_min": 9,
+      "len_p50": 9,
+      "len_p99": 9,
+      "len_max": 9,
+      "top_values": [
+        {
+          "value": "Published",
+          "count": 5238573
+        }
+      ]
+    },
+    "publish_date": {
+      "non_null": 5238573,
+      "null_pct": 0.0,
+      "distinct_approx": 4346,
+      "min": "2013-02-20",
+      "max": "2026-09-22"
+    },
+    "distribution_status": {
+      "non_null": 5238573,
+      "null_pct": 0.0,
+      "distinct_approx": 2,
+      "blank": 0,
+      "len_min": 26,
+      "len_p50": 26,
+      "len_p99": 30,
+      "len_max": 30,
+      "top_values": [
+        {
+          "value": "In Commercial Distribution",
+          "count": 4783571
+        },
+        {
+          "value": "Not in Commercial Distribution",
+          "count": 455002
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,386 @@
+{
+  "table": "vigil-md-1792696816.vigil_md_staging.recall_stg",
+  "source": "recall",
+  "ingest_date": "2026-10-26",
+  "generated_at": "2026-10-26T23:01:28.041918+00:00",
+  "rows": 59552,
+  "columns": {
+    "source": {
+      "non_null": 59552,
+      "null_pct": 0.0,
+      "distinct_approx": 1,
+      "blank": 0,
+      "len_min": 6,
+      "len_p50": 6,
+      "len_p99": 6,
+      "len_max": 6,
+      "top_values": [
+        {
+          "value": "recall",
+          "count": 59552
+        }
+      ]
+    },
+    "source_record_id": {
+      "non_null": 59552,
+      "null_pct": 0.0,
+      "distinct_approx": 59392,
+      "blank": 0,
+      "len_min": 8,
+      "len_p50": 11,
+      "len_p99": 11,
+      "len_max": 11
+    },
+    "link_key": {
+      "non_null": 59552,
+      "null_pct": 0.0,
+      "distinct_approx": 59392,
+      "blank": 0,
+      "len_min": 8,
+      "len_p50": 11,
+      "len_p99": 11,
+      "len_max": 11,
+      "top_values": [
+        {
+          "value": "z-2640-2010",
+          "count": 1
+        },
+        {
+          "value": "Z1856-2015",
+          "count": 1
+        },
+        {
+          "value": "Z1855-2015",
+          "count": 1
+        },
+        {
+          "value": "Z1006-2010",
+          "count": 1
+        },
+        {
+          "value": "Z-753-04",
+          "count": 1
+        }
+      ]
+    },
+    "res_event_number": {
+      "non_null": 59552,
+      "null_pct": 0.0,
+      "distinct_approx": 22721,
+      "blank": 0,
+      "len_min": 5,
+      "len_p50": 5,
+      "len_p99": 5,
+      "len_max": 5,
+      "top_values": [
+        {
+          "value": "32192",
+          "count": 254
+        },
+        {
+          "value": "68536",
+          "count": 233
+        },
+        {
+          "value": "69838",
+          "count": 207
+        },
+        {
+          "value": "82525",
+          "count": 191
+        },
+        {
+          "value": "77026",
+          "count": 187
+        }
+      ]
+    },
+    "manufacturer_name_raw": {
+      "non_null": 59551,
+      "null_pct": 0.0017,
+      "distinct_approx": 4343,
+      "blank": 0,
+      "len_min": 3,
+      "len_p50": 23,
+      "len_p99": 52,
+      "len_max": 86,
+      "top_values": [
+        {
+          "value": "Boston Scientific Corporation",
+          "count": 1108
+        },
+        {
+          "value": "Zimmer Biomet, Inc.",
+          "count": 875
+        },
+        {
+          "value": "Siemens Medical Solutions USA, Inc",
+          "count": 828
+        },
+        {
+          "value": "MEDLINE INDUSTRIES, LP - Northfield",
+          "count": 812
+        },
+        {
+          "value": "Customed, Inc",
+          "count": 699
+        }
+      ]
+    },
+    "manufacturer_name_norm": {
+      "non_null": 59551,
+      "null_pct": 0.0017,
+      "distinct_approx": 3724,
+      "blank": 0,
+      "len_min": 2,
+      "len_p50": 18,
+      "len_p99": 50,
+      "len_max": 86,
+      "top_values": [
+        {
+          "value": "boston scientific",
+          "count": 1256
+        },
+        {
+          "value": "siemens medical solutions usa",
+          "count": 1236
+        },
+        {
+          "value": "zimmer",
+          "count": 1073
+        },
+        {
+          "value": "zimmer biomet",
+          "count": 875
+        },
+        {
+          "value": "medline industries, lp - northfield",
+          "count": 812
+        }
+      ]
+    },
+    "device_name_raw": {
+      "non_null": 59551,
+      "null_pct": 0.0017,
+      "distinct_approx": 58347,
+      "blank": 0,
+      "len_min": 3,
+      "len_p50": 175,
+      "len_p99": 1749,
+      "len_max": 4000,
+      "top_values": [
+        {
+          "value": "BVI CustomEyes Procedure Packs containing Sol-M Luer Lock and Luer Slip 1ml syri",
+          "count": 159
+        },
+        {
+          "value": "Boston Scientific Innova Over-the-Wire Self-Expanding Stent System, Catalog No. ",
+          "count": 72
+        },
+        {
+          "value": "Torcon NB Advantage Catheters - Product Usage: Intended for use in the periphera",
+          "count": 71
+        },
+        {
+          "value": "IV Administration Set utilized in gravity IV administration sets and pump admini",
+          "count": 67
+        },
+        {
+          "value": "King Systems Universal Flex2 Breathing Circuit, Latex Free, 50 per case, King Sy",
+          "count": 59
+        }
+      ]
+    },
+    "product_code": {
+      "non_null": 59193,
+      "null_pct": 0.6028,
+      "distinct_approx": 2846,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 3,
+      "len_p99": 3,
+      "len_max": 5,
+      "top_values": [
+        {
+          "value": "FPA",
+          "count": 1090
+        },
+        {
+          "value": "LRO",
+          "count": 1080
+        },
+        {
+          "value": "JWH",
+          "count": 984
+        },
+        {
+          "value": "JAK",
+          "count": 873
+        },
+        {
+          "value": "LNH",
+          "count": 723
+        }
+      ]
+    },
+    "reason_text": {
+      "non_null": 59503,
+      "null_pct": 0.0823,
+      "distinct_approx": 23090,
+      "blank": 0,
+      "len_min": 3,
+      "len_p50": 161,
+      "len_p99": 604,
+      "len_max": 2127,
+      "top_values": [
+        {
+          "value": "An incomplete seal on the inner pouch allows exposure to oxygen, which may resul",
+          "count": 303
+        },
+        {
+          "value": "Recall initiated due to inadequate validation/qualification of sterilization pro",
+          "count": 270
+        },
+        {
+          "value": "Customed has determined that there is the possibility that packaging integrity m",
+          "count": 233
+        },
+        {
+          "value": "The parameters provided in the Laparoscopic Manual Instruments Instructions for ",
+          "count": 200
+        },
+        {
+          "value": "There is a potential for extensive loss of primary segment material exposing und",
+          "count": 191
+        }
+      ]
+    },
+    "scope_text": {
+      "non_null": 59552,
+      "null_pct": 0.0,
+      "distinct_approx": 53708,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 73,
+      "len_p99": 98765,
+      "len_max": 8867432,
+      "top_values": [
+        {
+          "value": "All lots",
+          "count": 377
+        },
+        {
+          "value": "All lots.",
+          "count": 336
+        },
+        {
+          "value": "All lot numbers",
+          "count": 208
+        },
+        {
+          "value": "All serial numbers",
+          "count": 193
+        },
+        {
+          "value": "All Lots",
+          "count": 172
+        }
+      ]
+    },
+    "record_date": {
+      "non_null": 45976,
+      "null_pct": 22.7969,
+      "distinct_approx": 4567,
+      "min": "2002-12-05",
+      "max": "2026-10-21"
+    },
+    "recall_status": {
+      "non_null": 59552,
+      "null_pct": 0.0,
+      "distinct_approx": 3,
+      "blank": 0,
+      "len_min": 9,
+      "len_p50": 10,
+      "len_p99": 16,
+      "len_max": 16,
+      "top_values": [
+        {
+          "value": "Terminated",
+          "count": 44686
+        },
+        {
+          "value": "Open, Classified",
+          "count": 14424
+        },
+        {
+          "value": "Completed",
+          "count": 442
+        }
+      ]
+    },
+    "root_cause": {
+      "non_null": 59539,
+      "null_pct": 0.0218,
+      "distinct_approx": 43,
+      "blank": 0,
+      "len_min": 3,
+      "len_p50": 15,
+      "len_p99": 42,
+      "len_max": 61,
+      "top_values": [
+        {
+          "value": "Other",
+          "count": 8928
+        },
+        {
+          "value": "Device Design",
+          "count": 7677
+        },
+        {
+          "value": "Under Investigation by firm",
+          "count": 7006
+        },
+        {
+          "value": "Process control",
+          "count": 6562
+        },
+        {
+          "value": "Nonconforming Material/Component",
+          "count": 5973
+        }
+      ]
+    },
+    "action": {
+      "non_null": 59226,
+      "null_pct": 0.5474,
+      "distinct_approx": 22589,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 678,
+      "len_p99": 2000,
+      "len_max": 2000,
+      "top_values": [
+        {
+          "value": null,
+          "count": 326
+        },
+        {
+          "value": "Customed Inc. sent a Recall Notification letter dated June 3, 2014 via email and",
+          "count": 233
+        },
+        {
+          "value": "Stryker Endoscopy sent an Urgent Device Correction letter dated November 17, 201",
+          "count": 207
+        },
+        {
+          "value": "Medtronic initiated immediate communications to consignees on 15-Mar-2019.  Cons",
+          "count": 191
+        },
+        {
+          "value": "The firm posted their recall notification on their customer website on 4/20/2017",
+          "count": 187
+        }
+      ]
+    }
+  }
+}

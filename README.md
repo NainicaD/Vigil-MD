@@ -252,7 +252,7 @@ GROUP BY source;
 
 ## Setup
 
-**Requirements:** Python 3.9+, Docker, Git, Google Cloud SDK
+**Requirements:** Python 3.10+ (3.12 recommended; needed by Great Expectations), Docker, Git, Google Cloud SDK
 
 ```bash
 # Clone and set up environment
@@ -509,6 +509,61 @@ git push
 ```
 
 Do not run `dvc add data/interim`: those files are produced by the pipeline and tracked in `dvc.lock`.
+
+---
+
+## Data Validation (Schema and Statistics)
+
+`scripts/validation/` checks each staging table's schema and values and generates per-column
+statistics, one load (`_ingest_date` partition) at a time. It only reads BigQuery.
+
+| Check | How | Source of the rules |
+|---|---|---|
+| Schema: columns, types, modes | Live table metadata vs `schemas.py` (no data read, no cost) | Generated from `scripts/warehouse/schemas.py` |
+| Keys not NULL and unique | Great Expectations | Generated from `MERGE_KEYS` |
+| Allowed values, formats, date ranges | Great Expectations, with `mostly` margins | `RULES` in `scripts/validation/expectations.py` |
+| Statistics per column | One query per table | Null %, distinct, blanks, text lengths, top values, min/max |
+
+Comparisons with earlier loads (null-rate changes, volume, category mix) and alerts belong to the
+anomaly checks, not to this module.
+
+### Run
+
+```bash
+# Schema check only (free)
+python scripts/validation/run_validation.py --project vigil-md-1792696816
+
+# Cost estimate (BigQuery dry run, free) for the value checks and statistics
+python scripts/validation/run_validation.py --project vigil-md-1792696816 --values --stats --estimate-only
+
+# Value checks and statistics for one source (latest load by default)
+python scripts/validation/run_validation.py --project vigil-md-1792696816 \
+  --source recall --values --stats
+```
+
+Options: `--ingest-date YYYY-MM-DD` picks a load; `--max-gb` (default 2) stops any query estimated
+above it; `--out-dir` sets where statistics are written. Exit codes: `0` all passed, `3` a check
+failed (a data failure, not worth retrying), anything else an unexpected error.
+
+### Outputs and cost
+
+Statistics are written to `reports/statistics/<source>/<ingest_date>.json`, one file per load, so
+loads can be compared over time. The first set (2026-10-26) is committed as the baseline.
+
+Value-check results (each expectation, its rule, pass or fail, and the count of unexpected
+rows) are written to `reports/validation/<source>/<ingest_date>.json` in the same layout.
+
+The value checks run several queries per source (Great Expectations computes around 40-50
+metrics), so a run can cost up to about 40x the per-query estimate; the statistics are one query
+per table. On the full load (2026-10-26) the statistics cost about 6 GB for all four sources.
+Daily loads only contain changed files, so their partitions, and the cost, are much smaller.
+
+### Results (2026-10-26 full load)
+
+All four schemas match, and the value checks pass: enforcement 5/5, recall 5/5, GUDID 5/5,
+MAUDE 6/6. The GUDID UDI-DI length rule first failed on 312 six-character identifiers outside
+the 7-23 range taken from a top-20 baseline; all 312 are HIBCC identifiers, so the rule now
+allows 6-23.
 
 ---
 
