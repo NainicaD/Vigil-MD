@@ -1,0 +1,73 @@
+{
+  "table": "vigil-md-1792696816.vigil_md_staging.enforcement_stg",
+  "source": "enforcement",
+  "ingest_date": "2026-10-26",
+  "generated_at": "2026-10-26T23:11:02.467826+00:00",
+  "success": true,
+  "passed": 5,
+  "total": 5,
+  "checks": [
+    {
+      "expectation": "expect_column_values_to_not_be_null",
+      "column": "source_record_id",
+      "rule": {},
+      "success": true,
+      "unexpected_count": 0,
+      "unexpected_percent": 0.0,
+      "observed_value": null
+    },
+    {
+      "expectation": "expect_column_values_to_be_unique",
+      "column": "source_record_id",
+      "rule": {},
+      "success": true,
+      "unexpected_count": 0,
+      "unexpected_percent": 0.0,
+      "observed_value": null
+    },
+    {
+      "expectation": "expect_column_values_to_be_in_set",
+      "column": "recall_class",
+      "rule": {
+        "value_set": [
+          "Class I",
+          "Class II",
+          "Class III"
+        ],
+        "mostly": 0.99
+      },
+      "success": true,
+      "unexpected_count": 0,
+      "unexpected_percent": 0.0,
+      "observed_value": null
+    },
+    {
+      "expectation": "expect_column_values_to_be_in_set",
+      "column": "status",
+      "rule": {
+        "value_set": [
+          "Terminated",
+          "Ongoing",
+          "Completed"
+        ],
+        "mostly": 0.99
+      },
+      "success": true,
+      "unexpected_count": 0,
+      "unexpected_percent": 0.0,
+      "observed_value": null
+    },
+    {
+      "expectation": "expect_column_values_to_be_between",
+      "column": "record_date",
+      "rule": {
+        "min_value": "1970-01-01",
+        "max_value": "2026-10-27"
+      },
+      "success": true,
+      "unexpected_count": 0,
+      "unexpected_percent": 0.0,
+      "observed_value": null
+    }
+  ]
+}
