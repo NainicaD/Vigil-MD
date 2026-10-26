@@ -106,7 +106,7 @@ Two modes use the same scripts:
 | `_incoming/{endpoint}/{run_ts}/{quarter}/{file}` | fetch | Temporary. Deleted or moved after the hash compare. |
 | `manifests/partitions/{source}.json` | fetch, load_raw | Partition state for one source. Each source has its own file, so parallel tasks cannot race. |
 | `manifests/pending/{source}/{run_ts}.json` | fetch | Files that must load. load_raw deletes each one after its commit. |
-| `ndjson/{source}/{ingest_date}/{partition_key}.ndjson` | unzip | One line per record: `{"payload": <record>}`. A second run overwrites the same path, so it is idempotent. |
+| `ndjson/{source}/{ingest_date}/{partition_key}.ndjson.gz` | unzip | One line per record: `{"payload": <record>}`. A second run overwrites the same path, so it is idempotent. |
 
 Partition state (`manifests/partitions/{source}.json`):
 
@@ -226,14 +226,16 @@ Tick each box in `docs/WAREHOUSE_PLAN.md`. Stop after each step (G1, G2).
   - Raise if `row_count == 0`.
 - [x] `main()`:
   - flags `--bucket`, `--source`, `--scope changed|all`, `--ingest-date`, `--print-only`
-  - streams each GCS zip to `ndjson/{source}/{ingest_date}/{partition_key}.ndjson`
+  - streams each GCS zip to `ndjson/{source}/{ingest_date}/{partition_key}.ndjson.gz`
   - if `content_sha256` equals the partition state value: mark the entry `skip_load` in the pending manifest, and update `zip_sha256` in the state
   - otherwise: write `content_sha256` and `row_count` to the pending entry
   - *(Added: `--scope all` writes its own `pending/{source}/full_<run_ts>.json`. Each entry also gets `ndjson_path`. The manifest is saved after each file, so a failed run resumes.)*
 - [x] **Verify:** `py_compile`. Build a tiny zip in memory (2 openFDA records, then GUDID XML parts). Call `convert_zip` and check the count, the output lines and a stable hash. Run `--print-only` with no GCS call. Use the scratchpad for temporary files.
 - [x] Report, then STOP.
 
-> **Step 3 change (user decision, docs/issue.md #11):** in the daily (incremental) run, GUDID converts during the fetch, not in this step. `fetch_sources.fetch_gudid` → `scripts/acquisition/gudid_convert.py` downloads the zip once to a local temp file, uploads the original zip, and streams the NDJSON to `ndjson/gudid/{snapshot}/full_release.ndjson`. Its pending entry arrives with `content_sha256`, so this step skips it. `--scope all` still converts GUDID from GCS. The shared pure conversion code moved to `scripts/warehouse/convert.py`. All NDJSON writes use `blob.open("wb")` + `Utf8Writer` (docs/issue.md #12). Tested on a real GCS sample (`samples/gudid/`).
+> **Step 3 change (user decision, docs/issue.md #11):** in the daily (incremental) run, GUDID converts during the fetch, not in this step. `fetch_sources.fetch_gudid` → `scripts/acquisition/gudid_convert.py` downloads the zip once to a local temp file, uploads the original zip, and streams the NDJSON to `ndjson/gudid/{snapshot}/full_release.ndjson.gz`. Its pending entry arrives with `content_sha256`, so this step skips it. `--scope all` still converts GUDID from GCS. The shared pure conversion code moved to `scripts/warehouse/convert.py`. All NDJSON writes use `blob.open("wb")` + `Utf8Writer` (docs/issue.md #12). Tested on a real GCS sample (`samples/gudid/`).
+
+> **Change (Oct 26, 2026, branch `airflow-optimize`):** NDJSON is now written gzip-compressed as `.ndjson.gz`, through `convert_zip_gz()` in `scripts/warehouse/convert.py`, by both the full-load unzip step and the daily GUDID conversion. BigQuery load jobs read gzip directly, so `load_raw_to_bq.py` and the load job are unchanged, and `content_sha256` is still computed over the uncompressed records. Measured: GUDID's file went from 12.94 GB to 463 MB, and `unzip_gudid` from 4 h 53 min to 12 min 34 s.
 
 > **Step 5 note (from Step 3):** GUDID payload is the `<device>` dict at the top level (`$.brandName`, `$.identifiers.identifier[…]`), not `gudid.device` as in `flatten_gudid`. `_source_udi_di` does not exist in bulk data. The primary DI is `identifiers.identifier[deviceIdType="Primary"].deviceId`. Each record has a stable `publicDeviceRecordKey`. Decide the GUDID merge key with the user in Step 5.
 

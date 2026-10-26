@@ -129,7 +129,7 @@ GUDID is an XML release (210 parts, about 5.2 million devices). It is converted 
 | Path | What |
 |---|---|
 | `raw/{endpoint}/{export_date}/{quarter}/{file}.zip`, `raw/gudid/{snapshot}/{file}.zip` | Original downloads (source of record) |
-| `ndjson/{source}/{date}/{partition_key}.ndjson` | One line per record: `{"payload": <record>}` |
+| `ndjson/{source}/{date}/{partition_key}.ndjson.gz` | Gzip-compressed, one line per record: `{"payload": <record>}` |
 | `manifests/manifest_state.json` | Export dates per source (read by `check_manifest`) |
 | `manifests/partitions/{source}.json` | Per-partition fingerprint and hashes (incremental state) |
 | `manifests/pending/{source}/*.json` | Files waiting to load. Deleted after the raw load commits. |
