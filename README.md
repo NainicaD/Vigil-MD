@@ -550,6 +550,9 @@ failed (a data failure, not worth retrying), anything else an unexpected error.
 Statistics are written to `reports/statistics/<source>/<ingest_date>.json`, one file per load, so
 loads can be compared over time. The first set (2026-10-26) is committed as the baseline.
 
+Value-check results (each expectation, its rule, pass or fail, and the count of unexpected
+rows) are written to `reports/validation/<source>/<ingest_date>.json` in the same layout.
+
 The value checks run several queries per source (Great Expectations computes around 40-50
 metrics), so a run can cost up to about 40x the per-query estimate; the statistics are one query
 per table. On the full load (2026-10-26) the statistics cost about 6 GB for all four sources.

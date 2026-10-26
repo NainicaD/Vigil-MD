@@ -27,7 +27,7 @@ from scripts.logger import get_logger                       # noqa: E402
 from scripts.validation.expectations import (               # noqa: E402
     build_suite, columns_for_query, compare_schema, expected_schema)
 from scripts.validation.statistics import (                # noqa: E402
-    build_stats_sql, parse_stats_row, stats_document, write_stats)
+    _plain, build_stats_sql, parse_stats_row, stats_document, write_stats)
 from scripts.warehouse import schemas                       # noqa: E402
 
 log = get_logger("run_validation")
@@ -86,8 +86,45 @@ def estimate_bytes(client, sql: str) -> int:
     return job.total_bytes_processed
 
 
-def run_suite(project: str, source: str, ingest_date: dt.date) -> bool:
-    """Validate one partition with the Great Expectations suite. True if all pass."""
+KWARGS_KEPT = ("value_set", "regex", "min_value", "max_value", "mostly")
+
+
+def check_entry(r) -> dict:
+    """One expectation result as plain data (for the JSON report)."""
+    cfg = r.expectation_config
+    res = r.result or {}
+    return {
+        "expectation": cfg.type,
+        "column": cfg.kwargs.get("column") or cfg.kwargs.get("column_list"),
+        "rule": {k: _plain(cfg.kwargs[k]) for k in KWARGS_KEPT if k in cfg.kwargs},
+        "success": bool(r.success),
+        "unexpected_count": res.get("unexpected_count"),
+        "unexpected_percent": res.get("unexpected_percent"),
+        "observed_value": _plain(res.get("observed_value")),
+    }
+
+
+def validation_document(project: str, source: str, ingest_date: dt.date,
+                        entries: list[dict], generated_at: dt.datetime | None = None) -> dict:
+    """The JSON written to reports/validation/<source>/<ingest_date>.json."""
+    return {
+        "table": schemas.staging_table(project, source),
+        "source": source,
+        "ingest_date": ingest_date.isoformat(),
+        "generated_at": (generated_at or dt.datetime.now(dt.timezone.utc)).isoformat(),
+        "success": all(e["success"] for e in entries),
+        "passed": sum(e["success"] for e in entries),
+        "total": len(entries),
+        "checks": entries,
+    }
+
+
+def run_suite(project: str, source: str, ingest_date: dt.date,
+              results_dir: Path | None = None) -> bool:
+    """Validate one partition with the Great Expectations suite. True if all pass.
+
+    With results_dir, the results are also saved as JSON (one file per load).
+    """
     import great_expectations as gx
 
     context = gx.get_context(mode="ephemeral")
@@ -102,20 +139,20 @@ def run_suite(project: str, source: str, ingest_date: dt.date) -> bool:
     suite = context.suites.add(build_suite(source, context=context))
     result = batch.validate(suite)
 
-    for r in result.results:
-        cfg = r.expectation_config
-        col = cfg.kwargs.get("column") or cfg.kwargs.get("column_list")
-        res = r.result or {}
-        detail = (f"unexpected {res.get('unexpected_count')} "
-                  f"({res.get('unexpected_percent') or 0:.2f}%)"
-                  if "unexpected_count" in res else f"observed {res.get('observed_value')}")
-        level = log.info if r.success else log.error
-        level("values %s %s %s %s: %s", "PASS" if r.success else "FAIL",
-              source, cfg.type, col, detail)
+    entries = [check_entry(r) for r in result.results]
+    for e in entries:
+        detail = (f"unexpected {e['unexpected_count']} ({e['unexpected_percent'] or 0:.2f}%)"
+                  if e["unexpected_count"] is not None else f"observed {e['observed_value']}")
+        level = log.info if e["success"] else log.error
+        level("values %s %s %s %s: %s", "PASS" if e["success"] else "FAIL",
+              source, e["expectation"], e["column"], detail)
+
+    doc = validation_document(project, source, ingest_date, entries)
     log.info("values %s: %d/%d expectations passed (%s, ingest_date %s)",
-             source, sum(r.success for r in result.results), len(result.results),
-             schemas.staging_table(project, source), ingest_date)
-    return bool(result.success)
+             source, doc["passed"], doc["total"], doc["table"], ingest_date)
+    if results_dir is not None:
+        log.info("values %s: results -> %s", source, write_stats(doc, results_dir))
+    return doc["success"]
 
 
 def run_stats(client, project: str, source: str, day: dt.date, out_dir: Path) -> Path:
@@ -140,6 +177,8 @@ def main() -> None:
                     help="also compute per-column statistics and save them as JSON")
     ap.add_argument("--out-dir", type=Path, default=Path("reports/statistics"),
                     help="where --stats writes <source>/<ingest_date>.json")
+    ap.add_argument("--results-dir", type=Path, default=Path("reports/validation"),
+                    help="where --values writes <source>/<ingest_date>.json")
     ap.add_argument("--ingest-date", type=dt.date.fromisoformat,
                     help="load to check (default: latest in load_log)")
     ap.add_argument("--max-gb", type=float, default=2.0,
@@ -168,7 +207,7 @@ def main() -> None:
                                   source, gb, args.max_gb)
                         ok = False
                     else:
-                        ok = run_suite(args.project, source, day) and ok
+                        ok = run_suite(args.project, source, day, args.results_dir) and ok
             if args.stats:
                 gb = estimate_bytes(client, build_stats_sql(args.project, source, day)) / 1e9
                 log.info("stats %s: ingest_date %s, about %.3f GB (one query)", source, day, gb)
