@@ -4,6 +4,7 @@ GCS is the in-memory FakeBucket; main() runs with fake_gcp, so no real storage
 client is created. No network.
 """
 import hashlib
+import gzip
 import json
 import subprocess
 import sys
@@ -89,7 +90,7 @@ def test_process_entry_writes_ndjson_and_fills_the_entry(bucket_with_zip):
     entry = entry_for(zip_sha256=zsha)
     assert u.process_entry(bucket, "enforcement", D, entry, {}) is True
     nd = common.ndjson_path("enforcement", D, KEY)
-    assert [json.loads(l)["payload"] for l in bucket.store[nd].decode().splitlines()] == RECORDS
+    assert [json.loads(l)["payload"] for l in gzip.decompress(bucket.store[nd]).decode().splitlines()] == RECORDS
     assert entry["ndjson_path"] == nd and entry["row_count"] == 2 and entry["skip_load"] is False
 
 

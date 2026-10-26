@@ -134,7 +134,7 @@ def test_pending_and_partition_state_paths(fake_bucket):
 
 RAW1 = "raw/gudid/20261001/gudid_full_release_20261001.zip"
 RAW2 = "raw/gudid/20261101/gudid_full_release_20261101.zip"
-ND2 = "ndjson/gudid/20261101/full_release.ndjson"
+ND2 = "ndjson/gudid/20261101/full_release.ndjson.gz"
 
 
 @pytest.fixture

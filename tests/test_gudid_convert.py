@@ -5,6 +5,7 @@ GCS is the in-memory FakeBucket from conftest.py (it models the real
 blob.open() exit behaviour). HTTP is FakeSession. No GCP, no network.
 """
 import hashlib
+import gzip
 import json
 
 import pytest
@@ -13,7 +14,7 @@ from scripts.acquisition import gudid_convert as g
 from tests.conftest import FakeBlob, FakeBucket
 
 RAW = "raw/gudid/20261001/gudid_full_release_20261001.zip"
-ND = "ndjson/gudid/20261001/full_release.ndjson"
+ND = "ndjson/gudid/20261001/full_release.ndjson.gz"
 
 
 @pytest.fixture
@@ -40,7 +41,7 @@ def test_new_release_loads(fake_bucket, zip_file):
     assert r["action"] == "load" and r["row_count"] == 3 and r["skip_load"] is False
     assert r["ndjson_path"] == ND and r["zip_sha256"] == sha
     keys = [json.loads(l)["payload"]["publicDeviceRecordKey"]
-            for l in fake_bucket.store[ND].decode().splitlines()]
+            for l in gzip.decompress(fake_bucket.store[ND]).decode().splitlines()]
     assert keys == ["K1", "K2", "K3"]
     assert fake_bucket.store[RAW] == open(path, "rb").read()          # original zip kept
     assert fake_bucket.meta[ND] == {"zip_sha256": sha, "content_sha256": r["content_sha256"],

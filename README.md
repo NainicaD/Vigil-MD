@@ -129,7 +129,7 @@ GUDID is an XML release (210 parts, about 5.2 million devices). It is converted 
 | Path | What |
 |---|---|
 | `raw/{endpoint}/{export_date}/{quarter}/{file}.zip`, `raw/gudid/{snapshot}/{file}.zip` | Original downloads (source of record) |
-| `ndjson/{source}/{date}/{partition_key}.ndjson` | One line per record: `{"payload": <record>}` |
+| `ndjson/{source}/{date}/{partition_key}.ndjson.gz` | Gzip-compressed, one line per record: `{"payload": <record>}` |
 | `manifests/manifest_state.json` | Export dates per source (read by `check_manifest`) |
 | `manifests/partitions/{source}.json` | Per-partition fingerprint and hashes (incremental state) |
 | `manifests/pending/{source}/*.json` | Files waiting to load. Deleted after the raw load commits. |
@@ -414,6 +414,44 @@ docker compose down -v                     # stop and wipe database
 | GCS calls fail with an auth error in tasks | Run `gcloud auth application-default login` on the host |
 
 ---
+
+### After pulling the Airflow 3 log-parsing fix
+
+Airflow 3 writes task logs as one JSON object per line. Filebeat now sends each line as its own
+event (no multiline joining), and Logstash parses it with a `json` filter. Searchable fields include
+`log_level`, `log_message`, `task_id`, `attempt`, `error_type` and `error_message`, and `@timestamp`
+is the time the event happened (not the ingest time).
+
+ELK runs on each machine separately, so after pulling this change, apply it locally:
+
+```bash
+# 1. Load the new Logstash pipeline
+docker compose -f docker-compose.elk.yml restart logstash
+
+# 2. Remove Filebeat (this also resets its record of which log files it has read)
+docker compose -f docker-compose.elk.yml rm -sf filebeat
+
+# 3. Delete the Airflow log entries indexed with the old parsing
+#    (keeps the logs Python scripts sent to Logstash directly)
+curl -s -X POST "localhost:9200/vigil-md-logs-*/_delete_by_query?refresh=true" \
+  -H "Content-Type: application/json" \
+  -d '{"query": {"term": {"tags.keyword": "airflow"}}}'
+
+# 4. Start Filebeat again: it re-reads every file in logs/ with the new parsing
+docker compose -f docker-compose.elk.yml up -d filebeat
+```
+
+Then refresh the `vigil-md-logs-*` data view in Kibana (Stack Management -> Data Views) so the new
+fields appear. A search for `tags: "_jsonparsefailure" or tags: "_grok_parse_failure"` should return
+no results.
+
+**Day to day, stop ELK with `stop` rather than `down`:** `down` deletes the Filebeat container, so the
+next `up` re-reads every log file and indexes it a second time. `stop` keeps it.
+
+```bash
+docker compose -f docker-compose.elk.yml stop    # pause
+docker compose -f docker-compose.elk.yml start   # resume
+```
 
 ## Data Versioning with DVC
 

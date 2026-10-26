@@ -58,6 +58,10 @@ def normalize_date(val: str) -> str:
         return f"{y}-{m}-{d}"
     if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
         return val
+    # ISO timestamp, e.g. GUDID API '2016-11-16T00:00:00.000Z': keep the date part
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})[T ]\d{2}:\d{2}", val)
+    if m:
+        return m.group(1)
     return None
 
 

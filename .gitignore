@@ -1,5 +1,7 @@
 
-data/raw/
+data/raw/*
+# keep the DVC pointer visible to git and DVC
+!data/raw/samples.dvc
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

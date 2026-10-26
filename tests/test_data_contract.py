@@ -158,3 +158,15 @@ def test_links_reference_existing_maude_records():
                  .column("source_record_id").to_pylist())
     orphans = linked - maude
     assert not orphans, f"links reference maude ids not in maude: {sorted(orphans)[:5]}"
+
+
+def test_links_count_is_reasonable():
+    """Exact linking on the sample data should produce a small number of links.
+
+    A much larger count usually means the join fanned out (for example a
+    blank or repeated udi_di matching many devices).
+    """
+    if not LINKS.exists():
+        pytest.skip("not generated")
+    n = pq.read_metadata(LINKS).num_rows
+    assert n <= 500, f"Unexpectedly many links: {n}"

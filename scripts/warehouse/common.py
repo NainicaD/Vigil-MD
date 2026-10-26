@@ -21,7 +21,7 @@ from scripts.acquisition.fetch_sources import (  # noqa: E402  (reuse, do not co
     openfda_partition_key,
     save_partition_state,
 )
-from scripts.warehouse.convert import NDJSON_PREFIX  # noqa: E402
+from scripts.warehouse.convert import NDJSON_PREFIX, NDJSON_SUFFIX  # noqa: E402
 from scripts.warehouse.schemas import DATASETS, SOURCES  # noqa: E402,F401
 
 # Warehouse source name → GCS folder under raw/
@@ -43,7 +43,7 @@ __all__ = [
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 def ndjson_path(source: str, ingest_date: str, partition_key: str) -> str:
-    return f"{NDJSON_PREFIX}/{source}/{ingest_date}/{partition_key}.ndjson"
+    return f"{NDJSON_PREFIX}/{source}/{ingest_date}/{partition_key}{NDJSON_SUFFIX}"
 
 
 # ── --scope all: newest folder only ───────────────────────────────────────────

@@ -14,6 +14,7 @@ Each output line is {"payload": <record>} with no other change to the record.
 """
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import re
@@ -21,6 +22,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 NDJSON_PREFIX = "ndjson"
+NDJSON_SUFFIX = ".ndjson.gz"   # gzip-compressed NDJSON; BigQuery load jobs read it directly
+GZIP_LEVEL    = 6              # close to maximum compression, much less CPU than level 9
 
 GUDID_NS      = "{http://www.fda.gov/cdrh/gudid}"
 XSI_NS        = "{http://www.w3.org/2001/XMLSchema-instance}"
@@ -182,6 +185,20 @@ class Utf8Writer:
 
     def write(self, text: str) -> int:
         return self.raw.write(text.encode("utf-8"))
+
+
+def convert_zip_gz(zip_fileobj, raw, source: str) -> tuple[int, str]:
+    """convert_zip, writing gzip-compressed NDJSON to the binary stream raw.
+
+    The content hash is still computed by convert_zip over the uncompressed
+    records, so row_count and content_sha256 match the uncompressed output.
+    mtime=0 keeps the gzip bytes reproducible. GzipFile.close() writes the
+    gzip trailer but does not close raw, so the caller's
+    `with blob.open("wb") as raw:` still controls the upload: on an error
+    BlobWriter.terminate() runs and no partial object is created.
+    """
+    with gzip.GzipFile(fileobj=raw, mode="wb", compresslevel=GZIP_LEVEL, mtime=0) as gz:
+        return convert_zip(zip_fileobj, Utf8Writer(gz), source)
 
 
 def apply_content_check(entry: dict, rows: int, content_sha: str,
