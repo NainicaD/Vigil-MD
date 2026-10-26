@@ -27,6 +27,7 @@ Usage:
     # Print the plan only. No GCS call:
     python scripts/warehouse/unzip_to_ndjson.py ... --print-only
 """
+
 from __future__ import annotations
 
 import argparse
@@ -34,6 +35,8 @@ import hashlib
 import tempfile
 from datetime import date, datetime, timezone
 from pathlib import Path
+
+from google.cloud.storage.retry import DEFAULT_RETRY
 
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -78,7 +81,12 @@ def process_entry(bucket, source: str, ingest_date: str, entry: dict,
                 f"({zip_sha[:12]}… vs {entry['zip_sha256'][:12]}…)")
         entry["zip_sha256"] = zip_sha
         # "wb" + Utf8Writer: an error cancels the upload ("wt" would finalize it)
-        with bucket.blob(ndjson_name).open("wb") as raw:
+        with bucket.blob(ndjson_name).open(
+            "wb",
+            chunk_size=8 * 1024 * 1024,              # 8 MB chunks: ~10 s each at home upload speed
+            timeout=300,                             # per-request socket timeout
+            retry=DEFAULT_RETRY.with_timeout(900),   # keep retrying a chunk for up to 15 min
+        ) as raw:
             rows, content_sha = convert_zip(tmp, Utf8Writer(raw), source)
 
     must_load = apply_content_check(
