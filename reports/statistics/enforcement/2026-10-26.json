@@ -1,0 +1,346 @@
+{
+  "table": "vigil-md-1792696816.vigil_md_staging.enforcement_stg",
+  "source": "enforcement",
+  "ingest_date": "2026-10-26",
+  "generated_at": "2026-10-26T23:01:22.018537+00:00",
+  "rows": 40299,
+  "columns": {
+    "source": {
+      "non_null": 40299,
+      "null_pct": 0.0,
+      "distinct_approx": 1,
+      "blank": 0,
+      "len_min": 11,
+      "len_p50": 11,
+      "len_p99": 11,
+      "len_max": 11,
+      "top_values": [
+        {
+          "value": "enforcement",
+          "count": 40299
+        }
+      ]
+    },
+    "source_record_id": {
+      "non_null": 40299,
+      "null_pct": 0.0,
+      "distinct_approx": 40317,
+      "blank": 0,
+      "len_min": 10,
+      "len_p50": 11,
+      "len_p99": 11,
+      "len_max": 11
+    },
+    "link_key": {
+      "non_null": 40299,
+      "null_pct": 0.0,
+      "distinct_approx": 40317,
+      "blank": 0,
+      "len_min": 10,
+      "len_p50": 11,
+      "len_p99": 11,
+      "len_max": 11,
+      "top_values": [
+        {
+          "value": "Z1856-2015",
+          "count": 1
+        },
+        {
+          "value": "Z1855-2015",
+          "count": 1
+        },
+        {
+          "value": "Z-3405-2018",
+          "count": 1
+        },
+        {
+          "value": "Z-3404-2018",
+          "count": 1
+        },
+        {
+          "value": "Z-3403-2018",
+          "count": 1
+        }
+      ]
+    },
+    "event_id": {
+      "non_null": 40299,
+      "null_pct": 0.0,
+      "distinct_approx": 15096,
+      "blank": 0,
+      "len_min": 5,
+      "len_p50": 5,
+      "len_p99": 5,
+      "len_max": 5,
+      "top_values": [
+        {
+          "value": "68536",
+          "count": 233
+        },
+        {
+          "value": "69838",
+          "count": 207
+        },
+        {
+          "value": "82525",
+          "count": 191
+        },
+        {
+          "value": "77026",
+          "count": 187
+        },
+        {
+          "value": "82703",
+          "count": 183
+        }
+      ]
+    },
+    "manufacturer_name_raw": {
+      "non_null": 40299,
+      "null_pct": 0.0,
+      "distinct_approx": 3070,
+      "blank": 0,
+      "len_min": 3,
+      "len_p50": 23,
+      "len_p99": 52,
+      "len_max": 69,
+      "top_values": [
+        {
+          "value": "Zimmer Biomet, Inc.",
+          "count": 875
+        },
+        {
+          "value": "MEDLINE INDUSTRIES, LP - Northfield",
+          "count": 812
+        },
+        {
+          "value": "Customed, Inc",
+          "count": 682
+        },
+        {
+          "value": "Boston Scientific Corporation",
+          "count": 641
+        },
+        {
+          "value": "Siemens Medical Solutions USA, Inc",
+          "count": 621
+        }
+      ]
+    },
+    "manufacturer_name_norm": {
+      "non_null": 40299,
+      "null_pct": 0.0,
+      "distinct_approx": 2690,
+      "blank": 0,
+      "len_min": 2,
+      "len_p50": 18,
+      "len_p99": 51,
+      "len_max": 68,
+      "top_values": [
+        {
+          "value": "zimmer biomet",
+          "count": 875
+        },
+        {
+          "value": "medline industries, lp - northfield",
+          "count": 812
+        },
+        {
+          "value": "siemens medical solutions usa",
+          "count": 795
+        },
+        {
+          "value": "siemens healthcare diagnostics",
+          "count": 695
+        },
+        {
+          "value": "customed",
+          "count": 682
+        }
+      ]
+    },
+    "device_name_raw": {
+      "non_null": 40298,
+      "null_pct": 0.0025,
+      "distinct_approx": 39940,
+      "blank": 0,
+      "len_min": 3,
+      "len_p50": 168,
+      "len_p99": 2077,
+      "len_max": 4000,
+      "top_values": [
+        {
+          "value": "BVI CustomEyes Procedure Packs containing Sol-M Luer Lock and Luer Slip 1ml syri",
+          "count": 159
+        },
+        {
+          "value": "Torcon NB Advantage Catheters - Product Usage: Intended for use in the periphera",
+          "count": 71
+        },
+        {
+          "value": "IV Administration Set utilized in gravity IV administration sets and pump admini",
+          "count": 67
+        },
+        {
+          "value": "Medline Probe Cover Kits containing sterile Ultrasound Gel, Labeled as the follo",
+          "count": 51
+        },
+        {
+          "value": "Custom Sterile and Non-Sterile Procedural Kits containing Turkuaz Ultrasound Gel",
+          "count": 49
+        }
+      ]
+    },
+    "recall_class": {
+      "non_null": 40299,
+      "null_pct": 0.0,
+      "distinct_approx": 3,
+      "blank": 0,
+      "len_min": 7,
+      "len_p50": 8,
+      "len_p99": 9,
+      "len_max": 9,
+      "top_values": [
+        {
+          "value": "Class II",
+          "count": 35598
+        },
+        {
+          "value": "Class I",
+          "count": 3662
+        },
+        {
+          "value": "Class III",
+          "count": 1039
+        }
+      ]
+    },
+    "reason_text": {
+      "non_null": 40250,
+      "null_pct": 0.1216,
+      "distinct_approx": 15371,
+      "blank": 0,
+      "len_min": 3,
+      "len_p50": 171,
+      "len_p99": 708,
+      "len_max": 2130,
+      "top_values": [
+        {
+          "value": "Recall initiated due to inadequate validation/qualification of sterilization pro",
+          "count": 270
+        },
+        {
+          "value": "Customed has determined that there is the possibility that packaging integrity m",
+          "count": 233
+        },
+        {
+          "value": "The parameters provided in the Laparoscopic Manual Instruments Instructions for ",
+          "count": 200
+        },
+        {
+          "value": "There is a potential for extensive loss of primary segment material exposing und",
+          "count": 191
+        },
+        {
+          "value": "Medical convenience kits contain plastic syringes affected by the FDA Safety Ale",
+          "count": 189
+        }
+      ]
+    },
+    "scope_text": {
+      "non_null": 40263,
+      "null_pct": 0.0893,
+      "distinct_approx": 37459,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 86,
+      "len_p99": 151027,
+      "len_max": 8867704,
+      "top_values": [
+        {
+          "value": "All lots",
+          "count": 268
+        },
+        {
+          "value": "All serial numbers",
+          "count": 125
+        },
+        {
+          "value": "All Lots",
+          "count": 118
+        },
+        {
+          "value": "All lot codes",
+          "count": 89
+        },
+        {
+          "value": "all codes",
+          "count": 80
+        }
+      ]
+    },
+    "record_date": {
+      "non_null": 40299,
+      "null_pct": 0.0,
+      "distinct_approx": 748,
+      "min": "2012-06-20",
+      "max": "2026-10-14"
+    },
+    "status": {
+      "non_null": 40299,
+      "null_pct": 0.0,
+      "distinct_approx": 3,
+      "blank": 0,
+      "len_min": 7,
+      "len_p50": 10,
+      "len_p99": 10,
+      "len_max": 10,
+      "top_values": [
+        {
+          "value": "Terminated",
+          "count": 25334
+        },
+        {
+          "value": "Ongoing",
+          "count": 14341
+        },
+        {
+          "value": "Completed",
+          "count": 624
+        }
+      ]
+    },
+    "distribution_pattern": {
+      "non_null": 40298,
+      "null_pct": 0.0025,
+      "distinct_approx": 12589,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 104,
+      "len_p99": 1364,
+      "len_max": 4000,
+      "top_values": [
+        {
+          "value": "US Nationwide distribution.",
+          "count": 1943
+        },
+        {
+          "value": "US Nationwide Distribution",
+          "count": 678
+        },
+        {
+          "value": "Nationwide Distribution",
+          "count": 615
+        },
+        {
+          "value": "Worldwide distribution.",
+          "count": 611
+        },
+        {
+          "value": "Nationwide",
+          "count": 588
+        }
+      ]
+    }
+  }
+}

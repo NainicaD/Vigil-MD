@@ -1,0 +1,393 @@
+{
+  "table": "vigil-md-1792696816.vigil_md_staging.maude_stg",
+  "source": "maude",
+  "ingest_date": "2026-10-26",
+  "generated_at": "2026-10-26T23:01:33.572696+00:00",
+  "rows": 21532440,
+  "columns": {
+    "source": {
+      "non_null": 21532440,
+      "null_pct": 0.0,
+      "distinct_approx": 1,
+      "blank": 0,
+      "len_min": 5,
+      "len_p50": 5,
+      "len_p99": 5,
+      "len_max": 5,
+      "top_values": [
+        {
+          "value": "maude",
+          "count": 21532440
+        }
+      ]
+    },
+    "source_record_id": {
+      "non_null": 21532440,
+      "null_pct": 0.0,
+      "distinct_approx": 21661792,
+      "blank": 0,
+      "len_min": 7,
+      "len_p50": 8,
+      "len_p99": 8,
+      "len_max": 8
+    },
+    "device_seq": {
+      "non_null": 21532440,
+      "null_pct": 0.0,
+      "distinct_approx": 55,
+      "min": 0,
+      "max": 54
+    },
+    "manufacturer_name_raw": {
+      "non_null": 21432276,
+      "null_pct": 0.4652,
+      "distinct_approx": 27932,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 20,
+      "len_p99": 46,
+      "len_max": 109,
+      "top_values": [
+        {
+          "value": "DEXCOM, INC.",
+          "count": 2370403
+        },
+        {
+          "value": "MEDTRONIC PUERTO RICO OPERATIONS CO.",
+          "count": 1806051
+        },
+        {
+          "value": "CAREFUSION SD",
+          "count": 1373271
+        },
+        {
+          "value": "TANDEM DIABETES CARE",
+          "count": 1326914
+        },
+        {
+          "value": "INSTITUT STRAUMANN AG",
+          "count": 1175434
+        }
+      ]
+    },
+    "manufacturer_name_norm": {
+      "non_null": 21431808,
+      "null_pct": 0.4674,
+      "distinct_approx": 19895,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 18,
+      "len_p99": 46,
+      "len_max": 108,
+      "top_values": [
+        {
+          "value": "dexcom",
+          "count": 2453601
+        },
+        {
+          "value": "medtronic puerto rico operations",
+          "count": 1835516
+        },
+        {
+          "value": "tandem diabetes care",
+          "count": 1374526
+        },
+        {
+          "value": "carefusion sd",
+          "count": 1373271
+        },
+        {
+          "value": "institut straumann ag",
+          "count": 1225833
+        }
+      ]
+    },
+    "device_name_raw": {
+      "non_null": 21454685,
+      "null_pct": 0.3611,
+      "distinct_approx": 354921,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 30,
+      "len_p99": 80,
+      "len_max": 128,
+      "top_values": [
+        {
+          "value": "DEXCOM G6 CONTINUOUS GLUCOSE MONITORING SYSTEM",
+          "count": 1331239
+        },
+        {
+          "value": "ALARIS PUMP MODULE",
+          "count": 678725
+        },
+        {
+          "value": "DEXCOM G7 CONTINUOUS GLUCOSE MONITORING SYSTEM",
+          "count": 613201
+        },
+        {
+          "value": "T:SLIM X2 INSULIN PUMP WITH CONTROL-IQ TECHNOLOGY",
+          "count": 571347
+        },
+        {
+          "value": "ALARIS SYSTEM",
+          "count": 417204
+        }
+      ]
+    },
+    "model_number_raw": {
+      "non_null": 15780733,
+      "null_pct": 26.7118,
+      "distinct_approx": 193056,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 7,
+      "len_p99": 24,
+      "len_max": 80,
+      "top_values": [
+        {
+          "value": null,
+          "count": 5751707
+        },
+        {
+          "value": "8100",
+          "count": 990929
+        },
+        {
+          "value": "1002717",
+          "count": 703225
+        },
+        {
+          "value": "NA",
+          "count": 525439
+        },
+        {
+          "value": "9445-24",
+          "count": 323275
+        }
+      ]
+    },
+    "catalog_number": {
+      "non_null": 18419016,
+      "null_pct": 14.4592,
+      "distinct_approx": 253764,
+      "blank": 1,
+      "len_min": 1,
+      "len_p50": 8,
+      "len_p99": 26,
+      "len_max": 37,
+      "top_values": [
+        {
+          "value": null,
+          "count": 3113424
+        },
+        {
+          "value": "8100",
+          "count": 718944
+        },
+        {
+          "value": "8100 ALARIS LVP MODULE",
+          "count": 389516
+        },
+        {
+          "value": "STT-OR-001",
+          "count": 286231
+        },
+        {
+          "value": "STP-AT-012",
+          "count": 234673
+        }
+      ]
+    },
+    "lot_number": {
+      "non_null": 12101301,
+      "null_pct": 43.7997,
+      "distinct_approx": 2999979,
+      "blank": 3,
+      "len_min": 1,
+      "len_p50": 7,
+      "len_p99": 14,
+      "len_max": 34,
+      "top_values": [
+        {
+          "value": null,
+          "count": 9431139
+        },
+        {
+          "value": "NI",
+          "count": 430778
+        },
+        {
+          "value": "NA",
+          "count": 361967
+        },
+        {
+          "value": "UNKNOWN",
+          "count": 342229
+        },
+        {
+          "value": "UNK",
+          "count": 170529
+        }
+      ]
+    },
+    "udi_di": {
+      "non_null": 13324032,
+      "null_pct": 38.1211,
+      "distinct_approx": 195529,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 14,
+      "len_p99": 18,
+      "len_max": 30,
+      "top_values": [
+        {
+          "value": null,
+          "count": 8208408
+        },
+        {
+          "value": "10885403222054",
+          "count": 648559
+        },
+        {
+          "value": "10885403810015",
+          "count": 339087
+        },
+        {
+          "value": "00386270001627",
+          "count": 238810
+        },
+        {
+          "value": "00386270000385",
+          "count": 226085
+        }
+      ]
+    },
+    "product_code": {
+      "non_null": 21522920,
+      "null_pct": 0.0442,
+      "distinct_approx": 3879,
+      "blank": 1,
+      "len_min": 1,
+      "len_p50": 3,
+      "len_p99": 3,
+      "len_max": 3,
+      "top_values": [
+        {
+          "value": "DZE",
+          "count": 3960241
+        },
+        {
+          "value": "QBJ",
+          "count": 2352473
+        },
+        {
+          "value": "FRN",
+          "count": 1560186
+        },
+        {
+          "value": "QFG",
+          "count": 1335964
+        },
+        {
+          "value": "OZP",
+          "count": 901955
+        }
+      ]
+    },
+    "record_date": {
+      "non_null": 21532440,
+      "null_pct": 0.0,
+      "distinct_approx": 3862,
+      "min": "2016-01-01",
+      "max": "2026-09-30"
+    },
+    "event_type": {
+      "non_null": 21526632,
+      "null_pct": 0.027,
+      "distinct_approx": 5,
+      "blank": 0,
+      "len_min": 5,
+      "len_p50": 11,
+      "len_p99": 11,
+      "len_max": 18,
+      "top_values": [
+        {
+          "value": "Malfunction",
+          "count": 13525710
+        },
+        {
+          "value": "Injury",
+          "count": 7876204
+        },
+        {
+          "value": "Death",
+          "count": 119082
+        },
+        {
+          "value": null,
+          "count": 5808
+        },
+        {
+          "value": "Other",
+          "count": 4654
+        }
+      ]
+    },
+    "adverse_event_flag": {
+      "non_null": 21489765,
+      "null_pct": 0.1982,
+      "distinct_approx": 2,
+      "blank": 0,
+      "len_min": 1,
+      "len_p50": 1,
+      "len_p99": 1,
+      "len_max": 1,
+      "top_values": [
+        {
+          "value": "N",
+          "count": 13423843
+        },
+        {
+          "value": "Y",
+          "count": 8065922
+        },
+        {
+          "value": null,
+          "count": 42675
+        }
+      ]
+    },
+    "report_number": {
+      "non_null": 21532440,
+      "null_pct": 0.0,
+      "distinct_approx": 20868065,
+      "blank": 0,
+      "len_min": 7,
+      "len_p50": 19,
+      "len_p99": 22,
+      "len_max": 22,
+      "top_values": [
+        {
+          "value": "MW5100389",
+          "count": 55
+        },
+        {
+          "value": "MW5113874",
+          "count": 47
+        },
+        {
+          "value": "MW5081195",
+          "count": 44
+        },
+        {
+          "value": "MW5088767",
+          "count": 38
+        },
+        {
+          "value": "MW5113948",
+          "count": 36
+        }
+      ]
+    }
+  }
+}
