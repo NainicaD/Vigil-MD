@@ -53,15 +53,18 @@ Vigil-MD/
 │   │   └── flatten_to_parquet.py    # normalize and flatten sample data to Parquet
 │   ├── matching/
 │   │   └── exact_linking.py         # UDI and recall-number exact joins
+│   ├── analysis/
+│   │   └── bias_slices.py           # read-only bias slice analysis of PROD (see "Bias slice analysis")
 │   └── logger.py                    # console + Logstash logger
 ├── tests/                           # pytest (all GCP calls mocked) — see tests/TEST_CASES.md
 ├── docs/
 │   ├── WAREHOUSE_PLAN.md            # warehouse design, decisions, and the go-live Runbook
 │   ├── TESTS_PLAN.md                # test plan for the warehouse code
+│   ├── BIAS_REPORT.md               # bias slice analysis: results, limitations, proposed mitigations
 │   └── issue.md                     # known issues and limitations
 ├── data/                            # DVC-tracked (not in Git)
 │   ├── raw/samples/                 # 200-record sample JSON files
-│   └── interim/                     # flattened Parquet + linking outputs
+│   └── interim/                     # flattened Parquet + linking outputs; bias/ = bias analysis CSVs (git-ignored)
 ├── docker-compose.yaml              # Airflow with CeleryExecutor
 ├── docker-compose.elk.yml           # Elasticsearch, Logstash, Kibana
 ├── .env.example                     # environment variable template
@@ -236,6 +239,81 @@ SELECT source, COUNT(*) AS files, SUM(row_count) AS rows, MAX(loaded_at) AS last
 FROM `vigil-md-1792696816.vigil_md_ops.load_log`
 GROUP BY source;
 ```
+
+---
+
+## Bias slice analysis
+
+`scripts/analysis/bias_slices.py` checks whether linking and data quality are uneven across slices of the data. It does not change the pipeline:
+
+- It runs **read-only `SELECT`s on the four PROD tables only**.
+  - No RAW JSON is scanned and no table is created.
+  - The matching rules are the ones in `exact_linking.py`, unchanged.
+  - A guard in the script rejects any other dataset or any write statement.
+- Slices use **PROD columns only**: year, event type, adverse-event flag, product code, manufacturer, manufacturer volume tier, recall class/status/root cause, and GUDID status.
+  - Slices that exist only in RAW (device class, specialty, country, patient sex/age, reporter type) are listed as limitations.
+
+### What it measures
+
+| Metric | Definition |
+|---|---|
+| UDI availability | MAUDE device rows with a `udi_di` |
+| Primary-DI match | Of those rows, the share whose `udi_di` exactly equals a GUDID primary DI |
+| End-to-end link coverage | MAUDE→GUDID (availability × match), and recall↔enforcement on `link_key` |
+| Field completeness | Non-null, non-blank rate of every PROD business column |
+
+- Each slice gets a Wilson 95% CI and its gap to the overall rate.
+- A slice is flagged when n ≥ 30, the gap is at least 10 points, and its CI excludes the overall rate.
+- `unmatched_udi_shape.csv` is a diagnostic only. It explains why unmatched UDIs don't match.
+
+### Results (2026-10-26)
+
+- **MAUDE→GUDID:** 61.9% of MAUDE rows have a UDI, 81.2% of those match, so **50.2%** link end-to-end.
+- **Who links less:** Death reports, small manufacturers and 2016–17 reports. They are under-linked because the UDI is missing.
+- **Who has a UDI but doesn't match:** several diabetes-device makers.
+- **Formatting is not the cause:** normalization would recover only 20 of 2.5M unmatched UDIs.
+- **Recall→enforcement (67.7%):** mostly a date-range effect. Recalls before 2012 have no enforcement record.
+
+Full results, limitations, and proposed mitigations (not implemented) are in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md).
+
+### How to run it
+
+Run it from WSL with the `vigil-analysis` venv, which has `google-cloud-bigquery`. It uses your ADC credentials; if they've expired, run `gcloud auth application-default login`.
+
+```bash
+cd ~/Vigik-MD-airflow
+PY=~/.venvs/vigil-analysis/bin/python
+
+# 1. Print the SQL (no GCP call)
+$PY scripts/analysis/bias_slices.py --project vigil-md-1792696816 --print-only
+
+# 2. Free dry-run cost estimates (nothing is executed)
+$PY scripts/analysis/bias_slices.py --project vigil-md-1792696816 --estimate-only --max-gb 5
+
+# 3. Real run → data/interim/bias/
+$PY scripts/analysis/bias_slices.py --project vigil-md-1792696816 --max-gb 5
+```
+
+- **Cost:** the whole run scans about **7.6 GB**. A re-run within 24 hours can come from the BigQuery result cache and scan nothing.
+- **`--max-gb 5` is needed** because the MAUDE completeness query scans about 3.9 GB, above the default 2 GB.
+- **What `--max-gb` does:** it is checked against each query's dry run before anything runs, and it is also set as `maximum_bytes_billed` on every real query.
+- **Exit codes:** `0` = done, `3` = stopped by the cost guard. A query that returns zero rows fails loudly.
+- **Other output folder:** use `--out <dir>`.
+
+**Output** in `data/interim/bias/` (git-ignored):
+
+| File | Contents |
+|---|---|
+| `udi_availability.csv` | UDI availability (and length-rule violations) per slice |
+| `primary_di_match.csv` | Primary-DI match rate per slice |
+| `link_coverage.csv` | MAUDE→GUDID, recall→enforcement and enforcement→recall per slice |
+| `field_completeness.csv` | Completeness per table, field and slice |
+| `unmatched_udi_shape.csv` | Why unmatched UDIs did not match (diagnostic) |
+| `summary.json` | Overall rates, disparity flags per metric, best/worst slices, data snapshot, bytes scanned, limitations |
+
+Every CSV except `unmatched_udi_shape.csv` has the columns `metric, table, field, slice_name, slice_value, n, numerator, rate, ci_low, ci_high, overall_rate, gap_pp, ratio_to_overall, small_cell, below_four_fifths, disparity_flag`.
+
+`docs/BIAS_REPORT.md` is written by hand from these files. After a re-run, compare `summary.json` with the report and update the report's numbers.
 
 ---
 
@@ -520,7 +598,11 @@ All GCP calls are mocked: **no test touches real GCS or BigQuery**. Test logs ne
 # Everything except the two pandas-based files
 ~/.venvs/vigil-airflow/bin/python -m pytest tests \
     --ignore=tests/test_data_quality.py --ignore=tests/test_preprocessing.py
-# 2026-10-25: 293 passed, 50 skipped (no local data/interim), 21 deselected (integration)
+# 2026-10-26: 344 passed, 55 skipped, 21 deselected (integration), 4 failed
+#   (test_unzip_to_ndjson.py: google-cloud-storage is not installed in vigil-airflow)
+
+# Bias slice analysis only (FakeClient, no GCP)
+~/.venvs/vigil-airflow/bin/python -m pytest tests/test_bias_slices.py
 
 # Real-GCS checks of the raw files (needs credentials; run by the validate_gcs task)
 ~/.venvs/vigil-airflow/bin/python -m pytest tests -m integration
@@ -540,6 +622,15 @@ The BigQuery SQL is checked by hand with free dry runs. See "Manual checks" in `
 ---
 
 ## Changes
+
+### 2026-10-26 — Bias slice analysis of PROD
+
+- **New `scripts/analysis/bias_slices.py`:**
+  - Measures UDI availability, primary-DI match rate, end-to-end link coverage and field completeness, broken down by PROD-column slices.
+  - Runs read-only SELECTs on `vigil_md_prod` only, with a dry-run cost guard and `maximum_bytes_billed`.
+- **Results:** CSVs and `summary.json` in `data/interim/bias/` (git-ignored). The report is [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md).
+- **Tests:** 37 mocked tests in `tests/test_bias_slices.py`, listed in `tests/TEST_CASES.md` §19.
+- **Unchanged:** the pipeline, the matching rules and every warehouse table.
 
 ### 2026-10-25 — GCS → BigQuery warehouse (RAW → STAGING → PROD)
 
@@ -564,6 +655,8 @@ The BigQuery SQL is checked by hand with free dry runs. See "Manual checks" in `
 - [x] DVC data versioning
 - [x] Test modules
 - [x] Incremental RAW → STAGING → PROD warehouse in BigQuery (go-live: Runbook)
+- [x] Slice analysis: coverage and bias across data slices (`docs/BIAS_REPORT.md`)
+- [ ] Bias mitigations (proposed in `docs/BIAS_REPORT.md` §6)
 - [ ] Candidate generation and ML matching
 - [ ] Unified BigQuery database with provenance
 - [ ] Chat interface for recall history search
