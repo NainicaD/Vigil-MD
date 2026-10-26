@@ -143,4 +143,3 @@ def test_record_date_coverage(flat_tables):
 
 # Schema-shape checks (source column, raw_json, links file) live in
 # test_data_contract.py.
-    assert len(df) <= 500, f"Unexpectedly many links: {len(df)}"
