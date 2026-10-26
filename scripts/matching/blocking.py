@@ -158,6 +158,10 @@ def main():
 
     if not pairs:
         log.warning("No candidate pairs generated.")
+        # Still write both outputs (empty) so the DVC stage output exists
+        pd.DataFrame().to_parquet(INTERIM / "candidate_pairs.parquet", index=False)
+        (INTERIM / "blocking_report.json").write_text(json.dumps(
+            {"total_candidates": 0, "by_source": {}, "by_rule": {}}, indent=2))
         return
 
     log.info("Computing features for %d pairs …", len(pairs))

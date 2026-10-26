@@ -89,10 +89,11 @@ def check_name_agreement(df, norm_col_a, norm_col_b, label):
 def main():
     # ── Enforcement ↔ Recall ─────────────────────────────────────────────────
     enf_rec = link_enforcement_recall()
+    # Always write the file (empty if no links) so the DVC stage output exists
+    out = INTERIM / "links_enforcement_recall.parquet"
+    enf_rec.to_parquet(out, index=False)
+    log.info("Saved → %s (%d links)", out, len(enf_rec))
     if not enf_rec.empty:
-        out = INTERIM / "links_enforcement_recall.parquet"
-        enf_rec.to_parquet(out, index=False)
-        log.info("Saved → %s", out)
         check_name_agreement(enf_rec,
             "manufacturer_name_norm_enf",
             "manufacturer_name_norm_rec",
@@ -104,10 +105,11 @@ def main():
 
     # ── MAUDE ↔ GUDID ────────────────────────────────────────────────────────
     maude_gudid = link_maude_gudid()
+    # Always write the file (empty if no links) so the DVC stage output exists
+    out = INTERIM / "links_maude_gudid.parquet"
+    maude_gudid.to_parquet(out, index=False)
+    log.info("Saved → %s (%d links)", out, len(maude_gudid))
     if not maude_gudid.empty:
-        out = INTERIM / "links_maude_gudid.parquet"
-        maude_gudid.to_parquet(out, index=False)
-        log.info("Saved → %s", out)
         check_name_agreement(maude_gudid,
             "manufacturer_name_norm_maude",
             "manufacturer_name_norm_gudid",
