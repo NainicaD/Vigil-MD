@@ -1,0 +1,41 @@
+# Sample pipeline: samples -> flattened Parquet -> exact links and blocking candidates.
+# Full-scale data runs through Airflow -> GCS -> BigQuery and is not managed here.
+stages:
+  flatten:
+    cmd: python scripts/preprocessing/flatten_to_parquet.py
+    deps:
+      - scripts/preprocessing/flatten_to_parquet.py
+      - data/raw/samples/enforcement_sample.json
+      - data/raw/samples/recall_sample.json
+      - data/raw/samples/maude_sample.json
+      - data/raw/samples/gudid_sample.json
+    outs:
+      - data/interim/enforcement_flat.parquet
+      - data/interim/recall_flat.parquet
+      - data/interim/maude_flat.parquet
+      - data/interim/gudid_flat.parquet
+
+  exact_linking:
+    cmd: python scripts/matching/exact_linking.py
+    deps:
+      - scripts/matching/exact_linking.py
+      - data/interim/enforcement_flat.parquet
+      - data/interim/recall_flat.parquet
+      - data/interim/maude_flat.parquet
+      - data/interim/gudid_flat.parquet
+    outs:
+      - data/interim/links_enforcement_recall.parquet
+      - data/interim/links_maude_gudid.parquet
+      - data/interim/linking_report.json
+
+  blocking:
+    cmd: python scripts/matching/blocking.py
+    deps:
+      - scripts/matching/blocking.py
+      - data/interim/enforcement_flat.parquet
+      - data/interim/recall_flat.parquet
+      - data/interim/maude_flat.parquet
+      - data/interim/gudid_flat.parquet
+    outs:
+      - data/interim/candidate_pairs.parquet
+      - data/interim/blocking_report.json
