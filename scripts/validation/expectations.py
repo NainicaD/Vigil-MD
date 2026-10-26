@@ -50,7 +50,8 @@ RULES: dict[str, dict] = {
     "maude": {
         # no baseline yet: loose limits until MAUDE is measured
         "regex":   {"product_code": (PRODUCT_CODE_RE, 0.95)},
-        "lengths": {"udi_di": ((7, 23), 0.99)},
+        # same limits as GUDID (6 = shortest HIBCC device identifier)
+        "lengths": {"udi_di": ((6, 23), 0.99)},
         "dates":   ["record_date"],
     },
     "gudid": {
