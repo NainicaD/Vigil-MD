@@ -455,17 +455,60 @@ docker compose -f docker-compose.elk.yml start   # resume
 
 ## Data Versioning with DVC
 
-```bash
-# After changing data files
-dvc add data/raw/samples
-dvc add data/interim
-dvc push
+DVC versions the sample data and the local sample pipeline. The data lives in the DVC remote
+`gs://vigil-md-raw-nd/dvc-store`; git tracks only the pointer files (`data/raw/samples.dvc`,
+`dvc.yaml`, `dvc.lock`).
 
-# Commit the pointer files
-git add data/raw/samples.dvc data/interim.dvc
-git commit -m "chore: update DVC tracking"
+The full-scale data (Airflow -> GCS -> BigQuery) is not managed by DVC. It is versioned by the
+unchanged source zips in `raw/`, per-file content hashes, the pending manifests, and
+`vigil_md_ops.load_log`.
+
+### Get the data
+
+```bash
+dvc pull
+```
+
+### Sample pipeline (`dvc.yaml`)
+
+```
+data/raw/samples.dvc
+        |
+     flatten
+     /     \
+exact_linking  blocking
+```
+
+| Stage | Script | Outputs in `data/interim/` |
+|---|---|---|
+| `flatten` | `scripts/preprocessing/flatten_to_parquet.py` | `{enforcement,recall,maude,gudid}_flat.parquet` |
+| `exact_linking` | `scripts/matching/exact_linking.py` | `links_enforcement_recall.parquet`, `links_maude_gudid.parquet`, `linking_report.json` |
+| `blocking` | `scripts/matching/blocking.py` | `candidate_pairs.parquet`, `blocking_report.json` |
+
+`dvc.lock` records the hash of every script, input and output, so a run can be reproduced exactly.
+The matching scripts always write their outputs, as empty tables when nothing matches, so every
+run produces the same set of files.
+
+### Reproduce
+
+```bash
+dvc repro     # re-runs only the stages whose script or inputs changed
+dvc status    # 'Data and pipelines are up to date' when outputs match dvc.lock
+dvc dag       # shows the stage graph
+```
+
+### After changing the samples or a pipeline script
+
+```bash
+dvc add data/raw/samples          # only if the sample files changed
+dvc repro                         # rebuild the affected stages
+dvc push                          # upload the new data versions
+git add data/raw/samples.dvc dvc.lock
+git commit -m "data: <what changed>"
 git push
 ```
+
+Do not run `dvc add data/interim`: those files are produced by the pipeline and tracked in `dvc.lock`.
 
 ---
 
