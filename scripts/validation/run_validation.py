@@ -26,6 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.logger import get_logger                       # noqa: E402
 from scripts.validation.expectations import (               # noqa: E402
     build_suite, columns_for_query, compare_schema, expected_schema)
+from scripts.validation.statistics import (                # noqa: E402
+    build_stats_sql, parse_stats_row, stats_document, write_stats)
 from scripts.warehouse import schemas                       # noqa: E402
 
 log = get_logger("run_validation")
@@ -116,6 +118,16 @@ def run_suite(project: str, source: str, ingest_date: dt.date) -> bool:
     return bool(result.success)
 
 
+def run_stats(client, project: str, source: str, day: dt.date, out_dir: Path) -> Path:
+    """Compute and save the statistics for one partition. Returns the JSON path."""
+    row = dict(next(iter(client.query(build_stats_sql(project, source, day)).result())))
+    doc = stats_document(project, source, day, parse_stats_row(source, row))
+    path = write_stats(doc, out_dir)
+    log.info("stats %s: %s rows, %d columns -> %s",
+             source, doc["rows"], len(doc["columns"]), path)
+    return path
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -124,12 +136,16 @@ def main() -> None:
     ap.add_argument("--source", choices=schemas.SOURCES, help="one source (default: all)")
     ap.add_argument("--values", action="store_true",
                     help="also run the Great Expectations value checks")
+    ap.add_argument("--stats", action="store_true",
+                    help="also compute per-column statistics and save them as JSON")
+    ap.add_argument("--out-dir", type=Path, default=Path("reports/statistics"),
+                    help="where --stats writes <source>/<ingest_date>.json")
     ap.add_argument("--ingest-date", type=dt.date.fromisoformat,
-                    help="load to validate (default: latest in load_log)")
+                    help="load to check (default: latest in load_log)")
     ap.add_argument("--max-gb", type=float, default=2.0,
                     help="stop if the dry run estimates more than this per query")
     ap.add_argument("--estimate-only", action="store_true",
-                    help="print the cost estimate and stop")
+                    help="print the cost estimates and stop")
     args = ap.parse_args()
 
     from google.cloud import bigquery
@@ -137,21 +153,32 @@ def main() -> None:
     sources = [args.source] if args.source else schemas.SOURCES
 
     ok = check_schemas(client, args.project, sources)
-    if args.values:
+    if args.values or args.stats:
         for source in sources:
             day = args.ingest_date or latest_ingest_date(client, args.project, source)
             if day is None:
-                log.warning("values SKIP %s: no load in load_log", source)
+                log.warning("SKIP %s: no load in load_log", source)
                 continue
-            gb = estimate_bytes(client, partition_query(args.project, source, day)) / 1e9
-            log.info("values %s: ingest_date %s, about %.3f GB per query", source, day, gb)
-            if args.estimate_only:
-                continue
-            if gb > args.max_gb:
-                log.error("values STOP %s: %.3f GB is above --max-gb %.1f", source, gb, args.max_gb)
-                ok = False
-                continue
-            ok = run_suite(args.project, source, day) and ok
+            if args.values:
+                gb = estimate_bytes(client, partition_query(args.project, source, day)) / 1e9
+                log.info("values %s: ingest_date %s, about %.3f GB per query", source, day, gb)
+                if not args.estimate_only:
+                    if gb > args.max_gb:
+                        log.error("values STOP %s: %.3f GB is above --max-gb %.1f",
+                                  source, gb, args.max_gb)
+                        ok = False
+                    else:
+                        ok = run_suite(args.project, source, day) and ok
+            if args.stats:
+                gb = estimate_bytes(client, build_stats_sql(args.project, source, day)) / 1e9
+                log.info("stats %s: ingest_date %s, about %.3f GB (one query)", source, day, gb)
+                if not args.estimate_only:
+                    if gb > args.max_gb:
+                        log.error("stats STOP %s: %.3f GB is above --max-gb %.1f",
+                                  source, gb, args.max_gb)
+                        ok = False
+                    else:
+                        run_stats(client, args.project, source, day, args.out_dir)
     sys.exit(EXIT_OK if ok else EXIT_DATA_FAIL)
 
 
