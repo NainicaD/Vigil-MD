@@ -1,4 +1,40 @@
+"""Check one day of STAGING before it is merged into PROD.
 
+Read-only: it never writes. It reads the raw and staging partitions of one
+ingest date (partition pruning), compares them with the thresholds in
+scripts/warehouse/check_config.py, and prints one line per check:
+
+  PASS   within limits
+  WARN   outside the warn limit (logged, the pipeline continues)
+  FAIL   outside the fail limit (exit code 3 = data failure, same as
+         run_validation.py; the merge task must not run and is not retried)
+
+Checks:
+  raw_to_staged_gap   rows lost between raw and staging (null keys, duplicates);
+                      zero staged rows when raw has rows is always a FAIL
+  volume              staged rows against the previous load of the same source
+  null_rate:<col>     percent NULL or blank, against the baseline
+  dates               future or pre-1970 dates
+  product_codes       values that are not three capital letters (if configured)
+  allowed_values      new values in category columns
+  mix_shift           share of each category against the baseline
+  text_length         values longer than the configured maximum
+  whitespace_only     values that are only spaces
+
+A day with nothing loaded for the source (no raw rows) exits 0: most daily
+runs are no-ops. A source with no entry in check_config.py is skipped with a
+warning.
+
+Usage:
+    python scripts/warehouse/check_staging.py \
+        --project vigil-md-1792696816 --source enforcement --ingest-date 2026-10-26
+
+    # Print the SQL only. No GCP calls:
+    python scripts/warehouse/check_staging.py ... --print-only
+
+    # Report FAILs without failing (first loads, while thresholds are tuned):
+    python scripts/warehouse/check_staging.py ... --warn-only
+"""
 from __future__ import annotations
 
 import argparse
@@ -258,13 +294,21 @@ def evaluate_placeholders(cfg: dict, profile: dict, small: bool) -> list[Result]
 
 
 def evaluate_whitespace(cfg: dict, profile: dict) -> list[Result]:
+    """Values that are only spaces. Tolerance: whitespace_max_pct of rows (default 0)."""
     date_col = cfg["date_column"]
-    hits = {c: profile.get(f"ws__{c}", 0) for c in cfg["null_baseline_pct"] if c != date_col}
-    hits = {c: n for c, n in hits.items() if n}
+    rows = profile["rows_total"]
+    max_pct = cfg.get("whitespace_max_pct", 0.0)
+    limit = f"warn >{max_pct}% of rows" if max_pct else "expected none"
+    counts = {c: profile.get(f"ws__{c}", 0) for c in cfg["null_baseline_pct"] if c != date_col}
+    hits = {c: n for c, n in counts.items() if n}
+    over = {c: n for c, n in hits.items() if _pct(n, rows) > max_pct}
+    if over:
+        return [Result("whitespace_only", WARN, ", ".join(f"{c}={n}" for c, n in over.items()),
+                       limit, "values that are only spaces survive NULLIF")]
     if hits:
-        return [Result("whitespace_only", WARN, ", ".join(f"{c}={n}" for c, n in hits.items()),
-                       "expected none", "values that are only spaces survive NULLIF")]
-    return [Result("whitespace_only", PASS, "none", "expected none")]
+        return [Result("whitespace_only", PASS, ", ".join(f"{c}={n}" for c, n in hits.items()),
+                       limit, "within tolerance")]
+    return [Result("whitespace_only", PASS, "none", limit)]
 
 
 def evaluate_text_lengths(cfg: dict, profile: dict) -> list[Result]:
@@ -344,7 +388,8 @@ def summary(results: list[Result]) -> str:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    summary_line = (__doc__ or "Check one day of STAGING before it is merged into PROD.").splitlines()[0]
+    parser = argparse.ArgumentParser(description=summary_line)
     parser.add_argument("--project",     required=True)
     parser.add_argument("--source",      required=True, choices=schemas.SOURCES)
     parser.add_argument("--ingest-date", required=True,
