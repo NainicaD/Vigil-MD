@@ -2,93 +2,116 @@
 
 **ML-based entity resolution across FDA medical device databases.**
 
-Vigil MD links medical device records from multiple FDA sources into one unified, evidence-linked database. It identifies when records from different sources describe the same manufacturer, device model, or recall, while keeping genuinely different devices and recalls separate. Users can then search a device's or manufacturer's recall history through a chat interface backed by the unified database.
+Vigil MD links medical device records from four FDA sources into one evidence-linked database. It finds records in different sources that describe the same manufacturer, device model or recall, and keeps genuinely different devices and recalls apart. The goal is a reusable linkage layer, so researchers can search a device's or manufacturer's recall history without rebuilding the links.
 
 Inspired by Kramer et al. (2012), *Security and Privacy Qualities of Medical Devices: An Analysis of FDA Postmarket Surveillance*, PLoS ONE.
 
+**Status (2026-10-27).** The full 2016–2026 data is in a BigQuery warehouse (RAW → STAGING → PROD, 26.9 million PROD rows). Three Airflow DAGs fetch, load, validate and merge it daily. Each load passes schema and value checks, per-column statistics and anomaly checks before it reaches PROD; a failed check stops that source's merge and sends an e-mail alert. A bias analysis of PROD, with a reweighting mitigation, is in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md). 460 tests run in CI for every pull request.
+
+**Contents:** [Quickstart](#quickstart) · [How the pipeline works](#how-the-pipeline-works) · [Data checks and alerts](#data-checks-and-alerts) · [Scheduling](#scheduling-pools-and-priorities) · [BigQuery tables](#bigquery-tables) · [Data validation](#data-validation-schema-and-statistics) · [Anomaly detection](#anomaly-detection) · [Bias analysis](#bias-analysis-and-mitigation) · [DVC](#data-versioning-with-dvc) · [Logging (ELK)](#logging-elk) · [Testing and CI](#testing-and-ci) · [Repository structure](#repository-structure) · [Troubleshooting](#everyday-commands-and-troubleshooting) · [Changes](#changes)
+
 ---
 
-## Data Sources
+## Data sources
 
-| Source | URL | Role | Update cadence |
+| Source | URL | Role | Updates |
 |---|---|---|---|
 | FDA Enforcement | https://open.fda.gov/apis/device/enforcement/ | Recall actions and classification | Weekly |
 | Device Recall | https://open.fda.gov/apis/device/recall/ | Recall details and corrective actions | Weekly |
-| MAUDE | https://open.fda.gov/apis/device/event/ | Adverse event and malfunction reports | Quarterly |
+| MAUDE | https://open.fda.gov/apis/device/event/ | Adverse event and malfunction reports | Quarterly files |
 | GUDID | https://accessgudid.nlm.nih.gov/download | Canonical device identifiers | Monthly |
 
-Current scope: all device types, MAUDE 2016–2026. Enforcement, recall and GUDID are loaded in full.
+Scope: all device types; MAUDE 2016–2026. Enforcement, recall and GUDID are loaded in full. The only reliable common key is the UDI device identifier (UDI-DI): every GUDID record has one, and only part of MAUDE does.
 
 ---
 
-## Project Structure
+## Quickstart
 
-```
-Vigil-MD/
-├── dags/
-│   ├── pull_samples_dag.py          # development DAG — 200 sample records
-│   ├── vigil_md_acquisition.py      # daily: FDA + GUDID → GCS, then starts vigil_md_load
-│   ├── vigil_md_load.py             # triggered: GCS → RAW → STAGING → PROD (BigQuery)
-│   └── vigil_md_full_load.py        # manual: first load, backfill, rebuild
-├── scripts/
-│   ├── acquisition/
-│   │   ├── pull_samples.py          # pull 200 sample records per source
-│   │   ├── fetch_sources.py         # bulk download → GCS (--mode incremental | full)
-│   │   ├── gudid_convert.py         # GUDID: download once, keep zip, XML → NDJSON locally
-│   │   ├── upload_samples_to_gcs.py # upload sample NDJSON to GCS
-│   │   ├── load_samples_to_bq.py    # load raw samples into BigQuery (sample tables)
-│   │   └── load_interim_to_bq.py    # load processed sample Parquet into BigQuery
-│   ├── warehouse/                   # RAW → STAGING → PROD (see "GCS → BigQuery pipeline")
-│   │   ├── schemas.py               # every warehouse table: columns, partitions, keys
-│   │   ├── create_tables.py         # create the datasets and tables (safe to re-run)
-│   │   ├── convert.py               # zip → {"payload": record} NDJSON (openFDA JSON, GUDID XML)
-│   │   ├── common.py                # shared GCS paths and pending-manifest helpers
-│   │   ├── unzip_to_ndjson.py       # step 1: zip in GCS → NDJSON in GCS
-│   │   ├── load_raw_to_bq.py        # step 2: NDJSON → RAW (idempotent, load_log)
-│   │   ├── build_staging.py         # step 3: RAW → STAGING (flatten, cast, dedup)
-│   │   ├── merge_prod.py            # step 4: STAGING → PROD (MERGE / --rebuild)
-│   │   └── sql/staging_*.sql        # per-source staging SQL (port of flatten_to_parquet.py)
-│   ├── preprocessing/
-│   │   ├── schema_map.py            # unified field mapping for all sources
-│   │   └── flatten_to_parquet.py    # normalize and flatten sample data to Parquet
-│   ├── matching/
-│   │   └── exact_linking.py         # UDI and recall-number exact joins
-│   ├── analysis/
-│   │   ├── bias_slices.py           # read-only bias slice analysis of PROD (see "Bias slice analysis")
-│   │   └── bias_mitigation.py       # reweighting mitigation + Fairlearn check (see "Bias slice analysis")
-│   └── logger.py                    # console + Logstash logger
-├── tests/                           # pytest (all GCP calls mocked) — see tests/TEST_CASES.md
-├── docs/
-│   ├── WAREHOUSE_PLAN.md            # warehouse design, decisions, and the go-live Runbook
-│   ├── TESTS_PLAN.md                # test plan for the warehouse code
-│   ├── BIAS_REPORT.md               # bias slice analysis: results, limitations, proposed mitigations
-│   └── issue.md                     # known issues and limitations
-├── data/                            # DVC-tracked (not in Git)
-│   ├── raw/samples/                 # 200-record sample JSON files
-│   └── interim/                     # flattened Parquet + linking outputs; bias/ = bias analysis CSVs (git-ignored)
-├── docker-compose.yaml              # Airflow with CeleryExecutor
-├── docker-compose.elk.yml           # Elasticsearch, Logstash, Kibana
-├── .env.example                     # environment variable template
-└── requirements.txt
-```
+From a clean clone to a first pipeline run. Tested on macOS with Docker Desktop and Python 3.12. Each step says what you should see.
+
+**Prerequisites:** Docker Desktop (at least 4 GB of memory for Docker), Python 3.10+ (3.12 tested; Great Expectations needs 3.10+), Git, the Google Cloud SDK, and access to the GCP project `vigil-md-1792696816` and the bucket `vigil-md-raw-nd`.
+
+1. **Clone and install.**
+   ```bash
+   git clone https://github.com/NainicaD/Vigil-MD.git && cd Vigil-MD
+   conda create -n vigil python=3.12 && conda activate vigil   # or: python -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+   All direct dependencies are pinned (DVC included); the install should end without conflict errors.
+
+2. **GCP credentials.**
+   ```bash
+   gcloud auth login
+   gcloud auth application-default login
+   gcloud config set project vigil-md-1792696816
+   gcloud auth application-default set-quota-project vigil-md-1792696816
+   ```
+   This creates `~/.config/gcloud/application_default_credentials.json`. The scripts, DVC and the Airflow containers all use it (the containers mount `~/.config/gcloud` read-only).
+
+3. **Environment file.**
+   ```bash
+   cp .env.example .env
+   ```
+   Set `AIRFLOW_UID` to the output of `id -u`, and fill in the e-mail (SMTP) settings for the failure alerts. `_PIP_ADDITIONAL_REQUIREMENTS` is already set: it installs the Airflow providers, Great Expectations and sqlalchemy-bigquery in the containers.
+
+4. **Start Airflow.**
+   ```bash
+   docker compose up airflow-init     # first time only: creates the metadata database and the admin user
+   docker compose up -d
+   docker compose ps
+   ```
+   The first start takes a few minutes (it installs the extra packages). Every `airflow-...` service should be `Up (healthy)`. The UI is at http://localhost:8080 (login `airflow` / `airflow`).
+
+5. **Create the two pools (once per machine).** Without them, tasks stay queued with no error.
+   ```bash
+   docker compose exec airflow-scheduler airflow pools set vigil_warehouse 1 "BigQuery writers"
+   docker compose exec airflow-scheduler airflow pools set vigil_upload 1 "GCS uploads (unzip)"
+   docker compose exec airflow-scheduler airflow pools list
+   ```
+   You should see `vigil_warehouse` and `vigil_upload`, 1 slot each.
+
+6. **Create the BigQuery tables** (safe to re-run; already done for the shared project).
+   ```bash
+   docker compose exec -w /opt/airflow/Vigil-MD airflow-worker \
+     python scripts/warehouse/create_tables.py --project vigil-md-1792696816
+   ```
+
+7. **Run the tests.**
+   ```bash
+   pytest -q
+   docker compose exec -w /opt/airflow/Vigil-MD airflow-worker python -m pytest tests/dags -q
+   ```
+   About 460 tests pass locally (the DAG tests skip there), and 68 DAG tests pass in the worker.
+
+8. **Sample data (DVC).**
+   ```bash
+   dvc pull
+   dvc repro
+   dvc status
+   ```
+   `dvc status` should report `Data and pipelines are up to date`.
+
+9. **First pipeline run: one small source.**
+   ```bash
+   docker compose exec airflow-scheduler airflow dags unpause vigil_md_full_load
+   docker compose exec airflow-scheduler airflow dags trigger vigil_md_full_load \
+     --conf '{"sources": ["enforcement"], "refetch": false, "rebuild_prod": false}'
+   ```
+   In the UI, enforcement's six steps (unzip, load_raw, staging, validate, check, merge) should turn green in about 3 minutes; the other sources are skipped. A full MAUDE load takes several hours, so start with enforcement. On an empty project, run the full load for all sources once before the daily DAGs (the incremental fetch needs the partition state it writes).
+
+10. **Daily pipeline.** Unpause `vigil_md_load` first, then `vigil_md_acquisition`. Acquisition runs daily at 06:00 UTC, while the machine and Docker are running, and starts the load when it finishes.
+    ```bash
+    docker compose exec airflow-scheduler airflow dags unpause vigil_md_load
+    docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
+    ```
+
+11. **Optional: logs in Kibana.** `docker compose -f docker-compose.elk.yml up -d`, then see [Logging (ELK)](#logging-elk).
+
+To stop, use `docker compose stop` (not `down`), so nothing is recreated.
 
 ---
 
-## GCP Resources
-
-| Resource | Name | Used by |
-|---|---|---|
-| Project | `vigil-md-1792696816` | everything |
-| GCS bucket | `vigil-md-raw-nd` | raw zips, NDJSON, manifests |
-| BigQuery `vigil_md_raw` | `*_raw` tables (warehouse) and `*_sample` tables (samples) | RAW layer |
-| BigQuery `vigil_md_staging` | `*_stg` tables | STAGING layer |
-| BigQuery `vigil_md_prod` | `enforcement`, `recall`, `maude`, `gudid` | PROD (source of truth) |
-| BigQuery `vigil_md_ops` | `load_log`, temporary `_tmp_*` tables | load bookkeeping |
-| BigQuery `vigil_md_processed` | `*_flat`, `links_maude_gudid` | sample pipeline (unchanged) |
-
----
-
-## GCS → BigQuery pipeline
+## How the pipeline works
 
 Full design and decisions: [`docs/WAREHOUSE_PLAN.md`](docs/WAREHOUSE_PLAN.md).
 
@@ -96,15 +119,15 @@ Full design and decisions: [`docs/WAREHOUSE_PLAN.md`](docs/WAREHOUSE_PLAN.md).
 
 | DAG | Schedule | What it does |
 |---|---|---|
-| `vigil_md_acquisition` | daily 06:00 UTC | Checks the FDA manifests. Fetches **only the sources that changed** to GCS (incremental). Validates GCS, logs a summary, then its last task `trigger_load` starts `vigil_md_load` with the same date. |
-| `vigil_md_load` | none (triggered) | Runs **only after acquisition is done**. Per source: unzip → load RAW → build STAGING → MERGE into PROD. |
-| `vigil_md_full_load` | none (manual) | First load, backfill, rebuild or recovery. Params: `sources`, `refetch`, `rebuild_prod`. |
+| `vigil_md_acquisition` | daily 06:00 UTC | Checks the FDA manifests and fetches **only the sources that changed** to GCS. Validates GCS, logs a summary, then `trigger_load` starts `vigil_md_load` with the same date. |
+| `vigil_md_load` | none (triggered) | Per source: unzip → load RAW → build STAGING → **validate** → **check** → MERGE into PROD. A source with nothing pending does nothing. |
+| `vigil_md_full_load` | none (manual) | First load, backfill, rebuild or recovery: the same six steps per source. Params: `sources`, `refetch`, `rebuild_prod`. Refuses to run while a daily DAG has a run in progress. |
 
 ```
-vigil_md_acquisition (daily)                         vigil_md_load (triggered)
+vigil_md_acquisition (daily)                                   vigil_md_load (triggered)
 check_manifest ─┬─ fetch.<changed sources> ─ validate_gcs ─ log_summary ─┐
-                ├─ (pending files only) ─────────────────────────────────┴─ trigger_load ──▶ load.<source>: unzip → load_raw → staging → merge
-                └─ no_update (nothing to do: no loading run)
+                ├─ (pending files only) ─────────────────────────────────┴─ trigger_load ──▶ load.<source>:
+                └─ no_update (nothing to do: no loading run)                  unzip → load_raw → staging → validate → check → merge
 ```
 
 When does `vigil_md_load` run?
@@ -117,6 +140,8 @@ When does `vigil_md_load` run?
 | Acquisition failed (fetch, validation or summary) | No |
 | An acquisition run is cleared or retried | No second run (fixed `trigger_run_id`, `skip_when_already_exists`) |
 
+Every DAG has `alert_on_failure` (trigger rule `ONE_FAILED`): it sends an e-mail when any task fails, including a failed data check.
+
 ### How the incremental rules work
 
 | Rule | How |
@@ -126,7 +151,7 @@ When does `vigil_md_load` run?
 | Partition pruning | RAW and STAGING are partitioned by `_ingest_date` and **require a partition filter**. Staging reads one day of RAW. The MERGE limits PROD to the staging date range. |
 | Idempotent loading | `vigil_md_ops.load_log` records every loaded file + content hash. The raw load deletes and inserts one file's rows for one day in a single transaction. Staging replaces one day. The MERGE updates a row only when `record_hash` changed. |
 
-GUDID is an XML release (210 parts, about 5.2 million devices). It is converted to NDJSON **during the fetch** from a local temp copy, so it is never read back out of GCS. openFDA files are converted in the unzip step.
+GUDID is an XML release (210 parts, about 5.2 million devices). It is converted to NDJSON **during the fetch** from a local temp copy, and each part's device count is checked against the XML header. openFDA files are converted in the unzip step, to gzip-compressed NDJSON.
 
 ### GCS layout
 
@@ -139,45 +164,43 @@ GUDID is an XML release (210 parts, about 5.2 million devices). It is converted 
 | `manifests/pending/{source}/*.json` | Files waiting to load. Deleted after the raw load commits. |
 | `_incoming/` | Temporary, during a download |
 
-### Going live (first time)
+---
 
-Follow the **Runbook** at the end of [`docs/WAREHOUSE_PLAN.md`](docs/WAREHOUSE_PLAN.md). Short version:
+## Data checks and alerts
 
-```bash
-# 1. Pool: one BigQuery writer at a time (shared by vigil_md_load and vigil_md_full_load)
-docker compose exec airflow-scheduler airflow pools set vigil_warehouse 1 "BigQuery writers"
-docker compose exec airflow-scheduler airflow pools set vigil_upload 1 "GCS uploads (unzip)"
+Between staging and the merge, each source runs two check steps in both warehouse DAGs:
 
-# 2. Tables (already created; safe to re-run)
-docker compose exec -w /opt/airflow/Vigil-MD airflow-worker \
-  python scripts/warehouse/create_tables.py --project vigil-md-1792696816
+| Step | Runs | What it checks |
+|---|---|---|
+| `validate` | `scripts/validation/run_validation.py --values --stats` | Live schema against `schemas.py`, Great Expectations value checks, and per-column statistics. See [Data validation](#data-validation-schema-and-statistics). |
+| `check` | `scripts/warehouse/check_staging.py` | Anomaly checks against baselines and the previous load. See [Anomaly detection](#anomaly-detection). |
 
-# 3. Trigger vigil_md_full_load in the UI (try {"sources": ["recall"]} first),
-#    keep both daily DAGs paused while it runs, then check row counts (Runbook step 4)
+- Both exit with code `3` when they find a data problem. The DAG then raises `DataCheckFailed` (an `AirflowFailException`), so the task fails **without a retry**, because the data would be the same. Other errors (for example a network error) keep the normal retries.
+- Results go to `logs/validation/<source>/<ingest_date>.json` and statistics to `logs/statistics/<source>/<ingest_date>.json` (outside the repository). A partition with no rows saves no statistics file, and statistics above 5 GB are skipped with a warning (a cost limit is not a data failure).
+- `CHECKS_ENFORCE` in `dags/vigil_checks.py` is one switch for both DAGs:
 
-# 4. Unpause the loading DAG first, then acquisition
-docker compose exec airflow-scheduler airflow dags unpause vigil_md_load
-docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
-```
+| Value | What a failed check does |
+|---|---|
+| `True` (current, since 2026-10-27) | Fails the task: that source is not merged and the alert e-mail is sent; the other sources continue |
+| `False` | Logs a warning; the merge continues (warn-only, for example while a threshold is tuned) |
 
-Both pools are needed. If a pool is missing, its tasks stay **queued** with no error: unzip
-tasks wait for `vigil_upload`, and the RAW load, staging and merge tasks for `vigil_warehouse`.
+Enforcement was switched on on 2026-10-27, after the checks passed on real loads (anomaly checks 18/18 for enforcement and 19/19 for recall; value checks on all four sources).
 
-Why this order: the incremental fetch **stops with an error** until a full load has written `manifests/partitions/*.json`.
+---
 
-### Running a warehouse step by hand
+## Scheduling: pools and priorities
 
-Every warehouse script has `--print-only`: it prints the plan and SQL and makes **no GCP call**. Run scripts inside the Airflow worker (it has the GCP libraries and credentials):
+Each step runs in one of three pools (defined in `dags/vigil_checks.py`):
 
-```bash
-W="docker compose exec -w /opt/airflow/Vigil-MD airflow-worker python"
-$W scripts/warehouse/unzip_to_ndjson.py --bucket vigil-md-raw-nd --source maude --scope changed --ingest-date 2026-10-25 --print-only
-$W scripts/warehouse/load_raw_to_bq.py  --project vigil-md-1792696816 --bucket vigil-md-raw-nd --source maude --scope changed --ingest-date 2026-10-25 --print-only
-$W scripts/warehouse/build_staging.py   --project vigil-md-1792696816 --source maude --ingest-date 2026-10-25 --print-only
-$W scripts/warehouse/merge_prod.py      --project vigil-md-1792696816 --source maude --ingest-date 2026-10-25 --print-only
-```
+| Pool | Slots | Steps | Why |
+|---|---|---|---|
+| `vigil_upload` | 1 | unzip | GCS uploads share one connection |
+| `vigil_warehouse` | 1 | load_raw, staging, merge, refetch | BigQuery cancels concurrent transactions on the same table (`load_log`) |
+| `default_pool` | 128 | validate, check | Read-only queries |
 
-To load one day by hand, trigger `vigil_md_load` with `{"ingest_date": "YYYY-MM-DD"}`. To rebuild PROD for a source, trigger `vigil_md_full_load` with `{"sources": ["maude"], "rebuild_prod": true}` (`merge_prod.py --rebuild` refuses to run without `--yes-rebuild`).
+The two one-slot pools run at the same time, so one source's BigQuery steps run while the next source uploads. All warehouse steps use `weight_rule="upstream"` with a priority per source (enforcement 4, recall 3, GUDID 2, MAUDE 1): small sources go first, and each source's chain finishes before the next source's long upload delays it.
+
+Found and measured with Airflow Gantt charts (2026-10-27, full load of recall, enforcement and GUDID): before the change, enforcement's RAW load waited about 32 minutes for the single slot and every source finished at the end of the run; after it, enforcement was in PROD after about 50 seconds and recall after about 2 minutes. Details in the Data Pipeline Report, section 12.
 
 ---
 
@@ -247,316 +270,88 @@ GROUP BY source;
 
 ---
 
-## Bias slice analysis
+## Data validation (schema and statistics)
 
-`scripts/analysis/bias_slices.py` checks whether linking and data quality are uneven across slices of the data. It does not change the pipeline:
+`scripts/validation/` checks each staging table's schema and values with Great Expectations 1.24, and generates per-column statistics, one load (`_ingest_date` partition) at a time. It only reads BigQuery. In the pipeline it runs as the `validate` step; it can also run by hand.
 
-- It runs **read-only `SELECT`s on the four PROD tables only**.
-  - No RAW JSON is scanned and no table is created.
-  - The matching rules are the ones in `exact_linking.py`, unchanged.
-  - A guard in the script rejects any other dataset or any write statement.
-- Slices use **PROD columns only**: year, event type, adverse-event flag, product code, manufacturer, manufacturer volume tier, recall class/status/root cause, and GUDID status.
-  - Slices that exist only in RAW (device class, specialty, country, patient sex/age, reporter type) are listed as limitations.
-
-### What it measures
-
-| Metric | Definition |
-|---|---|
-| UDI availability | MAUDE device rows with a `udi_di` |
-| Primary-DI match | Of those rows, the share whose `udi_di` exactly equals a GUDID primary DI |
-| End-to-end link coverage | MAUDE→GUDID (availability × match), and recall↔enforcement on `link_key` |
-| Field completeness | Non-null, non-blank rate of every PROD business column |
-
-- Each slice gets a Wilson 95% CI and its gap to the overall rate.
-- A slice is flagged when n ≥ 30, the gap is at least 10 points, and its CI excludes the overall rate.
-- `unmatched_udi_shape.csv` is a diagnostic only. It explains why unmatched UDIs don't match.
-
-### Results (2026-10-26)
-
-- **MAUDE→GUDID:** 61.9% of MAUDE rows have a UDI, 81.2% of those match, so **50.2%** link end-to-end.
-- **Who links less:** Death reports, small manufacturers and 2016–17 reports. They are under-linked because the UDI is missing.
-- **Who has a UDI but doesn't match:** several diabetes-device makers.
-- **Formatting is not the cause:** normalization would recover only 20 of 2.5M unmatched UDIs.
-- **Recall→enforcement (67.7%):** mostly a date-range effect. Recalls before 2012 have no enforcement record.
-
-`scripts/analysis/bias_mitigation.py` then mitigates the main finding (linked MAUDE rows are not representative) by reweighting the linked rows on event type × manufacturer tier × year group, checks the result on variables it did not use, and reports the cost as the effective sample size. Fairlearn `MetricFrame` computes the link rate per slice and is cross-checked against `bias_slices.py`. Results are in `reports/bias/`; the recommended weights are `weight_full_trimmed` in `reports/bias/mitigation_weights.csv`.
-
-Full results, limitations, the implemented mitigation (section 6) and further proposed mitigations (section 7) are in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md).
-
-### How to run it
-
-Run it from WSL with the `vigil-analysis` venv, which has `google-cloud-bigquery`. It uses your ADC credentials; if they've expired, run `gcloud auth application-default login`.
-
-```bash
-cd ~/Vigik-MD-airflow
-PY=~/.venvs/vigil-analysis/bin/python
-
-# 1. Print the SQL (no GCP call)
-$PY scripts/analysis/bias_slices.py --project vigil-md-1792696816 --print-only
-
-# 2. Free dry-run cost estimates (nothing is executed)
-$PY scripts/analysis/bias_slices.py --project vigil-md-1792696816 --estimate-only --max-gb 5
-
-# 3. Real run → data/interim/bias/
-$PY scripts/analysis/bias_slices.py --project vigil-md-1792696816 --max-gb 5
-
-# 4. Mitigation (reweighting + Fairlearn) → reports/bias/
-$PY scripts/analysis/bias_mitigation.py --project vigil-md-1792696816
-```
-
-- **Cost:** the whole run scans about **7.6 GB**. A re-run within 24 hours can come from the BigQuery result cache and scan nothing.
-- **`--max-gb 5` is needed** because the MAUDE completeness query scans about 3.9 GB, above the default 2 GB.
-- **What `--max-gb` does:** it is checked against each query's dry run before anything runs, and it is also set as `maximum_bytes_billed` on every real query.
-- **Exit codes:** `0` = done, `3` = stopped by the cost guard. A query that returns zero rows fails loudly.
-- **Other output folder:** use `--out <dir>`.
-
-**Output** in `data/interim/bias/` (git-ignored):
-
-| File | Contents |
-|---|---|
-| `udi_availability.csv` | UDI availability (and length-rule violations) per slice |
-| `primary_di_match.csv` | Primary-DI match rate per slice |
-| `link_coverage.csv` | MAUDE→GUDID, recall→enforcement and enforcement→recall per slice |
-| `field_completeness.csv` | Completeness per table, field and slice |
-| `unmatched_udi_shape.csv` | Why unmatched UDIs did not match (diagnostic) |
-| `summary.json` | Overall rates, disparity flags per metric, best/worst slices, data snapshot, bytes scanned, limitations |
-
-Every CSV except `unmatched_udi_shape.csv` has the columns `metric, table, field, slice_name, slice_value, n, numerator, rate, ci_low, ci_high, overall_rate, gap_pp, ratio_to_overall, small_cell, below_four_fifths, disparity_flag`.
-
-`docs/BIAS_REPORT.md` is written by hand from these files. After a re-run, compare `summary.json` with the report and update the report's numbers.
-
----
-
-## Branch Guide
-
-| Branch | Purpose |
-|---|---|
-| `main` | Stable code — all scripts |
-| `airflow-integration` | All scripts + Docker + DAGs + the GCS → BigQuery warehouse |
-| `airflow-setup` | Teammate's original Docker setup |
-| `sample-data-pull` | Original sample pull work |
-
----
-
-## Setup
-
-**Requirements:** Python 3.10+ (3.12 recommended; needed by Great Expectations), Docker, Git, Google Cloud SDK
-
-```bash
-# Clone and set up environment
-git clone https://github.com/NainicaD/Vigil-MD.git
-cd Vigil-MD
-git checkout airflow-integration
-
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-pip install "dvc[gs]"
-```
-
-**GCP authentication:**
-
-```bash
-gcloud auth login
-gcloud auth application-default login
-gcloud config set project vigil-md-1792696816
-gcloud auth application-default set-quota-project vigil-md-1792696816
-```
-
-The Airflow containers mount `~/.config/gcloud` read-only. They need `~/.config/gcloud/application_default_credentials.json`, which `gcloud auth application-default login` creates.
-
-**Pull versioned data with DVC:**
-
-```bash
-dvc pull
-```
-
-This downloads all sample JSON files and processed Parquet files from GCS. No need to re-run acquisition scripts.
-
----
-
-## Running the Pipeline
-
-### Option A — Manual (step by step, sample data)
-
-```bash
-# 1. Pull 200 sample records per source
-python scripts/acquisition/pull_samples.py --limit 200
-
-# 2. Flatten and normalize
-python scripts/preprocessing/flatten_to_parquet.py
-
-# 3. Exact linking
-python scripts/matching/exact_linking.py
-
-# 4. Upload samples to GCS
-python scripts/acquisition/upload_samples_to_gcs.py --bucket vigil-md-raw-nd
-
-# 5. Load to BigQuery
-python scripts/acquisition/load_interim_to_bq.py \
-    --project vigil-md-1792696816 \
-    --bucket vigil-md-raw-nd
-```
-
-### Option B — Full data pull to GCS (2016–2026)
-
-```bash
-python scripts/acquisition/fetch_sources.py \
-    --bucket vigil-md-raw-nd \
-    --start-year 2016 \
-    --end-year 2026 \
-    --mode full
-```
-
-Streams all FDA sources directly to GCS. Re-running is safe — files already in GCS are skipped automatically. Use `--dry-run` to preview what will be downloaded without downloading anything.
-
-`--mode incremental` is the default (used by the daily DAG). It **raises** until a full load has written the partition state, so use `--mode full` for a first pull.
-
-### Option C — GCS → BigQuery
-
-Use the DAGs (see "GCS → BigQuery pipeline"). For one step by hand, see "Running a warehouse step by hand".
-
----
-
-## Running Airflow with Docker
-
-```bash
-# 1. Create your .env
-cp .env.example .env
-
-# 2. Initialize the database (first time only)
-docker compose up airflow-init
-
-# 3. Start all services
-docker compose up -d
-
-# 4. Open the UI
-open http://localhost:8080
-# Login: airflow / airflow
-
-# 5. Create the warehouse pool (first time only)
-docker compose exec airflow-scheduler airflow pools set vigil_warehouse 1 "BigQuery writers"
-docker compose exec airflow-scheduler airflow pools set vigil_upload 1 "GCS uploads (unzip)"
-```
-
-## Running ELK Stack (Logging)
-
-ELK (Elasticsearch, Logstash, Kibana) runs separately from Airflow.
-Start it when you want to search and visualize pipeline logs.
-
-**Start ELK:**
-```bash
-docker compose -f docker-compose.elk.yml up -d
-```
-
-**Open Kibana:** http://localhost:5601
-
-**What it collects:**
-- All Airflow task logs (including historical logs from previous runs)
-- Structured logs from Python scripts (fetch_sources.py, flatten_to_parquet.py, etc.)
-
-**Search logs in Kibana:**
-1. Go to http://localhost:5601
-2. Click Discover in the left sidebar
-3. Create index pattern: `vigil-md-logs-*`
-4. Search by field: `dag_id`, `task_id`, `source`, `log_level`
-
-**Stop ELK:**
-```bash
-docker compose -f docker-compose.elk.yml down
-```
-
-**Note:** Historical logs are preserved in the `logs/` folder and will be
-indexed automatically when ELK starts, even if it wasn't running during
-those pipeline runs. Elasticsearch data persists in a Docker volume
-(`elasticsearch-data`) across restarts.
-
-**DAGs:**
-
-| DAG | Purpose | When to use |
+| Check | How | Source of the rules |
 |---|---|---|
-| `pull_samples` | Pulls 200 sample records per source | Development and testing |
-| `vigil_md_acquisition` | Daily incremental pull to GCS with validation; starts `vigil_md_load` | Production |
-| `vigil_md_load` | GCS → RAW → STAGING → PROD | Production (started by acquisition) |
-| `vigil_md_full_load` | First load, backfill, rebuild | Manual |
+| Schema: columns, types, modes | Live table metadata vs `schemas.py` (no data read, no cost) | `scripts/warehouse/schemas.py` |
+| Keys not NULL and unique | Great Expectations | `MERGE_KEYS` |
+| Allowed values, formats, date ranges | Great Expectations, with `mostly` margins | `RULES` in `scripts/validation/expectations.py` |
+| Statistics per column | One query per table | Null %, distinct, blanks, text lengths, top values, min/max, array sizes |
 
-**Everyday commands:**
+Run by hand (needs the GCP credentials from the Quickstart):
 
 ```bash
-docker compose ps                          # service status
-docker compose logs -f airflow-scheduler   # follow scheduler logs
-docker compose logs airflow-dag-processor  # DAG import errors
-docker compose down                        # stop, keep database
-docker compose down -v                     # stop and wipe database
+# Schema check only (free)
+python scripts/validation/run_validation.py --project vigil-md-1792696816
+
+# Cost estimate (BigQuery dry run, free) for the value checks and statistics
+python scripts/validation/run_validation.py --project vigil-md-1792696816 --values --stats --estimate-only
+
+# Value checks and statistics for one source (latest load by default)
+python scripts/validation/run_validation.py --project vigil-md-1792696816 --source recall --values --stats
 ```
 
-**Troubleshooting:**
+Options: `--ingest-date YYYY-MM-DD` picks a load; `--max-gb` (default 2) stops any query estimated above it; `--stats-max-gb` sets a separate limit for the statistics; `--out-dir` and `--results-dir` set where statistics and results are written (by hand: `reports/statistics/` and `reports/validation/`; the first set, from 2026-10-26, is committed as the baseline). Exit codes: `0` all passed, `3` a check failed (a data failure, not worth retrying), anything else an unexpected error.
 
-| Problem | Fix |
-|---|---|
-| Port 8080 in use | Change `8080:8080` mapping in `docker-compose.yaml` |
-| Task fails writing to `data/` | Set `AIRFLOW_UID` in `.env` to your `id -u`, restart |
-| DAG missing from UI | Check `docker compose logs airflow-dag-processor`. New DAG files are picked up within 5 minutes. |
-| `import requests` fails in task | Add `requests` to `_PIP_ADDITIONAL_REQUIREMENTS` in `.env` |
-| Warehouse tasks never start | Create the `vigil_warehouse` pool (see above) |
-| `No partition state for <source>. Run vigil_md_full_load first.` | Run the full load once (Runbook) |
-| GCS calls fail with an auth error in tasks | Run `gcloud auth application-default login` on the host |
+**Cost.** The value checks run several queries per source (Great Expectations computes about 40–50 metrics); the statistics are one query per table, about 6 GB for all four sources on a full load. Daily loads only contain changed files, so their partitions, and the cost, are much smaller.
+
+**Results (2026-10-26 full load).** All four schemas match, and the value checks pass: enforcement 5/5, recall 5/5 (454 invalid product codes, inside the 2% margin), GUDID 5/5, MAUDE 6/6. The GUDID UDI-DI length rule first failed on 312 six-character identifiers; all 312 are HIBCC identifiers, so the rule now allows 6–23 characters.
 
 ---
 
-### After pulling the Airflow 3 log-parsing fix
+## Anomaly detection
 
-Airflow 3 writes task logs as one JSON object per line. Filebeat now sends each line as its own
-event (no multiline joining), and Logstash parses it with a `json` filter. Searchable fields include
-`log_level`, `log_message`, `task_id`, `attempt`, `error_type` and `error_message`, and `@timestamp`
-is the time the event happened (not the ingest time).
+`scripts/warehouse/check_staging.py` checks one day of STAGING before it is merged into PROD. Thresholds and baselines are in `scripts/warehouse/check_config.py`.
 
-ELK runs on each machine separately, so after pulling this change, apply it locally:
+| Check | Catches |
+|---|---|
+| Raw-to-staged gap | Rows lost in staging (also a load where every key is NULL, which would otherwise stage nothing with no error) |
+| Volume | A drop against the previous load of the same source |
+| Null rates | A rise above the baseline, per column |
+| Dates | Dates in the future or before 1970 |
+| Whitespace-only values, product codes, allowed values | Invalid formats and new categories |
+| Category mix | A large shift in the share of a category |
 
-```bash
-# 1. Load the new Logstash pipeline
-docker compose -f docker-compose.elk.yml restart logstash
+Each check reports PASS, WARN or FAIL; a FAIL exits with code `3`. Options: `--project`, `--source`, `--ingest-date`, `--warn-only` (report FAILs but exit 0), `--print-only` (print the SQL, no GCP call).
 
-# 2. Remove Filebeat (this also resets its record of which log files it has read)
-docker compose -f docker-compose.elk.yml rm -sf filebeat
+---
 
-# 3. Delete the Airflow log entries indexed with the old parsing
-#    (keeps the logs Python scripts sent to Logstash directly)
-curl -s -X POST "localhost:9200/vigil-md-logs-*/_delete_by_query?refresh=true" \
-  -H "Content-Type: application/json" \
-  -d '{"query": {"term": {"tags.keyword": "airflow"}}}'
+## Bias analysis and mitigation
 
-# 4. Start Filebeat again: it re-reads every file in logs/ with the new parsing
-docker compose -f docker-compose.elk.yml up -d filebeat
-```
+`scripts/analysis/bias_slices.py` checks whether linking and data quality are uneven across slices of the data; `scripts/analysis/bias_mitigation.py` corrects the main finding. Both run **read-only `SELECT`s on `vigil_md_prod` only** (a guard rejects any other dataset or any write), with a dry-run cost check and `maximum_bytes_billed` on every query. Full results, limitations and further proposals: [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md).
 
-Then refresh the `vigil-md-logs-*` data view in Kibana (Stack Management -> Data Views) so the new
-fields appear. A search for `tags: "_jsonparsefailure" or tags: "_grok_parse_failure"` should return
-no results.
+**What it measures, per slice** (year, event type, adverse-event flag, product code, manufacturer, manufacturer tier, recall class/status/root cause, GUDID status): UDI availability, primary-DI match (the rule of `exact_linking.py`), end-to-end MAUDE→GUDID link coverage, recall↔enforcement link coverage, and field completeness. Each slice gets a Wilson 95% CI; a slice is flagged when n ≥ 30, the gap to the overall rate is at least 10 points, and its CI excludes the overall rate.
 
-**Day to day, stop ELK with `stop` rather than `down`:** `down` deletes the Filebeat container, so the
-next `up` re-reads every log file and indexes it a second time. `stop` keeps it.
+**Findings.** 61.9% of MAUDE rows have a UDI and 81.2% of those match, so 50.2% link end to end. The linked rows are skewed: Death reports are 0.55% of all rows but 0.42% of linked rows; top-10 manufacturers 52.3% and 58.4%; long-tail manufacturers 14.9% and 12.0%. Several diabetes-device makers have UDIs that do not match a primary DI; normalization would recover only 20 of 2.5 million unmatched UDIs.
+
+**Mitigation.** Inverse probability weighting of the linked rows (cells: event type × manufacturer tier × year group), checked on two variables the weights do not use (adverse-event flag, product code), with the cost reported as the effective sample size (85.9% with the recommended trimmed weights). Fairlearn `MetricFrame` computes the link rate per slice and agrees with `bias_slices.py` within 5 × 10⁻⁷. The recommended weights are `weight_full_trimmed` in `reports/bias/mitigation_weights.csv`.
+
+**Run it** (with the GCP credentials from the Quickstart):
 
 ```bash
-docker compose -f docker-compose.elk.yml stop    # pause
-docker compose -f docker-compose.elk.yml start   # resume
+python scripts/analysis/bias_slices.py --project vigil-md-1792696816 --print-only               # SQL only, no GCP call
+python scripts/analysis/bias_slices.py --project vigil-md-1792696816 --estimate-only --max-gb 5 # free dry runs
+python scripts/analysis/bias_slices.py --project vigil-md-1792696816 --max-gb 5                 # → data/interim/bias/
+python scripts/analysis/bias_mitigation.py --project vigil-md-1792696816                         # → reports/bias/
 ```
 
-## Data Versioning with DVC
+- **Cost:** about 7.6 GB for `bias_slices.py` (`--max-gb 5` is needed: the MAUDE completeness query scans about 3.9 GB) and about 1.3 GB for the mitigation. A re-run within 24 hours can come from the BigQuery cache and scan nothing.
+- **Order:** run `bias_slices.py` first; the mitigation's Fairlearn cross-check reads its `link_coverage.csv`. `bias_mitigation.py --from-cells data/interim/bias/mitigation_cells.csv` recomputes without querying BigQuery.
+- **Exit codes:** `0` = done, `3` = stopped by the cost guard.
+- **Outputs:** `data/interim/bias/` (git-ignored: `udi_availability.csv`, `primary_di_match.csv`, `link_coverage.csv`, `field_completeness.csv`, `unmatched_udi_shape.csv`, `summary.json`) and `reports/bias/` (committed: `mitigation_summary.json`, `mitigation_shares.csv`, `mitigation_weights.csv`).
 
-DVC versions the sample data and the local sample pipeline. The data lives in the DVC remote
-`gs://vigil-md-raw-nd/dvc-store`; git tracks only the pointer files (`data/raw/samples.dvc`,
-`dvc.yaml`, `dvc.lock`).
+`docs/BIAS_REPORT.md` is written by hand from these files. After a re-run, compare `summary.json` with the report and update its numbers.
 
-The full-scale data (Airflow -> GCS -> BigQuery) is not managed by DVC. It is versioned by the
-unchanged source zips in `raw/`, per-file content hashes, the pending manifests, and
-`vigil_md_ops.load_log`.
+---
 
-### Get the data
+## Data versioning with DVC
 
-```bash
-dvc pull
-```
+DVC versions the sample data and the local sample pipeline. The data lives in the DVC remote `gs://vigil-md-raw-nd/dvc-store`; git tracks only the pointer files (`data/raw/samples.dvc`, `dvc.yaml`, `dvc.lock`).
+
+The full-scale data (Airflow → GCS → BigQuery) is not managed by DVC. It is versioned by the unchanged source zips in `raw/`, per-file content hashes, the pending manifests, and `vigil_md_ops.load_log`.
 
 ### Sample pipeline (`dvc.yaml`)
 
@@ -574,19 +369,16 @@ exact_linking  blocking
 | `exact_linking` | `scripts/matching/exact_linking.py` | `links_enforcement_recall.parquet`, `links_maude_gudid.parquet`, `linking_report.json` |
 | `blocking` | `scripts/matching/blocking.py` | `candidate_pairs.parquet`, `blocking_report.json` |
 
-`dvc.lock` records the hash of every script, input and output, so a run can be reproduced exactly.
-The matching scripts always write their outputs, as empty tables when nothing matches, so every
-run produces the same set of files.
-
-### Reproduce
+`dvc.lock` records the hash of every script, input and output, so a run can be reproduced exactly. The matching scripts always write their outputs, as empty tables when nothing matches, so every run produces the same set of files.
 
 ```bash
+dvc pull      # get the data
 dvc repro     # re-runs only the stages whose script or inputs changed
 dvc status    # 'Data and pipelines are up to date' when outputs match dvc.lock
 dvc dag       # shows the stage graph
 ```
 
-### After changing the samples or a pipeline script
+After changing the samples or a pipeline script:
 
 ```bash
 dvc add data/raw/samples          # only if the sample files changed
@@ -601,189 +393,195 @@ Do not run `dvc add data/interim`: those files are produced by the pipeline and 
 
 ---
 
-## Data Validation (Schema and Statistics)
+## Logging (ELK)
 
-`scripts/validation/` checks each staging table's schema and values and generates per-column
-statistics, one load (`_ingest_date` partition) at a time. It only reads BigQuery.
-
-| Check | How | Source of the rules |
-|---|---|---|
-| Schema: columns, types, modes | Live table metadata vs `schemas.py` (no data read, no cost) | Generated from `scripts/warehouse/schemas.py` |
-| Keys not NULL and unique | Great Expectations | Generated from `MERGE_KEYS` |
-| Allowed values, formats, date ranges | Great Expectations, with `mostly` margins | `RULES` in `scripts/validation/expectations.py` |
-| Statistics per column | One query per table | Null %, distinct, blanks, text lengths, top values, min/max |
-
-Comparisons with earlier loads (null-rate changes, volume, category mix) and alerts belong to the
-anomaly checks, not to this module.
-
-### Run
+Every script logs through `scripts/logger.py` (console and Logstash). ELK (Elasticsearch, Logstash, Kibana) runs separately from Airflow:
 
 ```bash
-# Schema check only (free)
-python scripts/validation/run_validation.py --project vigil-md-1792696816
-
-# Cost estimate (BigQuery dry run, free) for the value checks and statistics
-python scripts/validation/run_validation.py --project vigil-md-1792696816 --values --stats --estimate-only
-
-# Value checks and statistics for one source (latest load by default)
-python scripts/validation/run_validation.py --project vigil-md-1792696816 \
-  --source recall --values --stats
+docker compose -f docker-compose.elk.yml up -d      # first start
+docker compose -f docker-compose.elk.yml stop       # pause (use stop, not down)
+docker compose -f docker-compose.elk.yml start      # resume
 ```
 
-Options: `--ingest-date YYYY-MM-DD` picks a load; `--max-gb` (default 2) stops any query estimated
-above it; `--out-dir` sets where statistics are written. Exit codes: `0` all passed, `3` a check
-failed (a data failure, not worth retrying), anything else an unexpected error.
+Kibana is at http://localhost:5601. Filebeat reads all Airflow task logs in `logs/` (including logs from before ELK was started), and Logstash parses Airflow 3's one-JSON-object-per-line format. Searchable fields include `dag_id`, `task_id`, `attempt`, `log_level`, `log_message`, `error_type` and `error_message`; `@timestamp` is the time the event happened. In Kibana, open **Discover** and use the data view `vigil-md-logs-*`. Saved searches: *Full load runs* and *Errors*.
 
-### Outputs and cost
+**Use `stop`, not `down`:** `down` deletes the Filebeat container, so the next `up` re-reads every log file and indexes it a second time.
 
-Statistics are written to `reports/statistics/<source>/<ingest_date>.json`, one file per load, so
-loads can be compared over time. The first set (2026-10-26) is committed as the baseline.
+**If your Kibana still has logs from before the Airflow 3 parsing fix** (2026-10-25), re-index them once:
 
-Value-check results (each expectation, its rule, pass or fail, and the count of unexpected
-rows) are written to `reports/validation/<source>/<ingest_date>.json` in the same layout.
-
-The value checks run several queries per source (Great Expectations computes around 40-50
-metrics), so a run can cost up to about 40x the per-query estimate; the statistics are one query
-per table. On the full load (2026-10-26) the statistics cost about 6 GB for all four sources.
-Daily loads only contain changed files, so their partitions, and the cost, are much smaller.
-
-### Results (2026-10-26 full load)
-
-All four schemas match, and the value checks pass: enforcement 5/5, recall 5/5, GUDID 5/5,
-MAUDE 6/6. The GUDID UDI-DI length rule first failed on 312 six-character identifiers outside
-the 7-23 range taken from a top-20 baseline; all 312 are HIBCC identifiers, so the rule now
-allows 6-23.
-
-### In the pipeline
-
-Both warehouse DAGs (`vigil_md_load`, daily, and `vigil_md_full_load`, manual) run two check
-steps for each source, after staging and before the merge into PROD:
-
-```
-unzip -> load_raw -> staging -> validate -> check -> merge
+```bash
+docker compose -f docker-compose.elk.yml restart logstash
+docker compose -f docker-compose.elk.yml rm -sf filebeat
+curl -s -X POST "localhost:9200/vigil-md-logs-*/_delete_by_query?refresh=true" \
+  -H "Content-Type: application/json" -d '{"query": {"term": {"tags.keyword": "airflow"}}}'
+docker compose -f docker-compose.elk.yml up -d filebeat
 ```
 
-- `validate`: `run_validation.py --values --stats` (schema check, Great Expectations and per-column
-  statistics). Results go to `logs/validation/<source>/<ingest_date>.json` and statistics to
-  `logs/statistics/<source>/<ingest_date>.json`. A partition with no rows saves no statistics file,
-  and statistics above 5 GB are skipped with a warning (a cost limit is not a data failure).
-- `check`: `scripts/warehouse/check_staging.py` (anomaly checks: raw-to-staged gap, volume,
-  null rates, dates, allowed values, category mix).
-
-Exit code `3` means a check found a data problem. The task then fails without retrying
-(`DataCheckFailed`), because the data would be the same; other errors are retried as usual.
-
-`CHECKS_ENFORCE` in `dags/vigil_checks.py` is one switch for both DAGs:
-
-| Value | What a failed check does |
-|---|---|
-| `False` | Logs a warning; the merge continues |
-| `True` (current, since 2026-10-27) | Fails the task: that source is not merged and the alert e-mail is sent |
-
-Enforcement was switched on on 2026-10-27, after the checks passed on real loads (anomaly checks 18/18 for enforcement and 19/19 for recall; value checks on all four sources). Set `False` to go back to warn-only, for example while a threshold is tuned.
-
-**Scheduling.** Each step runs in one of three pools (`dags/vigil_checks.py`):
-
-| Pool | Slots | Steps | Why |
-|---|---|---|---|
-| `vigil_upload` | 1 | unzip | GCS uploads share one connection |
-| `vigil_warehouse` | 1 | load_raw, staging, merge, refetch | BigQuery cancels concurrent transactions on the same table (`load_log`) |
-| `default_pool` | 128 | validate, check | Read-only queries |
-
-The two one-slot pools run at the same time, so one source's BigQuery steps run while the next
-source uploads. All warehouse steps use `weight_rule="upstream"` with a priority per source
-(enforcement 4, recall 3, GUDID 2, MAUDE 1): small sources go first, and each source's chain
-finishes before the next source's long upload delays it.
-
-The Airflow containers need Great Expectations: set `_PIP_ADDITIONAL_REQUIREMENTS` in `.env`
-as in `.env.example`, then run `docker compose up -d`.
+Then refresh the `vigil-md-logs-*` data view (Stack Management → Data Views). A search for `tags: "_jsonparsefailure" or tags: "_grok_parse_failure"` should return nothing.
 
 ---
 
-## Testing
+## Testing and CI
 
-**CI:** `.github/workflows/tests.yml` runs `pytest` on GitHub Actions (Python 3.12) for every
-pull request and every push to `main`. It has no GCP credentials, so the integration tests are
-excluded (as locally), and the data-contract and DAG tests skip; the log lists each skip reason.
-
-> **DAG tests** (`tests/dags`) skip where Airflow is not installed. Run them in the worker:
-> `docker compose exec -w /opt/airflow/Vigil-MD airflow-worker python -m pytest tests/dags -q`.
-> They use a temporary SQLite database and refuse to reset any other. Older versions of
-> `tests/dags/conftest.py` could reset the real Airflow database (run history, pools, pause
-> settings) when run inside a container.
-
-All GCP calls are mocked: **no test touches real GCS or BigQuery**. Test logs never reach Logstash (an autouse fixture). The case list is in [`tests/TEST_CASES.md`](tests/TEST_CASES.md).
+All GCP calls are mocked: **no test touches real GCS or BigQuery**, and test logs never reach Logstash (an autouse fixture). The case list is in [`tests/TEST_CASES.md`](tests/TEST_CASES.md); the test plan is [`docs/TESTS_PLAN.md`](docs/TESTS_PLAN.md).
 
 ```bash
-# Everything except the two pandas-based files
-~/.venvs/vigil-airflow/bin/python -m pytest tests \
-    --ignore=tests/test_data_quality.py --ignore=tests/test_preprocessing.py
-# 2026-10-26: 344 passed, 55 skipped, 21 deselected (integration), 4 failed
-#   (test_unzip_to_ndjson.py: google-cloud-storage is not installed in vigil-airflow)
-
-# Bias slice analysis only (FakeClient, no GCP)
-~/.venvs/vigil-airflow/bin/python -m pytest tests/test_bias_slices.py
-
-# Real-GCS checks of the raw files (needs credentials; run by the validate_gcs task)
-~/.venvs/vigil-airflow/bin/python -m pytest tests -m integration
+pytest -q                                        # 460 passed, 1 skipped, 21 deselected (2026-10-27)
+docker compose exec -w /opt/airflow/Vigil-MD airflow-worker python -m pytest tests/dags -q   # 68 passed
+pytest -m integration                            # real-GCS checks of the raw files (needs credentials)
 ```
 
-The warehouse conversion tests need `ijson` (in `requirements.txt`). The WSL venvs are made with `uv` and have no `pip`: `~/.local/bin/uv pip install --python ~/.venvs/vigil-airflow/bin/python ijson`.
+- **DAG tests** (`tests/dags`) skip where Airflow is not installed, so run them in the worker. They use a temporary SQLite database and refuse to reset any other. (Before 2026-10-27, `tests/dags/conftest.py` could reset the real Airflow database when run inside a container: run history, pools and pause settings.)
+- **Integration tests** are excluded by default (`pytest.ini`: `-m "not integration"`).
+- **CI:** `.github/workflows/tests.yml` runs `pytest` on GitHub Actions (Python 3.12) for every pull request and every push to `main`. It has no GCP credentials: the integration tests are excluded, and the data-contract and DAG tests skip; the log lists each skip reason.
+- The BigQuery SQL is checked by hand with free dry runs (see "Manual checks" in `tests/TEST_CASES.md`).
 
-The BigQuery SQL is checked by hand with free dry runs. See "Manual checks" in `tests/TEST_CASES.md`.
+---
+
+## Repository structure
+
+```
+Vigil-MD/
+├── dags/
+│   ├── vigil_md_acquisition.py      # daily: FDA + GUDID → GCS, then starts vigil_md_load
+│   ├── vigil_md_load.py             # triggered: GCS → RAW → STAGING → checks → PROD
+│   ├── vigil_md_full_load.py        # manual: first load, backfill, rebuild
+│   ├── vigil_checks.py              # shared: check rules, CHECKS_ENFORCE, pools, priorities
+│   ├── pull_samples_dag.py          # development: 200 sample records per source
+│   └── .airflowignore               # vigil_checks.py is not a DAG
+├── scripts/
+│   ├── acquisition/                 # fetch_sources.py (incremental | full), gudid_convert.py, pull_samples.py, sample upload/load
+│   ├── warehouse/                   # schemas.py, create_tables.py, convert.py, common.py,
+│   │                                #   unzip_to_ndjson.py, load_raw_to_bq.py, build_staging.py, merge_prod.py, sql/staging_*.sql,
+│   │                                #   check_staging.py + check_config.py (anomaly checks)
+│   ├── validation/                  # expectations.py, statistics.py, run_validation.py (schema, GX, statistics)
+│   ├── preprocessing/               # schema_map.py, flatten_to_parquet.py (sample pipeline)
+│   ├── matching/                    # exact_linking.py, blocking.py (sample pipeline)
+│   ├── analysis/                    # bias_slices.py, bias_mitigation.py
+│   └── logger.py                    # console + Logstash logger
+├── tests/                           # pytest (GCP mocked); tests/dags = DAG tests; TEST_CASES.md
+├── docs/                            # WAREHOUSE_PLAN.md (design + Runbook), TESTS_PLAN.md, BIAS_REPORT.md, issue.md
+├── reports/                         # committed results: statistics/ and validation/ baselines, bias/ mitigation results
+├── data/                            # DVC-tracked (not in git): raw/samples/, interim/
+├── .github/workflows/tests.yml      # CI
+├── dvc.yaml, dvc.lock               # DVC sample pipeline
+├── docker-compose.yaml              # Airflow (CeleryExecutor, Postgres, Redis)
+├── docker-compose.elk.yml           # Elasticsearch, Logstash, Kibana, Filebeat
+├── .env.example                     # environment template (copy to .env)
+├── requirements.txt                 # pinned direct dependencies
+└── pytest.ini
+```
+
+### GCP resources
+
+| Resource | Name | Used by |
+|---|---|---|
+| Project | `vigil-md-1792696816` | everything |
+| GCS bucket | `vigil-md-raw-nd` | raw zips, NDJSON, manifests, DVC remote (`dvc-store/`) |
+| BigQuery `vigil_md_raw` | `*_raw` tables (warehouse) and `*_sample` tables (samples) | RAW layer |
+| BigQuery `vigil_md_staging` | `*_stg` tables | STAGING layer |
+| BigQuery `vigil_md_prod` | `enforcement`, `recall`, `maude`, `gudid` | PROD (source of truth) |
+| BigQuery `vigil_md_ops` | `load_log`, temporary `_tmp_*` tables | load bookkeeping |
+| BigQuery `vigil_md_processed` | `*_flat`, `links_maude_gudid` | sample pipeline (legacy) |
+
+---
+
+## Everyday commands and troubleshooting
+
+```bash
+docker compose ps                          # service status
+docker compose logs -f airflow-scheduler   # follow scheduler logs
+docker compose logs airflow-dag-processor  # DAG import errors
+docker compose exec airflow-scheduler airflow dags list-import-errors
+docker compose stop                        # stop, keep containers and database
+docker compose start                       # resume
+```
+
+Avoid `docker compose down -v`: it deletes the Airflow database (run history, pools).
+
+| Problem | Fix |
+|---|---|
+| Port 8080 in use | Change the `8080:8080` mapping in `docker-compose.yaml` |
+| Task fails writing to `data/` | Set `AIRFLOW_UID` in `.env` to your `id -u`, then `docker compose up -d` |
+| DAG missing from the UI | `docker compose exec airflow-scheduler airflow dags list-import-errors`. New DAG files are picked up within a few minutes. |
+| Warehouse tasks stay queued | Create both pools, `vigil_warehouse` and `vigil_upload` ([Quickstart](#quickstart) step 5) |
+| `No module named 'great_expectations'` in `validate` | Set `_PIP_ADDITIONAL_REQUIREMENTS` in `.env` as in `.env.example`, then `docker compose up -d` |
+| `No partition state for <source>. Run vigil_md_full_load first.` | Run the full load once for all sources |
+| GCS or BigQuery calls fail with an auth error | Run `gcloud auth application-default login` on the host |
+| A `validate` or `check` task failed | A data check found a problem (exit 3): read the task log for the FAIL lines, fix the data or the threshold, then clear the task |
+
+### Running steps by hand
+
+Every warehouse script has `--print-only`: it prints the plan and SQL and makes **no GCP call**. Run scripts inside the Airflow worker (it has the GCP libraries and credentials):
+
+```bash
+W="docker compose exec -w /opt/airflow/Vigil-MD airflow-worker python"
+$W scripts/warehouse/unzip_to_ndjson.py --bucket vigil-md-raw-nd --source maude --scope changed --ingest-date 2026-10-25 --print-only
+$W scripts/warehouse/load_raw_to_bq.py  --project vigil-md-1792696816 --bucket vigil-md-raw-nd --source maude --scope changed --ingest-date 2026-10-25 --print-only
+$W scripts/warehouse/build_staging.py   --project vigil-md-1792696816 --source maude --ingest-date 2026-10-25 --print-only
+$W scripts/warehouse/merge_prod.py      --project vigil-md-1792696816 --source maude --ingest-date 2026-10-25 --print-only
+$W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source maude --ingest-date 2026-10-25 --print-only
+```
+
+- To load one day by hand, trigger `vigil_md_load` with `{"ingest_date": "YYYY-MM-DD"}`.
+- To rebuild PROD for a source, trigger `vigil_md_full_load` with `{"sources": ["maude"], "rebuild_prod": true}` (`merge_prod.py --rebuild` refuses to run without `--yes-rebuild`).
+- Full data pull to GCS without Airflow: `python scripts/acquisition/fetch_sources.py --bucket vigil-md-raw-nd --start-year 2016 --end-year 2026 --mode full` (`--dry-run` previews). The default `--mode incremental` raises until a full load has written the partition state.
 
 ---
 
 ## Known limitations and issues
 
-- **MAUDE scope is 2016–2026 by design** (`START_YEAR` / `END_YEAR` in the DAGs). Quarters from 2027 on are not fetched. To extend it, change `END_YEAR` in `vigil_md_acquisition.py` and `vigil_md_full_load.py`.
+- **MAUDE scope is 2016–2026 by design** (`START_YEAR` / `END_YEAR` in the DAGs). To extend it, change `END_YEAR` in `vigil_md_acquisition.py` and `vigil_md_full_load.py`.
+- **Matching runs on the samples only** (DVC pipeline). Exact linking on the PROD tables as a DAG task is the next step; blocking and ML matching on the full data come with the model pipeline.
+- **The daily DAG runs only while the machine and Docker are running.** A missed run happens when Airflow next runs (`catchup=False` runs the most recent interval).
 - Open issues are tracked in [`docs/issue.md`](docs/issue.md). Examples: the parallel fetch tasks can overwrite `manifest_state.json` keys (#5), task logs appear only when a task ends (#8), and the manufacturer suffix rule turns `"Tesco"` into `"tes"` (#13).
 
 ---
 
 ## Changes
 
-> **2026-10-27 — action needed after pulling:** unzip now runs in a new pool, `vigil_upload`.
-> Create it once on your machine, or every unzip task stays queued:
+> **2026-10-27 — action needed after pulling:** unzip now runs in a new pool, `vigil_upload`. Create it once on your machine, or every unzip task stays queued:
 > `docker compose exec airflow-scheduler airflow pools set vigil_upload 1 "GCS uploads (unzip)"`.
-> Check with `docker compose exec airflow-scheduler airflow pools list` (you need `vigil_upload`
-> and `vigil_warehouse`, 1 slot each). See "Scheduling" under Data Validation.
+> Check with `docker compose exec airflow-scheduler airflow pools list` (you need `vigil_upload` and `vigil_warehouse`, 1 slot each). Also update your `.env` from `.env.example` (Great Expectations in the containers) and run `pip install -r requirements.txt` (pinned versions, Fairlearn).
+
+### 2026-10-27 — Pipeline checks, scheduling, CI
+
+- **Checks in the DAGs:** `validate` (schema, Great Expectations, statistics) and `check` (anomaly checks) between staging and the merge, in both warehouse DAGs. Exit code 3 fails the task without a retry. Enforced since 2026-10-27 (`CHECKS_ENFORCE = True`).
+- **Statistics for every load:** saved by the `validate` task; empty partitions and cost limits no longer fail it.
+- **Scheduling:** new pool `vigil_upload` for unzip; `validate` and `check` in `default_pool`; per-source priorities with `weight_rule="upstream"`. Small sources are ready in minutes instead of at the end of a run.
+- **Bias mitigation:** `bias_mitigation.py` (reweighting, held-out check, Fairlearn); `docs/BIAS_REPORT.md` section 6.
+- **CI** on GitHub Actions; **all direct dependencies pinned** in `requirements.txt`.
+- **Fixed:** the DAG tests could reset the real Airflow database; the full load and the acquisition `trigger_load` failed for runs without a logical date (CLI runs); the setup commands used one machine's container names (they now use the Compose service names).
 
 ### 2026-10-26 — Bias slice analysis of PROD
 
-- **New `scripts/analysis/bias_slices.py`:**
-  - Measures UDI availability, primary-DI match rate, end-to-end link coverage and field completeness, broken down by PROD-column slices.
-  - Runs read-only SELECTs on `vigil_md_prod` only, with a dry-run cost guard and `maximum_bytes_billed`.
-- **Results:** CSVs and `summary.json` in `data/interim/bias/` (git-ignored). The report is [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md).
-- **Tests:** 37 mocked tests in `tests/test_bias_slices.py`, listed in `tests/TEST_CASES.md` §19.
-- **Unchanged:** the pipeline, the matching rules and every warehouse table.
+- **New `scripts/analysis/bias_slices.py`:** UDI availability, primary-DI match rate, end-to-end link coverage and field completeness by PROD-column slices; read-only SELECTs on `vigil_md_prod`, with a dry-run cost guard and `maximum_bytes_billed`.
+- **Results:** CSVs and `summary.json` in `data/interim/bias/` (git-ignored); report in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md). 37 mocked tests.
 
 ### 2026-10-25 — GCS → BigQuery warehouse (RAW → STAGING → PROD)
 
-- **New BigQuery layers:** `vigil_md_raw.*_raw`, `vigil_md_staging.*_stg`, `vigil_md_prod.*`, `vigil_md_ops.load_log` (`scripts/warehouse/`). Existing `*_sample` and `vigil_md_processed.*` tables are unchanged.
-- **Incremental fetch:** `fetch_sources.py --mode incremental` (new default) with per-partition fingerprint and SHA-256 checks, pending manifests, and a server-side copy for unchanged files. `--mode full` keeps the old behaviour.
-- **GUDID:** the bulk release is XML, not JSON. It is converted to NDJSON during the fetch (`gudid_convert.py`), from a local copy, with part and record counts checked against the XML header.
-- **DAGs:** `vigil_md_acquisition` now fetches only changed sources and starts the new `vigil_md_load` when it is done. New manual `vigil_md_full_load`. All BigQuery writers share the 1-slot pool `vigil_warehouse`.
-- **Tests:** 238 new mocked tests (`tests/test_*` for the warehouse, `tests/dags/test_warehouse_dags.py`), shared in-memory GCS / HTTP fakes, and a Logstash guard in `tests/conftest.py`.
-- **Docs:** `docs/WAREHOUSE_PLAN.md` (design + Runbook), `docs/TESTS_PLAN.md`, `docs/issue.md`. `docs/` is no longer ignored by git.
-- **Fixed during the work:** a failed conversion could leave a partial NDJSON file in GCS (`docs/issue.md` #12); the GUDID MERGE bounds query used an untyped NULL.
+- **New BigQuery layers:** `vigil_md_raw.*_raw`, `vigil_md_staging.*_stg`, `vigil_md_prod.*`, `vigil_md_ops.load_log` (`scripts/warehouse/`).
+- **Incremental fetch:** `fetch_sources.py --mode incremental` (default) with per-partition fingerprint and SHA-256 checks, pending manifests, and a server-side copy for unchanged files.
+- **GUDID:** the XML release is converted to NDJSON during the fetch, with part and record counts checked against the XML header.
+- **Gzip NDJSON** in the unzip step: GUDID's conversion went from 4 h 53 min to 12 min 34 s.
+- **DAGs:** acquisition fetches only changed sources and starts the new `vigil_md_load`; new manual `vigil_md_full_load`.
+- **Tests:** 238 new mocked tests, shared in-memory GCS / HTTP fakes, and a Logstash guard.
+- **Fixed:** a failed conversion could leave a partial NDJSON file in GCS (`docs/issue.md` #12); the GUDID MERGE bounds query used an untyped NULL.
 
 ---
 
 ## Roadmap
 
-- [x] Sample data pull (all 4 sources)
-- [x] Preprocessing and normalization
-- [x] Exact linking — 108 MAUDE–GUDID links confirmed
-- [x] GCS and BigQuery integration
-- [x] Full bulk download (2016–2026)
-- [x] Airflow DAG with Docker
-- [x] DVC data versioning
-- [x] Test modules
-- [x] Incremental RAW → STAGING → PROD warehouse in BigQuery (go-live: Runbook)
-- [x] Slice analysis: coverage and bias across data slices (`docs/BIAS_REPORT.md`)
-- [ ] Bias mitigations (proposed in `docs/BIAS_REPORT.md` §6)
-- [ ] Candidate generation and ML matching
+- [x] Sample data pull, preprocessing and normalization (all 4 sources)
+- [x] Exact linking on the samples (108 MAUDE–GUDID links)
+- [x] Full bulk download (2016–2026) and incremental RAW → STAGING → PROD warehouse
+- [x] Airflow DAGs with Docker; ELK logging; DVC sample pipeline
+- [x] Schema validation, statistics and anomaly checks in the pipeline, with alerts
+- [x] Flow optimization (gzip NDJSON; pools and priorities from Gantt charts)
+- [x] Bias slice analysis and mitigation (`docs/BIAS_REPORT.md`)
+- [x] Tests in CI; pinned dependencies
+- [ ] Exact linking on the PROD tables as a DAG task
+- [ ] Candidate generation (blocking) and ML matching on the full data
 - [ ] Unified BigQuery database with provenance
 - [ ] Chat interface for recall history search
 
