@@ -1,0 +1,260 @@
+{
+ "generated_at": "2026-10-27T11:26:49+00:00",
+ "scope": "read-only SELECT on vigil_md_prod (maude, gudid)",
+ "bytes": {
+  "estimated": 1324159989,
+  "processed": 1324159989
+ },
+ "maude_rows": 21532440,
+ "linked_rows": 10815717,
+ "link_rate": 0.5022987176557789,
+ "cells": 2204,
+ "unrepresentable_share": {
+  "event_type": 0.0,
+  "manufacturer_tier": 0.0,
+  "year_group": 0.0,
+  "adverse_event_flag": 0.0,
+  "product_code": 0.0004421700466830512
+ },
+ "settings": {
+  "weighting_variables": [
+   "event_type",
+   "manufacturer_tier",
+   "year_group"
+  ],
+  "held_out_variables": [
+   "adverse_event_flag",
+   "product_code"
+  ],
+  "min_linked": 30,
+  "trim_multiple": 5.0,
+  "year_groups": [
+   "2016_2017",
+   "2018_2020",
+   "2021_2023",
+   "2024_2026",
+   "unknown"
+  ],
+  "tiers": [
+   10,
+   100
+  ],
+  "top_n_product_codes": 25
+ },
+ "versions": {
+  "unweighted": {
+   "effective_sample_size": 10815717,
+   "ess_ratio": 1.0,
+   "max_weight_ratio": 1.0,
+   "tvd": {
+    "event_type": 0.025505736772206928,
+    "manufacturer_tier": 0.061336730992617425,
+    "year_group": 0.06124964017751264,
+    "adverse_event_flag": 0.02301315046320687,
+    "product_code": 0.1444027640871595
+   },
+   "highlights": {
+    "event_type=Death": [
+     0.0055303532716217945,
+     0.004246227966208805
+    ],
+    "manufacturer_tier=top_10": [
+     0.5228857482013186,
+     0.584222479193936
+    ],
+    "manufacturer_tier=long_tail": [
+     0.14875257982838916,
+     0.12039932257842915
+    ]
+   },
+   "levels_used": {
+    "unweighted": 2204
+   }
+  },
+  "event_type": {
+   "effective_sample_size": 10730962,
+   "ess_ratio": 0.9921637115863479,
+   "max_weight_ratio": 12.795975382597398,
+   "tvd": {
+    "event_type": 4.505083393183732e-05,
+    "manufacturer_tier": 0.06323630749818514,
+    "year_group": 0.06338340246606029,
+    "adverse_event_flag": 0.001114949566786055,
+    "product_code": 0.13661840284255466
+   },
+   "highlights": {
+    "event_type=Death": [
+     0.0055303532716217945,
+     0.005530602430011652
+    ],
+    "manufacturer_tier=top_10": [
+     0.5228857482013186,
+     0.5861220556995043
+    ],
+    "manufacturer_tier=long_tail": [
+     0.14875257982838916,
+     0.12142730079936773
+    ]
+   },
+   "levels_used": {
+    "event_type": 2192,
+    "overall": 12
+   }
+  },
+  "full": {
+   "effective_sample_size": 9188299,
+   "ess_ratio": 0.8495321171308057,
+   "max_weight_ratio": 29.10449477714372,
+   "tvd": {
+    "event_type": 0.00017002160328015908,
+    "manufacturer_tier": 0.00015074341073165447,
+    "year_group": 3.280856888659284e-05,
+    "adverse_event_flag": 0.0006704436848067697,
+    "product_code": 0.10205099691060822
+   },
+   "highlights": {
+    "event_type=Death": [
+     0.0055303532716217945,
+     0.005515619999158772
+    ],
+    "manufacturer_tier=top_10": [
+     0.5228857482013186,
+     0.5229878571673586
+    ],
+    "manufacturer_tier=long_tail": [
+     0.14875257982838916,
+     0.14872675248342257
+    ]
+   },
+   "levels_used": {
+    "event_type+manufacturer_tier+year_group": 1910,
+    "event_type+manufacturer_tier": 170,
+    "event_type": 112,
+    "overall": 12
+   }
+  },
+  "full_trimmed": {
+   "effective_sample_size": 9290033,
+   "ess_ratio": 0.8589382019623658,
+   "max_weight_ratio": 5.002976386316517,
+   "tvd": {
+    "event_type": 0.00044165819123160183,
+    "manufacturer_tier": 0.000512672843494114,
+    "year_group": 0.0004611376744351886,
+    "adverse_event_flag": 0.0007003440799006206,
+    "product_code": 0.1020161209255283
+   },
+   "highlights": {
+    "event_type=Death": [
+     0.0055303532716217945,
+     0.005433772562961576
+    ],
+    "manufacturer_tier=top_10": [
+     0.5228857482013186,
+     0.5232769489583793
+    ],
+    "manufacturer_tier=long_tail": [
+     0.14875257982838916,
+     0.14868281136881234
+    ]
+   },
+   "levels_used": {
+    "event_type+manufacturer_tier+year_group": 1910,
+    "event_type+manufacturer_tier": 170,
+    "event_type": 112,
+    "overall": 12
+   }
+  }
+ },
+ "fairlearn_link_rates": {
+  "event_type": {
+   "overall": 0.5022987176557789,
+   "by_group": {
+    "(null)": 0.03925619834710744,
+    "Death": 0.38566701936480746,
+    "Injury": 0.5373235634831195,
+    "Malfunction": 0.48332220637585754,
+    "No answer provided": 0.006109979633401222,
+    "Other": 0.045337344220025784
+   },
+   "difference": 0.5312135838497183,
+   "ratio": 0.011371136590017
+  },
+  "manufacturer_tier": {
+   "overall": 0.5022987176557789,
+   "by_group": {
+    "(null)": 0.34501947690595436,
+    "11_100": 0.4533858666738596,
+    "long_tail": 0.4065571528745185,
+    "top_10": 0.5612205020585298
+   },
+   "difference": 0.21620102515257544,
+   "ratio": 0.6147663452073463
+  },
+  "year_group": {
+   "overall": 0.5022987176557789,
+   "by_group": {
+    "2016_2017": 0.21481326925876096,
+    "2018_2020": 0.5289543119714202,
+    "2021_2023": 0.578280914849558,
+    "2024_2026": 0.4853578952156497
+   },
+   "difference": 0.36346764559079703,
+   "ratio": 0.37146871657461744
+  },
+  "adverse_event_flag": {
+   "overall": 0.5022987176557789,
+   "by_group": {
+    "(null)": 0.2533567662565905,
+    "N": 0.48454820277620947,
+    "Y": 0.5331573997368186
+   },
+   "difference": 0.27980063348022816,
+   "ratio": 0.47520069379446755
+  },
+  "product_code": {
+   "overall": 0.5022987176557789,
+   "by_group": {
+    "(null)": 0.0,
+    "BZD": 0.24590499185286338,
+    "CBK": 0.42901071594968165,
+    "DSQ": 0.41570452106396616,
+    "DTB": 0.639977144331702,
+    "DZE": 0.6404747867644015,
+    "FPA": 0.42192389397692315,
+    "FRN": 0.8734894429253948,
+    "FTR": 0.3947336833541538,
+    "GDW": 0.6637175964463826,
+    "LGW": 0.7752404222660777,
+    "LWP": 0.5120076117982874,
+    "LWS": 0.5275988694278148,
+    "LZG": 0.07762886924563571,
+    "MDS": 0.5791374679714754,
+    "MKJ": 0.34741568970193787,
+    "NBW": 0.1721623319255851,
+    "NVN": 0.6371755893832122,
+    "OTHER": 0.4446284658738675,
+    "OYC": 0.14709024635495224,
+    "OZO": 0.606574150567299,
+    "OZP": 0.159188274584699,
+    "PQF": 0.6076943520376836,
+    "PZE": 0.12282636770423941,
+    "QBJ": 0.46059699043779895,
+    "QFG": 0.6382448720596466,
+    "QLG": 0.11006969202106862
+   },
+   "difference": 0.8734894429253948,
+   "ratio": 0.0
+  }
+ },
+ "cross_check_vs_bias_slices": {
+  "status": "ok",
+  "values_compared": 40,
+  "max_abs_gap": {
+   "event_type": 4.3651688053092386e-07,
+   "manufacturer_tier": 4.979414701677953e-07,
+   "adverse_event_flag": 3.997368186459127e-07,
+   "product_code": 4.789360338319781e-07
+  }
+ }
+}
