@@ -160,6 +160,9 @@ docker compose exec airflow-scheduler airflow dags unpause vigil_md_load
 docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
 ```
 
+Both pools are needed. If a pool is missing, its tasks stay **queued** with no error: unzip
+tasks wait for `vigil_upload`, and the RAW load, staging and merge tasks for `vigil_warehouse`.
+
 Why this order: the incremental fetch **stops with an error** until a full load has written `manifests/partitions/*.json`.
 
 ### Running a warehouse step by hand
@@ -739,6 +742,12 @@ The BigQuery SQL is checked by hand with free dry runs. See "Manual checks" in `
 ---
 
 ## Changes
+
+> **2026-10-27 — action needed after pulling:** unzip now runs in a new pool, `vigil_upload`.
+> Create it once on your machine, or every unzip task stays queued:
+> `docker compose exec airflow-scheduler airflow pools set vigil_upload 1 "GCS uploads (unzip)"`.
+> Check with `docker compose exec airflow-scheduler airflow pools list` (you need `vigil_upload`
+> and `vigil_warehouse`, 1 slot each). See "Scheduling" under Data Validation.
 
 ### 2026-10-26 — Bias slice analysis of PROD
 
