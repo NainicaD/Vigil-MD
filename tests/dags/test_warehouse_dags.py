@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DAGS = ROOT / "dags"
 SOURCES = ["enforcement", "recall", "maude", "gudid"]
 STEPS = ["unzip", "load_raw", "staging", "merge"]
+LOAD_DAG_STEPS = ["unzip", "load_raw", "staging", "validate", "check", "merge"]
 
 
 @pytest.fixture(scope="module")
@@ -200,7 +201,7 @@ def test_load_dag_is_triggered_only(dagbag):
 @pytest.mark.parametrize("source", SOURCES)
 def test_load_dag_chain(dagbag, source):
     t = tasks(dagbag.get_dag("vigil_md_load"))
-    chain = [f"load.{step}_{source}" for step in STEPS]
+    chain = [f"load.{step}_{source}" for step in LOAD_DAG_STEPS]
     assert t[chain[0]].upstream_task_ids == set()          # chains start the run
     for up, down in zip(chain, chain[1:]):
         assert t[down].upstream_task_ids == {up}

@@ -27,6 +27,7 @@ from airflow import DAG
 from airflow.sdk import Param, TaskGroup
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.task.trigger_rule import TriggerRule
+from airflow.sdk.exceptions import AirflowFailException
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +61,10 @@ def run_script(script: str, *args: str) -> str:
         log.info(result.stdout)
     if result.stderr:
         log.warning(result.stderr)
+    if result.returncode == EXIT_DATA_FAIL:
+        raise DataCheckFailed(
+            f"{script} found a data problem (exit {EXIT_DATA_FAIL})\n{result.stderr}"
+        )
     if result.returncode != 0:
         raise RuntimeError(
             f"{script} failed (exit {result.returncode})\n{result.stderr}"
@@ -67,11 +72,28 @@ def run_script(script: str, *args: str) -> str:
     return result.stdout
 
 
+# Data checks: validate = schema + Great Expectations (scripts/validation),
+# check = anomaly checks. Both exit 3 when they find a data problem; that is not
+# retried, because the data would be the same. Other errors are retried as usual.
+EXIT_DATA_FAIL = 3
+CHECK_STEPS = {"validate", "check"}
+# False = warn-only: a check failure is logged and the merge still runs.
+# Set True once thresholds are tuned, so a failure stops that source's merge.
+CHECKS_ENFORCE = False
+VALIDATION_RESULTS_DIR = "/opt/airflow/logs/validation"   # outside the repo
+
+
+class DataCheckFailed(AirflowFailException):
+    """A data check found a problem (exit 3). Fails without retrying."""
+
+
 WAREHOUSE_STEPS = {
     # step: (script, takes --bucket, takes --scope)
     "unzip":    ("scripts/warehouse/unzip_to_ndjson.py", True,  True),
     "load_raw": ("scripts/warehouse/load_raw_to_bq.py",  True,  True),
     "staging":  ("scripts/warehouse/build_staging.py",   False, False),
+    "validate": ("scripts/validation/run_validation.py", False, False),
+    "check":    ("scripts/warehouse/check_staging.py",   False, False),
     "merge":    ("scripts/warehouse/merge_prod.py",      False, False),
 }
 
@@ -87,6 +109,8 @@ def warehouse_args(step: str, source: str, ingest_date: str,
         args += ["--bucket", BUCKET]
     if takes_scope:
         args += ["--scope", scope]
+    if step == "validate":
+        args += ["--values", "--max-gb", "2", "--results-dir", VALIDATION_RESULTS_DIR]
     return args
 
 
@@ -110,7 +134,14 @@ def resolve_ingest_date(context: dict) -> str:
 def run_load_step(step: str, source: str, **context):
     """Run one warehouse script for one source."""
     ingest_date = resolve_ingest_date(context)
-    run_script(*warehouse_args(step, source, ingest_date))
+    try:
+        run_script(*warehouse_args(step, source, ingest_date))
+    except DataCheckFailed:
+        if step in CHECK_STEPS and not CHECKS_ENFORCE:
+            log.warning("%s %s found data problems (warn-only, CHECKS_ENFORCE is False): "
+                        "the merge continues. See the check output above.", step, source)
+            return
+        raise
     log.info("%s %s completed successfully (ingest_date %s)", step, source, ingest_date)
 
 
