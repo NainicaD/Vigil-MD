@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DAGS = ROOT / "dags"
 SOURCES = ["enforcement", "recall", "maude", "gudid"]
 STEPS = ["unzip", "load_raw", "staging", "merge"]
+LOAD_DAG_STEPS = ["unzip", "load_raw", "staging", "validate", "check", "merge"]
 
 
 @pytest.fixture(scope="module")
@@ -200,7 +201,7 @@ def test_load_dag_is_triggered_only(dagbag):
 @pytest.mark.parametrize("source", SOURCES)
 def test_load_dag_chain(dagbag, source):
     t = tasks(dagbag.get_dag("vigil_md_load"))
-    chain = [f"load.{step}_{source}" for step in STEPS]
+    chain = [f"load.{step}_{source}" for step in LOAD_DAG_STEPS]
     assert t[chain[0]].upstream_task_ids == set()          # chains start the run
     for up, down in zip(chain, chain[1:]):
         assert t[down].upstream_task_ids == {up}
@@ -248,7 +249,7 @@ def test_full_load_is_manual_with_params(dagbag):
 def test_full_load_chain(dagbag, source):
     t = tasks(dagbag.get_dag("vigil_md_full_load"))
     assert t["guard_no_acquisition_run"].downstream_task_ids == {"refetch", "alert_on_failure"}
-    chain = [f"load.{step}_{source}" for step in STEPS]
+    chain = [f"load.{step}_{source}" for step in LOAD_DAG_STEPS]
     assert t[chain[0]].upstream_task_ids == {"refetch"}
     for up, down in zip(chain, chain[1:]):
         assert t[down].upstream_task_ids == {up}
@@ -317,3 +318,11 @@ def test_rebuild_flags_only_on_merge(full, recorded):
     merge, staging = recorded
     assert "--rebuild" in merge and "--yes-rebuild" in merge and "2026-10-25" in merge
     assert "--rebuild" not in staging
+
+
+def test_full_load_check_args(full):
+    v = full.full_load_args("validate", "recall", "2026-10-26")
+    assert v[0] == "scripts/validation/run_validation.py"
+    assert "--values" in v and "2026-10-26" in v and "recall" in v
+    c = full.full_load_args("check", "recall", "2026-10-26")
+    assert c[0] == "scripts/warehouse/check_staging.py" and "--values" not in c

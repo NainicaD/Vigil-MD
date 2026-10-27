@@ -12,22 +12,30 @@ from unittest.mock import MagicMock
 
 import pytest
 
-pytest.importorskip("airflow")
-
-ROOT = Path(__file__).resolve().parents[2]
-DAG_FILE = ROOT / "dags" / "pull_samples_dag.py"
-
-# Must be set before airflow is imported anywhere.
+# Isolate Airflow BEFORE anything imports it: Airflow reads its database setting
+# once, at import time. Importing airflow first (pytest.importorskip did) made
+# resetdb() wipe the real Postgres database when these tests ran inside the
+# Airflow containers, where AIRFLOW__DATABASE__SQL_ALCHEMY_CONN points at it.
 _HOME = tempfile.mkdtemp(prefix="airflow-test-")
 os.environ["AIRFLOW_HOME"] = _HOME
 os.environ["AIRFLOW__CORE__LOAD_EXAMPLES"] = "False"
 os.environ["AIRFLOW__CORE__UNIT_TEST_MODE"] = "True"
 os.environ["AIRFLOW__DATABASE__SQL_ALCHEMY_CONN"] = f"sqlite:///{_HOME}/airflow.db"
 
+if importlib.util.find_spec("airflow") is None:     # checks without importing
+    pytest.skip("Airflow is not installed", allow_module_level=True)
+
+ROOT = Path(__file__).resolve().parents[2]
+DAG_FILE = ROOT / "dags" / "pull_samples_dag.py"
+
 
 @pytest.fixture(scope="session", autouse=True)
 def airflow_db():
+    from airflow.configuration import conf
     from airflow.utils import db
+    conn = conf.get("database", "sql_alchemy_conn")
+    if not (conn.startswith("sqlite:///") and _HOME in conn):
+        pytest.exit(f"Refusing to reset a non-test Airflow database: {conn}", returncode=2)
     db.resetdb()
 
 

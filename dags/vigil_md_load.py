@@ -28,6 +28,10 @@ from airflow.sdk import Param, TaskGroup
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.task.trigger_rule import TriggerRule
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
+from vigil_checks import (  # noqa: E402
+    CHECK_SCRIPTS, EXIT_DATA_FAIL, VALIDATE_EXTRA_ARGS, DataCheckFailed, warn_only)
+
 log = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -60,6 +64,10 @@ def run_script(script: str, *args: str) -> str:
         log.info(result.stdout)
     if result.stderr:
         log.warning(result.stderr)
+    if result.returncode == EXIT_DATA_FAIL:
+        raise DataCheckFailed(
+            f"{script} found a data problem (exit {EXIT_DATA_FAIL})\n{result.stderr}"
+        )
     if result.returncode != 0:
         raise RuntimeError(
             f"{script} failed (exit {result.returncode})\n{result.stderr}"
@@ -72,6 +80,8 @@ WAREHOUSE_STEPS = {
     "unzip":    ("scripts/warehouse/unzip_to_ndjson.py", True,  True),
     "load_raw": ("scripts/warehouse/load_raw_to_bq.py",  True,  True),
     "staging":  ("scripts/warehouse/build_staging.py",   False, False),
+    "validate": (CHECK_SCRIPTS["validate"],              False, False),
+    "check":    (CHECK_SCRIPTS["check"],                 False, False),
     "merge":    ("scripts/warehouse/merge_prod.py",      False, False),
 }
 
@@ -87,6 +97,8 @@ def warehouse_args(step: str, source: str, ingest_date: str,
         args += ["--bucket", BUCKET]
     if takes_scope:
         args += ["--scope", scope]
+    if step == "validate":
+        args += VALIDATE_EXTRA_ARGS
     return args
 
 
@@ -110,7 +122,14 @@ def resolve_ingest_date(context: dict) -> str:
 def run_load_step(step: str, source: str, **context):
     """Run one warehouse script for one source."""
     ingest_date = resolve_ingest_date(context)
-    run_script(*warehouse_args(step, source, ingest_date))
+    try:
+        run_script(*warehouse_args(step, source, ingest_date))
+    except DataCheckFailed:
+        if warn_only(step):
+            log.warning("%s %s found data problems (warn-only, CHECKS_ENFORCE is False): "
+                        "the merge continues. See the check output above.", step, source)
+            return
+        raise
     log.info("%s %s completed successfully (ingest_date %s)", step, source, ingest_date)
 
 

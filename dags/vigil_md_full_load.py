@@ -32,6 +32,10 @@ from pathlib import Path
 from airflow import DAG
 from airflow.sdk import Param, TaskGroup
 from airflow.sdk.exceptions import AirflowSkipException
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
+from vigil_checks import (  # noqa: E402
+    CHECK_SCRIPTS, EXIT_DATA_FAIL, VALIDATE_EXTRA_ARGS, DataCheckFailed, warn_only)
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.task.trigger_rule import TriggerRule
 
@@ -71,6 +75,10 @@ def run_script(script: str, *args: str) -> str:
         log.info(result.stdout)
     if result.stderr:
         log.warning(result.stderr)
+    if result.returncode == EXIT_DATA_FAIL:
+        raise DataCheckFailed(
+            f"{script} found a data problem (exit {EXIT_DATA_FAIL})\n{result.stderr}"
+        )
     if result.returncode != 0:
         raise RuntimeError(
             f"{script} failed (exit {result.returncode})\n{result.stderr}"
@@ -91,6 +99,10 @@ def full_load_args(step: str, source: str, ingest_date: str,
     if step == "staging":
         return ["scripts/warehouse/build_staging.py", "--project", PROJECT,
                 "--source", source, "--ingest-date", ingest_date]
+    if step in ("validate", "check"):
+        args = [CHECK_SCRIPTS[step], "--project", PROJECT,
+                "--source", source, "--ingest-date", ingest_date]
+        return args + (VALIDATE_EXTRA_ARGS if step == "validate" else [])
     if step == "merge":
         args = ["scripts/warehouse/merge_prod.py", "--project", PROJECT,
                 "--source", source, "--ingest-date", ingest_date]
@@ -98,7 +110,7 @@ def full_load_args(step: str, source: str, ingest_date: str,
     raise ValueError(f"unknown step {step}")
 
 
-LOAD_STEPS = ["unzip", "load_raw", "staging", "merge"]
+LOAD_STEPS = ["unzip", "load_raw", "staging", "validate", "check", "merge"]
 
 
 def selected_sources(params: dict) -> list[str]:
@@ -142,12 +154,28 @@ def refetch(**context):
         log.info("%s full fetch completed", source)
 
 
+def load_date(context: dict) -> str:
+    """The run's date (YYYY-MM-DD). Uses ds when the run has a logical date;
+    a run triggered without one (e.g. from the CLI) has no ds, so fall back to
+    the time the run was created."""
+    if context.get("ds"):
+        return context["ds"]
+    return context["dag_run"].run_after.date().isoformat()
+
+
 def run_load_step(step: str, source: str, **context):
     params = context["params"]
     if source not in selected_sources(params):
         raise AirflowSkipException(f"{source} not in sources param")
     rebuild = bool(params.get("rebuild_prod")) and step == "merge"
-    run_script(*full_load_args(step, source, context["ds"], rebuild))
+    try:
+        run_script(*full_load_args(step, source, load_date(context), rebuild))
+    except DataCheckFailed:
+        if warn_only(step):
+            log.warning("%s %s found data problems (warn-only, CHECKS_ENFORCE is False): "
+                        "the merge continues. See the check output above.", step, source)
+            return
+        raise
     log.info("%s %s completed%s", step, source, " (rebuild)" if rebuild else "")
 
 
