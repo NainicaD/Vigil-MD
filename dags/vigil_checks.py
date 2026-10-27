@@ -35,3 +35,34 @@ class DataCheckFailed(AirflowFailException):
 def warn_only(step: str) -> bool:
     """True if a DataCheckFailed from this step should only be logged."""
     return step in CHECK_STEPS and not CHECKS_ENFORCE
+
+
+# ── Scheduling shared by the warehouse DAGs ───────────────────────────────────
+# Two one-slot pools that run at the same time:
+#   vigil_upload     unzip: GCS uploads share one connection, so one at a time.
+#                    Unzip only touches its own source's manifests, partition
+#                    state and NDJSON files, and never BigQuery.
+#   vigil_warehouse  load_raw, staging, merge: BigQuery cancels concurrent
+#                    transactions that mutate the same table (load_log).
+# validate and check only read (SELECT), which BigQuery allows during a
+# transaction, so they use default_pool.
+UPLOAD_POOL = "vigil_upload"
+WAREHOUSE_POOL = "vigil_warehouse"
+READ_ONLY_POOL = "default_pool"
+
+# Small sources first, so they are not stuck behind a long upload. With the
+# upstream rule a task's effective priority is its own weight plus all its
+# ancestors', so a source's next step outranks the next source's earlier steps
+# and each source's chain finishes before the next one's.
+SOURCE_PRIORITY = {"enforcement": 4, "recall": 3, "gudid": 2, "maude": 1}
+WEIGHT_RULE = "upstream"
+
+
+def pool_for(step: str) -> str:
+    """The pool for one warehouse step."""
+    if step == "unzip":
+        return UPLOAD_POOL
+    if step in CHECK_STEPS:
+        return READ_ONLY_POOL
+    return WAREHOUSE_POOL
+

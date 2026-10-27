@@ -205,7 +205,7 @@ def test_load_dag_chain(dagbag, source):
     assert t[chain[0]].upstream_task_ids == set()          # chains start the run
     for up, down in zip(chain, chain[1:]):
         assert t[down].upstream_task_ids == {up}
-    assert all(t[c].pool == "vigil_warehouse" for c in chain)
+    # pools and priorities: see test_pools_and_priorities
     # TaskGroup >> alert links the chain's last task; ONE_FAILED also counts upstream_failed
     assert "alert_on_failure" in t[chain[-1]].downstream_task_ids
 
@@ -253,7 +253,7 @@ def test_full_load_chain(dagbag, source):
     assert t[chain[0]].upstream_task_ids == {"refetch"}
     for up, down in zip(chain, chain[1:]):
         assert t[down].upstream_task_ids == {up}
-    assert all(t[c].pool == "vigil_warehouse" for c in chain + ["refetch"])
+    assert t["refetch"].pool == "vigil_warehouse"   # writes the shared state files
     assert "alert_on_failure" in t[chain[-1]].downstream_task_ids
 
 
@@ -326,3 +326,52 @@ def test_full_load_check_args(full):
     assert "--values" in v and "2026-10-26" in v and "recall" in v
     c = full.full_load_args("check", "recall", "2026-10-26")
     assert c[0] == "scripts/warehouse/check_staging.py" and "--values" not in c
+
+
+# ── Pools and priorities ──────────────────────────────────────────────────────
+PRIORITY = {"enforcement": 4, "recall": 3, "gudid": 2, "maude": 1}
+EXPECTED_POOL = {"unzip": "vigil_upload", "validate": "default_pool", "check": "default_pool",
+                 "load_raw": "vigil_warehouse", "staging": "vigil_warehouse",
+                 "merge": "vigil_warehouse"}
+
+
+def _rule_name(task):
+    rule = task.weight_rule
+    return (rule if isinstance(rule, str) else type(rule).__name__).lower()
+
+
+@pytest.mark.parametrize("dag_id", ["vigil_md_load", "vigil_md_full_load"])
+def test_pools_and_priorities(dagbag, dag_id):
+    t = tasks(dagbag.get_dag(dag_id))
+    for source in SOURCES:
+        for step in LOAD_DAG_STEPS:
+            task = t[f"load.{step}_{source}"]
+            assert task.pool == EXPECTED_POOL[step], task.task_id
+            assert task.priority_weight == PRIORITY[source], task.task_id
+            assert "upstream" in _rule_name(task), task.task_id
+
+
+@pytest.mark.parametrize("dag_id", ["vigil_md_load", "vigil_md_full_load"])
+def test_effective_priorities_finish_small_sources_first(dagbag, dag_id):
+    # Effective priority under weight_rule="upstream", as Airflow documents it:
+    # the task's own priority_weight plus that of all its upstream ancestors.
+    # (Airflow 3 computes it in the scheduler; the DAG-file operators do not
+    # expose it.) The "after" Gantt run checks the scheduler's actual order.
+    dag = dagbag.get_dag(dag_id)
+
+    def w(tid):
+        task = dag.get_task(f"load.{tid}")
+        ancestors, todo = set(), list(task.upstream_list)
+        while todo:
+            a = todo.pop()
+            if a.task_id not in ancestors:
+                ancestors.add(a.task_id)
+                todo.extend(a.upstream_list)
+        return task.priority_weight + sum(dag.get_task(a).priority_weight for a in ancestors)
+    # uploads in source order
+    assert w("unzip_enforcement") > w("unzip_recall") > w("unzip_gudid") > w("unzip_maude")
+    # a started source's next step beats the next source's earlier steps
+    assert w("load_raw_enforcement") > w("unzip_recall") > w("unzip_gudid")
+    assert w("merge_enforcement") > w("load_raw_recall")
+    assert w("merge_recall") > w("load_raw_gudid")
+

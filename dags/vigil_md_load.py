@@ -30,7 +30,8 @@ from airflow.task.trigger_rule import TriggerRule
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    CHECK_SCRIPTS, EXIT_DATA_FAIL, VALIDATE_EXTRA_ARGS, DataCheckFailed, warn_only)
+    CHECK_SCRIPTS, EXIT_DATA_FAIL, SOURCE_PRIORITY, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
+    DataCheckFailed, pool_for, warn_only)
 
 log = logging.getLogger(__name__)
 
@@ -207,7 +208,9 @@ with DAG(
                     task_id=f"{step}_{source}",
                     python_callable=run_load_step,
                     op_kwargs={"step": step, "source": source},
-                    pool=WAREHOUSE_POOL,
+                    pool=pool_for(step),
+                    priority_weight=SOURCE_PRIORITY[source],
+                    weight_rule=WEIGHT_RULE,
                 )
                 for step in WAREHOUSE_STEPS
             ]
