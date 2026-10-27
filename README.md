@@ -145,18 +145,19 @@ Follow the **Runbook** at the end of [`docs/WAREHOUSE_PLAN.md`](docs/WAREHOUSE_P
 
 ```bash
 # 1. Pool: one BigQuery writer at a time (shared by vigil_md_load and vigil_md_full_load)
-docker exec vigik-md-airflow-airflow-scheduler-1 airflow pools set vigil_warehouse 1 "BigQuery writers"
+docker compose exec airflow-scheduler airflow pools set vigil_warehouse 1 "BigQuery writers"
+docker compose exec airflow-scheduler airflow pools set vigil_upload 1 "GCS uploads (unzip)"
 
 # 2. Tables (already created; safe to re-run)
-docker exec -w /opt/airflow/Vigil-MD vigik-md-airflow-airflow-worker-1 \
+docker compose exec -w /opt/airflow/Vigil-MD airflow-worker \
   python scripts/warehouse/create_tables.py --project vigil-md-1792696816
 
 # 3. Trigger vigil_md_full_load in the UI (try {"sources": ["recall"]} first),
 #    keep both daily DAGs paused while it runs, then check row counts (Runbook step 4)
 
 # 4. Unpause the loading DAG first, then acquisition
-docker exec vigik-md-airflow-airflow-scheduler-1 airflow dags unpause vigil_md_load
-docker exec vigik-md-airflow-airflow-scheduler-1 airflow dags unpause vigil_md_acquisition
+docker compose exec airflow-scheduler airflow dags unpause vigil_md_load
+docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
 ```
 
 Why this order: the incremental fetch **stops with an error** until a full load has written `manifests/partitions/*.json`.
@@ -166,7 +167,7 @@ Why this order: the incremental fetch **stops with an error** until a full load 
 Every warehouse script has `--print-only`: it prints the plan and SQL and makes **no GCP call**. Run scripts inside the Airflow worker (it has the GCP libraries and credentials):
 
 ```bash
-W="docker exec -w /opt/airflow/Vigil-MD vigik-md-airflow-airflow-worker-1 python"
+W="docker compose exec -w /opt/airflow/Vigil-MD airflow-worker python"
 $W scripts/warehouse/unzip_to_ndjson.py --bucket vigil-md-raw-nd --source maude --scope changed --ingest-date 2026-10-25 --print-only
 $W scripts/warehouse/load_raw_to_bq.py  --project vigil-md-1792696816 --bucket vigil-md-raw-nd --source maude --scope changed --ingest-date 2026-10-25 --print-only
 $W scripts/warehouse/build_staging.py   --project vigil-md-1792696816 --source maude --ingest-date 2026-10-25 --print-only
@@ -431,7 +432,8 @@ open http://localhost:8080
 # Login: airflow / airflow
 
 # 5. Create the warehouse pool (first time only)
-docker exec vigik-md-airflow-airflow-scheduler-1 airflow pools set vigil_warehouse 1 "BigQuery writers"
+docker compose exec airflow-scheduler airflow pools set vigil_warehouse 1 "BigQuery writers"
+docker compose exec airflow-scheduler airflow pools set vigil_upload 1 "GCS uploads (unzip)"
 ```
 
 ## Running ELK Stack (Logging)
@@ -676,6 +678,19 @@ Exit code `3` means a check found a data problem. The task then fails without re
 | `True` | Fails the task: that source is not merged and the alert e-mail is sent |
 
 Keep `False` until several daily loads have passed without false alarms, then set `True`.
+
+**Scheduling.** Each step runs in one of three pools (`dags/vigil_checks.py`):
+
+| Pool | Slots | Steps | Why |
+|---|---|---|---|
+| `vigil_upload` | 1 | unzip | GCS uploads share one connection |
+| `vigil_warehouse` | 1 | load_raw, staging, merge, refetch | BigQuery cancels concurrent transactions on the same table (`load_log`) |
+| `default_pool` | 128 | validate, check | Read-only queries |
+
+The two one-slot pools run at the same time, so one source's BigQuery steps run while the next
+source uploads. All warehouse steps use `weight_rule="upstream"` with a priority per source
+(enforcement 4, recall 3, GUDID 2, MAUDE 1): small sources go first, and each source's chain
+finishes before the next source's long upload delays it.
 
 The Airflow containers need Great Expectations: set `_PIP_ADDITIONAL_REQUIREMENTS` in `.env`
 as in `.env.example`, then run `docker compose up -d`.

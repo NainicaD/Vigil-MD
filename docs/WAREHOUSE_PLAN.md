@@ -365,6 +365,7 @@ Tick each box in `docs/WAREHOUSE_PLAN.md`. Stop after each step (G1, G2).
 - **Allowed files:** `docs/WAREHOUSE_PLAN.md` (append a "Runbook" section).
 - [x] Write the go-live order for the user:
   1. `airflow pools set vigil_warehouse 1 "BigQuery writers"`
+     Then `airflow pools set vigil_upload 1 "GCS uploads (unzip)"` (added later: unzip has its own upload pool; see README "Scheduling").
   2. `create_tables.py` (real run)
   3. Trigger `vigil_md_full_load`
   4. Check row counts
@@ -436,7 +437,7 @@ Step N report
 
 ## Runbook
 
-Written 2026-10-25, after Steps 0–8. Run every command in a **WSL Ubuntu terminal**. Airflow runs in Docker; `vigik-md-airflow-airflow-scheduler-1` and `vigik-md-airflow-airflow-worker-1` are the container names.
+Written 2026-10-25, after Steps 0–8. Run every command in a **WSL Ubuntu terminal**. Airflow runs in Docker. The commands use the Compose service names (`docker compose exec airflow-scheduler`, `docker compose exec airflow-worker`), which work whatever the repository folder, and so the container names, are called. Run them from the repository folder.
 
 ### Before you start: state on 2026-10-25
 
@@ -454,14 +455,15 @@ Written 2026-10-25, after Steps 0–8. Run every command in a **WSL Ubuntu termi
 
 **1. Create the pool (1 slot).**
 ```bash
-docker exec vigik-md-airflow-airflow-scheduler-1 airflow pools set vigil_warehouse 1 "BigQuery writers"
-docker exec vigik-md-airflow-airflow-scheduler-1 airflow pools get vigil_warehouse
+docker compose exec airflow-scheduler airflow pools set vigil_warehouse 1 "BigQuery writers"
+docker compose exec airflow-scheduler airflow pools set vigil_upload 1 "GCS uploads (unzip)"
+docker compose exec airflow-scheduler airflow pools get vigil_warehouse
 ```
 Without this pool, the scheduler does not start any warehouse task.
 
 **2. Create the tables.** This is already done. A second run is safe (`exists_ok=True`). It raises if a table has columns different from `schemas.py`.
 ```bash
-docker exec -w /opt/airflow/Vigil-MD vigik-md-airflow-airflow-worker-1 \
+docker compose exec -w /opt/airflow/Vigil-MD airflow-worker \
   python scripts/warehouse/create_tables.py --project vigil-md-1792696816
 ```
 
@@ -503,8 +505,8 @@ Expected:
 
 **5. Unpause the two daily DAGs** (loading first, so the first trigger is not left queued).
 ```bash
-docker exec vigik-md-airflow-airflow-scheduler-1 airflow dags unpause vigil_md_load
-docker exec vigik-md-airflow-airflow-scheduler-1 airflow dags unpause vigil_md_acquisition
+docker compose exec airflow-scheduler airflow dags unpause vigil_md_load
+docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
 ```
 `vigil_md_acquisition` runs daily at 06:00 UTC. When it is done, its `trigger_load` task starts `vigil_md_load` with the same date. `vigil_md_load` has no schedule of its own.
 
