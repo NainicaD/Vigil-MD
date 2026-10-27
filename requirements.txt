@@ -28,3 +28,6 @@ ijson==3.6.0
 # Data validation (Great Expectations; needs Python 3.10+)
 great_expectations==1.24.0
 sqlalchemy-bigquery==1.17.3
+
+# Bias analysis (scripts/analysis/bias_mitigation.py)
+fairlearn==0.15.0

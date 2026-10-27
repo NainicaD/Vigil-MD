@@ -38,6 +38,7 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_build_staging.py` | STAGING SQL (flatten, cast, dedup) | 30 | pass |
 | `test_merge_prod.py` | MERGE into PROD and `--rebuild` | 33 | pass |
 | `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 47 | pass |
+| `test_bias_slices.py` | Bias slice analysis of PROD (read-only SQL, statistics, outputs) | 37 | pass |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 
@@ -274,6 +275,20 @@ Skipped when Airflow isn't installed. No `dag.test()`: the tasks call real scrip
 | `test_warehouse_args_parse` (4), `test_full_load_args_parse` (5), `test_full_load_args_modes` | Every argument list is accepted by its script (`--print-only`, subprocess) |
 | `test_full_load_is_manual_with_params`, `test_full_load_chain` (4), `test_selected_sources_rejects_bad_params` (3) | Full-load DAG: manual, params, chains |
 | `test_guard_passes_when_no_daily_run`, `test_guard_fails_when_a_daily_dag_runs` (2), `test_refetch_*` (2), `test_unselected_source_is_skipped`, `test_rebuild_flags_only_on_merge` | Guard (checks both daily DAGs), refetch, skip and rebuild logic |
+
+## 19. `test_bias_slices.py`: bias slice analysis (fake_gcp, FakeClient)
+
+The SQL is checked as text; `run()` uses a `FakeClient` that returns canned rows. Results: `docs/BIAS_REPORT.md`.
+
+| Test | What it checks |
+|---|---|
+| `test_every_query_reads_only_prod`, `test_guard_rejects_non_prod_or_writes` (5), `test_guard_allows_columns_that_contain_keywords` | Every query is a SELECT on `vigil_md_prod` only; RAW, STAGING, MERGE, DELETE and CREATE are rejected |
+| `test_maude_match_is_exact_against_distinct_gudid_primary_di`, `test_maude_length_rule_comes_from_expectations` | The matching rule is unchanged (exact `udi_di`, no TRIM/UPPER, DISTINCT GUDID DIs); length rule from `expectations.RULES` |
+| `test_shape_query_only_classifies_unmatched_rows`, `test_link_sql_uses_link_key_both_ways` | Diagnostic shape query; recall↔enforcement on `link_key` in both directions |
+| `test_slices_include_overall_and_unknown_year` (4), `test_slice_columns_exist_in_prod` (4), `test_top_n_and_tiers` | Slices: overall row, `unknown` year, PROD columns only, top-N and tiers |
+| `test_completeness_covers_every_business_column` (4), `test_completeness_treats_blank_strings_and_empty_arrays_as_missing` | Completeness covers `FLAT_COLUMNS`; blanks and empty arrays count as missing |
+| `test_wilson`, `test_score_*` (3), `test_four_fifths_is_not_applied_to_error_rates`, `test_maude_rows_split_into_three_metrics`, `test_completeness_skips_the_slice_own_column` | Wilson CI, gap and flag rules, small cells, metric split |
+| `test_run_writes_csvs_and_summary`, `test_run_stops_above_max_gb_before_any_real_query`, `test_estimate_only_runs_no_real_query`, `test_empty_result_fails_loudly`, `test_print_only_makes_no_gcp_call` | CSVs and `summary.json`; cost guard; `maximum_bytes_billed`; fails loudly on zero rows |
 
 ## Manual checks (real BigQuery, not in pytest)
 
