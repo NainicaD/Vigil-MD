@@ -54,7 +54,8 @@ Vigil-MD/
 │   ├── matching/
 │   │   └── exact_linking.py         # UDI and recall-number exact joins
 │   ├── analysis/
-│   │   └── bias_slices.py           # read-only bias slice analysis of PROD (see "Bias slice analysis")
+│   │   ├── bias_slices.py           # read-only bias slice analysis of PROD (see "Bias slice analysis")
+│   │   └── bias_mitigation.py       # reweighting mitigation + Fairlearn check (see "Bias slice analysis")
 │   └── logger.py                    # console + Logstash logger
 ├── tests/                           # pytest (all GCP calls mocked) — see tests/TEST_CASES.md
 ├── docs/
@@ -274,7 +275,9 @@ GROUP BY source;
 - **Formatting is not the cause:** normalization would recover only 20 of 2.5M unmatched UDIs.
 - **Recall→enforcement (67.7%):** mostly a date-range effect. Recalls before 2012 have no enforcement record.
 
-Full results, limitations, and proposed mitigations (not implemented) are in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md).
+`scripts/analysis/bias_mitigation.py` then mitigates the main finding (linked MAUDE rows are not representative) by reweighting the linked rows on event type × manufacturer tier × year group, checks the result on variables it did not use, and reports the cost as the effective sample size. Fairlearn `MetricFrame` computes the link rate per slice and is cross-checked against `bias_slices.py`. Results are in `reports/bias/`; the recommended weights are `weight_full_trimmed` in `reports/bias/mitigation_weights.csv`.
+
+Full results, limitations, the implemented mitigation (section 6) and further proposed mitigations (section 7) are in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md).
 
 ### How to run it
 
@@ -292,6 +295,9 @@ $PY scripts/analysis/bias_slices.py --project vigil-md-1792696816 --estimate-onl
 
 # 3. Real run → data/interim/bias/
 $PY scripts/analysis/bias_slices.py --project vigil-md-1792696816 --max-gb 5
+
+# 4. Mitigation (reweighting + Fairlearn) → reports/bias/
+$PY scripts/analysis/bias_mitigation.py --project vigil-md-1792696816
 ```
 
 - **Cost:** the whole run scans about **7.6 GB**. A re-run within 24 hours can come from the BigQuery result cache and scan nothing.

@@ -2,6 +2,8 @@
 
 Run on 2026-10-26 against `vigil-md-1792696816.vigil_md_prod`. Produced by `scripts/analysis/bias_slices.py`. The results are in `data/interim/bias/`, which is git-ignored, so re-run the script to regenerate them.
 
+Re-run on 2026-10-27 with the same code: identical headline rates (UDI availability 61.9%, primary-DI match 81.2%, MAUDE→GUDID 50.2%). Section 6 (mitigation) was added on 2026-10-27.
+
 ## 1. Scope and method
 
 **What this is:** an analysis of what the existing pipeline already produces. It is not a redesign of the pipeline.
@@ -165,7 +167,7 @@ All other fields are at least 99.4% complete. Every enforcement field is at leas
    - **Long-tail manufacturers** are under-represented: 15% of all rows, about 12% of linked rows.
    - Any analysis restricted to linked rows (device attributes from GUDID) inherits these skews.
 2. **The gaps have different causes:**
-   - The *Death*, *long-tail* and *2016–17* gaps come from **UDI availability**, meaning reporters didn't supply a UDI. For these slices the match rate is at or above average. The 2016–17 gap fits the phased UDI compliance dates.
+   - The *Death*, *long-tail* and *2016–17* gaps come from **UDI availability**, meaning the MAUDE row has no UDI-DI (see L9 on where that field comes from). For these slices the match rate is at or above average. The 2016–17 gap fits the phased UDI compliance dates.
    - The *diabetes-device makers* (Insulet, Abbott Diabetes Care, Medtronic MiniMed) and their product codes have UDIs but **don't match the primary DI**. Since normalization recovers nothing, the likely cause is reports that use non-primary DIs. This is a hypothesis; PROD alone can't verify it.
    - *2026* matches less often (68% vs 81%). This fits devices being reported before they appear in the GUDID snapshot, but that is not verified.
 3. **The recall→enforcement gap is mostly a coverage window, not linkage failure.** Recalls before 2012 never link and those after 2013 almost always do, which fits enforcement data starting in 2012. The low rates for "Terminated" status and the "Other"/"PMA"/"Pending" root causes are probably the same age effect, since these are older records. That confounding has not been checked by cross-tabulation.
@@ -188,12 +190,72 @@ All other fields are at least 99.4% complete. Every enforcement field is at leas
 - **L6. Bucketing.** Top-25 bucketing hides the long tail inside OTHER. Tiers are ranked within each table.
 - **L7. Year meaning differs by table.** MAUDE year is the date received, not the event date. Recall year is `event_date_posted`, and 22.8% of recall rows have none ("unknown").
 - **L8. Causes are not verified.** The explanations in section 4 fit the data but were not checked further. Checking them needs RAW or extra sources, which were out of scope.
+- **L9. Where the MAUDE UDI-DI comes from.** A 2021 JAMA Internal Medicine article reported that fewer than 21,000 (1.6%) of the roughly 1.2 million device adverse event reports FDA received in 2019 contained a UDI. In PROD, 65.7% of 2019 MAUDE rows have one. FDA added UDI-DI and UDI-Public fields to MAUDE and openFDA in November 2022, but availability shows no jump after 2022 (by `record_date` year: 2016 14.2%, 2017 35.9%, 2018 56.2%, 2019 65.7%, 2020 69.4%, 2021 63.5%, 2022 73.6%, 2023 68.9%, 2024 62.9%, 2025 66.6%, 2026 56.5%). The likely explanation is that the field was also populated for older reports from a source other than the reporter's entry. This cannot be verified from PROD. The skews in sections 3–4 are measured correctly either way; what is uncertain is *why* a row lacks a UDI (the reporter did not give one, or FDA could not fill it in).
+- **L10. Residual product-code skew.** After reweighting (section 6.3), insulin-delivery product codes stay under-represented among linked rows. The cell variables do not explain this gap, so reweighting on them cannot fix it.
 
-## 6. Proposed mitigations (not implemented)
+## 6. Mitigation implemented: reweighting the linked rows
 
-These follow from the results above. None of them has been built. Items marked † would need RAW access, a new table, or a change to a matching rule, so each needs its own approval.
+Section 4 found that the MAUDE rows that link to GUDID are not a representative subset of MAUDE. Any analysis restricted to linked rows (for example, one that needs GUDID device attributes) inherits that skew, and so would a matcher trained on the UDI-linked pairs, which are the project's known matches. This section implements proposal 1 of section 7 and measures what it achieves and what it costs. Produced by `scripts/analysis/bias_mitigation.py` on 2026-10-27; results in `reports/bias/`.
 
-1. **Don't treat linked-only results as population results.** Report downstream metrics stratified by event_type, manufacturer tier and year. Where linked rows are used for estimates, reweight them by inverse link probability per slice, using the rates in `link_coverage.csv`.
+### 6.1 Method and why it was chosen
+
+**Inverse probability weighting with weighting cells.** Each linked row gets the weight N/L of its cell, where N is the number of MAUDE rows in the cell and L the number that link. The weighted linked rows then match all MAUDE rows on the cell variables. This is the most common correction for linkage-induced selection bias in linked administrative data (U.S. Census Bureau work on linked survey records), and weighting cells are one of the two standard ways to build such weights, alongside response-propensity models. Cells are simpler and easy to explain with 21.5 million rows.
+
+- **Cells:** event_type × manufacturer_tier × year_group (2016–2017, 2018–2020, 2021–2023, 2024–2026, unknown). A cell with fewer than 30 linked rows uses the next coarser level (drop year_group, then tier). With 2,204 cells, 1,910 kept the full level, 170 used event_type × tier, 112 event_type, and 12 the overall rate.
+- **Why these variables:** a weighting variable reduces bias without needlessly increasing variance only if it is associated with both linkage and the analysis outcome (Kreuter et al., 2010). Event type drives both linkage and safety analyses; tier and year drive linkage (sections 3.2 and 4).
+- **"Linked" and the tiers** are bias_slices.py's own SQL, imported rather than copied: an exact match on the DISTINCT set of GUDID primary DIs, and top 10 / 11–100 / long tail by row count.
+- **Held-out check.** Weighting by a variable restores that variable by construction, so checking it proves nothing. adverse_event_flag and product_code are known for every MAUDE row and are never used for weighting. If the weighted linked rows move toward all rows on them too, that is evidence the correction works beyond the variables it used. This is the test recommended for weighting adjustments: variables available for everyone but not used in the weights (Lohr, Riddles and Morganstein, 2016).
+- **Several versions, not one:** unweighted, event_type only, the full cells, and the full cells trimmed at 5× the mean weight. Comparing sets of weights is the recommended way to choose between them, and trimming is the usual way to limit the variance that large weights add, at some cost in bias (Elliott, 2008).
+- **Measures:** total variation distance (TVD) between the linked rows' shares and all rows' shares, per variable (0 = identical); Kish's effective sample size (ESS), the number of unweighted rows with the same precision; and the largest weight relative to the mean.
+
+**Why not the fairness libraries' mitigation methods.** AIF360's Reweighing (Kamiran and Calders, 2012) and Fairlearn's mitigation algorithms adjust a classifier's training data or predictions for a label and a protected attribute. Vigil MD has no label or model yet, so they do not apply at this stage. Fairlearn's assessment API does apply (section 6.4).
+
+### 6.2 Results
+
+| | All MAUDE rows | Linked, unweighted | Linked, full weights | Linked, full trimmed |
+|---|---:|---:|---:|---:|
+| Death reports | 0.55% | 0.42% | 0.55% | 0.54% |
+| Top-10 manufacturers | 52.29% | 58.42% | 52.30% | 52.33% |
+| Long-tail manufacturers | 14.88% | 12.04% | 14.87% | 14.87% |
+
+TVD from all MAUDE rows (21,532,440 rows; 10,815,717 linked, 50.23%):
+
+| Version | event_type | manufacturer_tier | year_group | **adverse_event_flag (held out)** | **product_code (held out)** | ESS | Largest weight |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Unweighted | 0.026 | 0.061 | 0.061 | 0.023 | 0.144 | 100% | 1.0× |
+| event_type only | 0.000 | 0.063 | 0.063 | 0.001 | 0.137 | 99.2% | 12.8× |
+| Full | 0.000 | 0.000 | 0.000 | 0.0007 | 0.102 | 85.0% | 29.1× |
+| Full, trimmed at 5× | 0.000 | 0.001 | 0.001 | 0.0007 | 0.102 | 85.9% | 5.0× |
+
+1. **The correction works on a variable it never saw.** The held-out adverse_event_flag TVD falls by 97% (0.023 → 0.0007).
+2. **Event type alone is not enough.** It restores event type but slightly worsens tier and year (0.061 → 0.063). Only the full cells correct all three.
+3. **Product code improves only partly** (0.144 → 0.102, a 29% reduction). See 6.3.
+4. **Trade-off.** The full weights keep 85% of the effective sample size: the reweighted linked rows carry the precision of about 9.2 million unweighted rows instead of 10.8 million. Trimming at 5× cuts the largest weight from 29× to 5× and gains a little precision (85.9%), at almost no cost in balance (TVD ≤ 0.001 on the weighting variables).
+5. **Recommended: the full weights trimmed at 5×.** They are in `reports/bias/mitigation_weights.csv` (column `weight_full_trimmed`), one row per event_type × manufacturer_tier × year_group.
+
+### 6.3 What reweighting cannot fix
+
+Insulin-delivery devices stay under-represented after weighting: product code OZP (automated insulin dosing, single hormonal control; Class III) is 4.19% of MAUDE rows but 1.33% of linked rows before and 1.07% after, and LZG (insulin infusion pump) is 1.47%, 0.23% and 0.23%. FRN (infusion pump) stays over-represented (7.25%, 12.60%, 10.75%). The cell variables do not explain why these devices link poorly, so weighting on event type, tier and year cannot repair them. This is consistent with section 4's finding that diabetes-device makers report UDIs that do not match a primary DI: the cause is the matching, and the fix is proposal 3 (matching against GUDID secondary, package and unit-of-use DIs).
+
+Adding product_code to the weighting cells would force its shares to match, but then nothing would be held out to test the weights, and it would inflate the few insulin-device rows that do link, which may be atypical. The held-out design was kept. Product codes with no linked row at all cover 0.044% of MAUDE rows; no reweighting can represent them.
+
+### 6.4 Fairlearn assessment and cross-check
+
+Fairlearn's `MetricFrame` computes the MAUDE→GUDID link rate per slice for event_type, manufacturer_tier, year_group, adverse_event_flag and product_code, with `difference()` and `ratio()` for each (in `mitigation_summary.json`). The link flag is passed as `y_pred` to `selection_rate`, which ignores `y_true`. Each cell enters as two rows (linked and not linked) weighted by their counts through `sample_params`, so the rates are exact over all 21.5 million rows rather than estimated from a sample.
+
+Cross-check: on the 40 slice values that both report, Fairlearn's rates and bias_slices.py's `link_coverage.csv` differ by at most 5 × 10⁻⁷, the rounding of the CSV. Two independent implementations give the same link rates.
+
+### 6.5 Assumption and limits
+
+- **Linkage is assumed ignorable within a cell:** inside each event_type × tier × year_group cell, whether a row links must not depend on anything else that matters for the analysis. The product-code result (6.3) shows this is only partly true. Variables that are not in PROD (device class, reporter type, patient characteristics; L1) cannot be checked.
+- **The weights correct representation, not linkage itself.** Unlinked rows still have no GUDID attributes. The weights make estimates from linked rows represent all MAUDE rows on the cell variables.
+- **Use for the matcher.** When training or labelling pairs are drawn from UDI-linked records, sample them with `weight_full_trimmed` (or stratify by the same cells) so the long tail, Death reports and older years are represented as in MAUDE as a whole.
+
+## 7. Further mitigations (proposed, not implemented)
+
+These follow from the results above. Item 1 is now implemented (section 6); the others have not been built. Items marked † would need RAW access, a new table, or a change to a matching rule, so each needs its own approval.
+
+1. **Don't treat linked-only results as population results.** Report downstream metrics stratified by event_type, manufacturer tier and year. Where linked rows are used for estimates, reweight them by inverse link probability per slice, using the rates in `link_coverage.csv`. *Implemented in section 6.*
 2. **Keep Death reports in signal work without linking.** For Death and long-tail reports, use MAUDE's own product_code and manufacturer features instead of dropping unlinked rows.
 3. **† Test the non-primary-DI hypothesis.** For the diabetes makers, match unmatched UDIs against GUDID secondary, package and unit-of-use DIs. If confirmed, extend the DI set used for matching. This is the biggest recoverable gap; trimming or prefix normalization is not worth doing, since it recovers 20 rows.
 4. **Check the 2026 dip.** Re-run this analysis after the next GUDID load. If the 2026 match rate rises, it was snapshot lag.
@@ -211,3 +273,27 @@ python scripts/analysis/bias_slices.py --project vigil-md-1792696816 --max-gb 5
 ```
 
 `completeness_maude` scans about 3.9 GB, which is above the default `--max-gb 2`.
+
+Mitigation (section 6), one read-only query of about 1.3 GB, results in `reports/bias/`:
+
+```bash
+python scripts/analysis/bias_mitigation.py --project vigil-md-1792696816 --estimate-only
+python scripts/analysis/bias_mitigation.py --project vigil-md-1792696816
+# recompute from the saved cell counts, no BigQuery:
+python scripts/analysis/bias_mitigation.py --project vigil-md-1792696816 --from-cells data/interim/bias/mitigation_cells.csv
+```
+
+Run `bias_slices.py` first: the Fairlearn cross-check reads its `link_coverage.csv`.
+
+## References
+
+- Elliott, M. R. (2008). Model averaging methods for weight trimming. *Journal of Official Statistics*, 24(4), 517–540.
+- FDA (November 2022). FDA updates fields available in the Manufacturer and User Facility Device Experience (MAUDE) database and openFDA (UDI-DI and UDI-Public).
+- Fairlearn documentation: `fairlearn.metrics.MetricFrame`, advanced usage (per-sample arguments and `selection_rate`).
+- Harron, K. et al. (2017). A guide to evaluating linkage quality for the analysis of linked data. *International Journal of Epidemiology*, 46(5), 1699–1710.
+- Kamiran, F. and Calders, T. (2012). Data preprocessing techniques for classification without discrimination. *Knowledge and Information Systems*, 33, 1–33.
+- Kish, L. (1965). *Survey Sampling*. Wiley (effective sample size).
+- Kreuter, F. et al. (2010). Using proxy measures and other correlates of survey outcomes to adjust for non-response. *Journal of the Royal Statistical Society, Series A*, 173(2).
+- Lohr, S. L., Riddles, M. K. and Morganstein, D. (2016). Tests for evaluating nonresponse bias in surveys. *Survey Methodology*, 42(2).
+- Raze, K., Perales, N. et al. (2024). Non-random assignment of individual identifiers and selection into linked data. FCSM Research and Policy Conference (U.S. Census Bureau).
+- Tracking medical devices with the US Food and Drug Administration's Unique Device Identification System (2021). *JAMA Internal Medicine*.
