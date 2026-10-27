@@ -1,26 +1,29 @@
+# Python 3.10+ (tested on 3.12). Versions are the ones the pipeline was tested with.
+
 # Data acquisition
-requests
-pyyaml
+requests==2.34.2
+pyyaml==6.0.3
 
 # Data processing
-pandas
-pyarrow
-rapidfuzz
+pandas==3.1.0
+pyarrow==26.0.0
+rapidfuzz==3.14.6
 
 # GCP
-google-cloud-storage
-google-cloud-bigquery
+google-cloud-storage==3.17.1
+google-cloud-bigquery==3.46.2
 
 # DVC
-dvc[gs]
+dvc[gs]==3.67.1
+dvc-gs==3.1.0
 
 # Testing
-pytest
-pytest-mock
+pytest==9.1.1
+pytest-mock==3.17.0
 
 # Utilities
-python-dotenv
-ijson
+python-dotenv==1.2.4
+ijson==3.6.0
 
 # Data validation (Great Expectations; needs Python 3.10+)
 great_expectations==1.24.0
