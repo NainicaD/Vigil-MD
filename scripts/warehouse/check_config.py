@@ -1,4 +1,13 @@
+"""Thresholds for the staging checks (scripts/warehouse/check_staging.py).
 
+Plain Python data only. No GCP imports, like schemas.py.
+
+A source appears here only after its baseline was measured (see the data-quality
+baseline guide). check_staging.py skips sources that have no entry, with a
+warning, so adding a source later means adding an entry and nothing else.
+
+Baselines below are percentages measured on the loaded STAGING table.
+"""
 from __future__ import annotations
 
 # Rate checks need enough rows to mean something. Below this, a FAIL on a rate
@@ -77,7 +86,7 @@ CHECKS: dict[str, dict] = {
             "scope_text": 0.0,
             "recall_status": 0.0,
             "root_cause": 0.02,
-            "action": 0.5,        # the screenshot cut this value off: confirm
+            "action": 0.55,       # confirmed by the first real run (2026-10-26)
             # event_date_posted is often empty in the FDA recall data (about 77%
             # coverage), so this baseline is high on purpose.
             "record_date": 22.8,
@@ -170,6 +179,11 @@ CHECKS: dict[str, dict] = {
             "adverse_event_flag": 0.2,
             "record_date": 0.0,
         },
+
+        # Values that are only spaces survive NULLIF in MAUDE staging. First real run:
+        # 5 of 21.5M rows (catalog_number 1, lot_number 3, product_code 1). Tolerate a
+        # tiny share per column; anything above this warns.
+        "whitespace_max_pct": 0.001,
 
         # Values such as N/A or dashes that are not NULL (share of all rows).
         "placeholder_points": {"warn": 3.0, "fail": 8.0},

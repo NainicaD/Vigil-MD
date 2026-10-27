@@ -1,4 +1,8 @@
+"""Unit tests for scripts/warehouse/check_staging.py.
 
+Pure functions only: no GCP calls, no network. Numbers come from the
+enforcement baseline measured on 2026-10-26.
+"""
 import copy
 
 import pytest
@@ -274,6 +278,16 @@ def test_whitespace_only_values_warn():
     assert one(cs.evaluate_whitespace(cfg, make_profile(cfg)), "whitespace_only").status == cs.PASS
     dirty = make_profile(cfg, ws__reason_text=4)
     assert one(cs.evaluate_whitespace(cfg, dirty), "whitespace_only").status == cs.WARN
+
+
+def test_whitespace_tolerance_allows_a_handful_of_values():
+    cfg = make_cfg()
+    cfg["whitespace_max_pct"] = 0.001
+    handful = make_profile(cfg, rows=21_532_440, ws__reason_text=3)
+    many = make_profile(cfg, rows=21_532_440, ws__reason_text=50_000)     # about 0.23%
+    ok = one(cs.evaluate_whitespace(cfg, handful), "whitespace_only")
+    assert ok.status == cs.PASS and "reason_text=3" in ok.value
+    assert one(cs.evaluate_whitespace(cfg, many), "whitespace_only").status == cs.WARN
 
 
 def test_text_length_skipped_until_a_limit_is_set():
