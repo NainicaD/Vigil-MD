@@ -58,3 +58,9 @@ def test_write_stats_path_and_json(tmp_path):
     assert path == tmp_path / "recall" / "2026-10-26.json"
     saved = json.loads(path.read_text())
     assert saved["table"] == "p.vigil_md_staging.recall_stg" and saved["rows"] == 1
+
+
+def test_rates_use_safe_divide_for_empty_partitions():
+    sql = st.build_stats_sql("p", "gudid", DAY)
+    assert "/ COUNT(*)" not in sql
+    assert sql.count("SAFE_DIVIDE(") >= 2

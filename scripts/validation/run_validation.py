@@ -155,10 +155,14 @@ def run_suite(project: str, source: str, ingest_date: dt.date,
     return doc["success"]
 
 
-def run_stats(client, project: str, source: str, day: dt.date, out_dir: Path) -> Path:
-    """Compute and save the statistics for one partition. Returns the JSON path."""
+def run_stats(client, project: str, source: str, day: dt.date, out_dir: Path) -> Path | None:
+    """Compute and save the statistics for one partition. Returns the JSON path,
+    or None when the partition has no rows (nothing is saved)."""
     row = dict(next(iter(client.query(build_stats_sql(project, source, day)).result())))
     doc = stats_document(project, source, day, parse_stats_row(source, row))
+    if not doc["rows"]:
+        log.info("stats %s: no rows for ingest_date %s, nothing saved", source, day)
+        return None
     path = write_stats(doc, out_dir)
     log.info("stats %s: %s rows, %d columns -> %s",
              source, doc["rows"], len(doc["columns"]), path)
@@ -183,6 +187,9 @@ def main() -> None:
                     help="load to check (default: latest in load_log)")
     ap.add_argument("--max-gb", type=float, default=2.0,
                     help="stop if the dry run estimates more than this per query")
+    ap.add_argument("--stats-max-gb", type=float,
+                    help="cost limit for the statistics query (default: --max-gb); "
+                         "above it the statistics are skipped with a warning, not a failure")
     ap.add_argument("--estimate-only", action="store_true",
                     help="print the cost estimates and stop")
     args = ap.parse_args()
@@ -212,10 +219,11 @@ def main() -> None:
                 gb = estimate_bytes(client, build_stats_sql(args.project, source, day)) / 1e9
                 log.info("stats %s: ingest_date %s, about %.3f GB (one query)", source, day, gb)
                 if not args.estimate_only:
-                    if gb > args.max_gb:
-                        log.error("stats STOP %s: %.3f GB is above --max-gb %.1f",
-                                  source, gb, args.max_gb)
-                        ok = False
+                    limit = args.stats_max_gb if args.stats_max_gb is not None else args.max_gb
+                    if gb > limit:
+                        # A cost limit is not a data problem: skip, do not fail the load.
+                        log.warning("stats SKIP %s: %.3f GB is above the statistics limit %.1f GB",
+                                    source, gb, limit)
                     else:
                         run_stats(client, args.project, source, day, args.out_dir)
     sys.exit(EXIT_OK if ok else EXIT_DATA_FAIL)

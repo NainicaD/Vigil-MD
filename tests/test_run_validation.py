@@ -59,3 +59,12 @@ def test_validation_document_summarises_results():
     doc = rv.validation_document("p", "recall", dt.date(2026, 10, 26), entries)
     assert doc["table"] == "p.vigil_md_staging.recall_stg"
     assert (doc["passed"], doc["total"], doc["success"]) == (1, 2, False)
+
+
+
+def test_run_stats_saves_nothing_for_an_empty_partition(tmp_path):
+    class _Client:
+        def query(self, sql):
+            return SimpleNamespace(result=lambda: iter([{"_rows": 0}]))
+    assert rv.run_stats(_Client(), "p", "recall", dt.date(2026, 10, 28), tmp_path) is None
+    assert not any(tmp_path.rglob("*.json"))

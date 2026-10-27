@@ -34,9 +34,9 @@ def _exprs_for(col: str, typ: str, mode: str, key: bool = False) -> list[tuple[s
     q = f"`{col}`"
     if mode.upper() == "REPEATED":
         return [("avg_items", f"AVG(ARRAY_LENGTH({q}))"),
-                ("empty_pct", f"ROUND(100 * COUNTIF(ARRAY_LENGTH({q}) = 0) / COUNT(*), 4)")]
+                ("empty_pct", f"ROUND(SAFE_DIVIDE(100 * COUNTIF(ARRAY_LENGTH({q}) = 0), COUNT(*)), 4)")]
     out = [("non_null", f"COUNT({q})"),
-           ("null_pct", f"ROUND(100 * COUNTIF({q} IS NULL) / COUNT(*), 4)"),
+           ("null_pct", f"ROUND(SAFE_DIVIDE(100 * COUNTIF({q} IS NULL), COUNT(*)), 4)"),
            ("distinct_approx", f"APPROX_COUNT_DISTINCT({q})")]
     t = typ.upper()
     if t == "STRING":
