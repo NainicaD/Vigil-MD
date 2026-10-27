@@ -565,9 +565,44 @@ MAUDE 6/6. The GUDID UDI-DI length rule first failed on 312 six-character identi
 the 7-23 range taken from a top-20 baseline; all 312 are HIBCC identifiers, so the rule now
 allows 6-23.
 
+### In the pipeline
+
+Both warehouse DAGs (`vigil_md_load`, daily, and `vigil_md_full_load`, manual) run two check
+steps for each source, after staging and before the merge into PROD:
+
+```
+unzip -> load_raw -> staging -> validate -> check -> merge
+```
+
+- `validate`: `run_validation.py --values` (schema check and Great Expectations). Results go to
+  `logs/validation/<source>/<ingest_date>.json`.
+- `check`: `scripts/warehouse/check_staging.py` (anomaly checks: raw-to-staged gap, volume,
+  null rates, dates, allowed values, category mix).
+
+Exit code `3` means a check found a data problem. The task then fails without retrying
+(`DataCheckFailed`), because the data would be the same; other errors are retried as usual.
+
+`CHECKS_ENFORCE` in `dags/vigil_checks.py` is one switch for both DAGs:
+
+| Value | What a failed check does |
+|---|---|
+| `False` (current) | Logs a warning; the merge continues |
+| `True` | Fails the task: that source is not merged and the alert e-mail is sent |
+
+Keep `False` until several daily loads have passed without false alarms, then set `True`.
+
+The Airflow containers need Great Expectations: set `_PIP_ADDITIONAL_REQUIREMENTS` in `.env`
+as in `.env.example`, then run `docker compose up -d`.
+
 ---
 
 ## Testing
+
+> **DAG tests** (`tests/dags`) skip where Airflow is not installed. Run them in the worker:
+> `docker compose exec -w /opt/airflow/Vigil-MD airflow-worker python -m pytest tests/dags -q`.
+> They use a temporary SQLite database and refuse to reset any other. Older versions of
+> `tests/dags/conftest.py` could reset the real Airflow database (run history, pools, pause
+> settings) when run inside a container.
 
 All GCP calls are mocked: **no test touches real GCS or BigQuery**. Test logs never reach Logstash (an autouse fixture). The case list is in [`tests/TEST_CASES.md`](tests/TEST_CASES.md).
 
