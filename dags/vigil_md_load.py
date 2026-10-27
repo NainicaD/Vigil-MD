@@ -27,7 +27,10 @@ from airflow import DAG
 from airflow.sdk import Param, TaskGroup
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.task.trigger_rule import TriggerRule
-from airflow.sdk.exceptions import AirflowFailException
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
+from vigil_checks import (  # noqa: E402
+    CHECK_SCRIPTS, EXIT_DATA_FAIL, VALIDATE_EXTRA_ARGS, DataCheckFailed, warn_only)
 
 log = logging.getLogger(__name__)
 
@@ -72,28 +75,13 @@ def run_script(script: str, *args: str) -> str:
     return result.stdout
 
 
-# Data checks: validate = schema + Great Expectations (scripts/validation),
-# check = anomaly checks. Both exit 3 when they find a data problem; that is not
-# retried, because the data would be the same. Other errors are retried as usual.
-EXIT_DATA_FAIL = 3
-CHECK_STEPS = {"validate", "check"}
-# False = warn-only: a check failure is logged and the merge still runs.
-# Set True once thresholds are tuned, so a failure stops that source's merge.
-CHECKS_ENFORCE = False
-VALIDATION_RESULTS_DIR = "/opt/airflow/logs/validation"   # outside the repo
-
-
-class DataCheckFailed(AirflowFailException):
-    """A data check found a problem (exit 3). Fails without retrying."""
-
-
 WAREHOUSE_STEPS = {
     # step: (script, takes --bucket, takes --scope)
     "unzip":    ("scripts/warehouse/unzip_to_ndjson.py", True,  True),
     "load_raw": ("scripts/warehouse/load_raw_to_bq.py",  True,  True),
     "staging":  ("scripts/warehouse/build_staging.py",   False, False),
-    "validate": ("scripts/validation/run_validation.py", False, False),
-    "check":    ("scripts/warehouse/check_staging.py",   False, False),
+    "validate": (CHECK_SCRIPTS["validate"],              False, False),
+    "check":    (CHECK_SCRIPTS["check"],                 False, False),
     "merge":    ("scripts/warehouse/merge_prod.py",      False, False),
 }
 
@@ -110,7 +98,7 @@ def warehouse_args(step: str, source: str, ingest_date: str,
     if takes_scope:
         args += ["--scope", scope]
     if step == "validate":
-        args += ["--values", "--max-gb", "2", "--results-dir", VALIDATION_RESULTS_DIR]
+        args += VALIDATE_EXTRA_ARGS
     return args
 
 
@@ -137,7 +125,7 @@ def run_load_step(step: str, source: str, **context):
     try:
         run_script(*warehouse_args(step, source, ingest_date))
     except DataCheckFailed:
-        if step in CHECK_STEPS and not CHECKS_ENFORCE:
+        if warn_only(step):
             log.warning("%s %s found data problems (warn-only, CHECKS_ENFORCE is False): "
                         "the merge continues. See the check output above.", step, source)
             return
