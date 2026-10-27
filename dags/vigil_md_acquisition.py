@@ -405,7 +405,7 @@ with DAG(
         task_id="trigger_load",
         trigger_dag_id=LOAD_DAG_ID,
         trigger_run_id="acq__{{ run_id }}",
-        conf={"ingest_date": "{{ ds }}"},
+        conf={"ingest_date": "{{ ds if ds is defined else dag_run.run_after | ds }}"},
         skip_when_already_exists=True,
         wait_for_completion=False,
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,

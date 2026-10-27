@@ -94,7 +94,8 @@ def test_acquisition_has_no_warehouse_tasks(dagbag):
 def test_trigger_load_starts_the_loading_dag_once(dagbag):
     tl = tasks(dagbag.get_dag("vigil_md_acquisition"))["trigger_load"]
     assert tl.trigger_dag_id == "vigil_md_load"
-    assert tl.conf == {"ingest_date": "{{ ds }}"}
+    # ds when the run has a logical date, else the run's run_after date (CLI runs)
+    assert tl.conf == {"ingest_date": "{{ ds if ds is defined else dag_run.run_after | ds }}"}
     assert tl.trigger_run_id == "acq__{{ run_id }}"
     assert tl.skip_when_already_exists is True     # a retried acquisition run does not load twice
     assert tl.wait_for_completion is False
@@ -375,3 +376,12 @@ def test_effective_priorities_finish_small_sources_first(dagbag, dag_id):
     assert w("merge_enforcement") > w("load_raw_recall")
     assert w("merge_recall") > w("load_raw_gudid")
 
+
+
+
+def test_trigger_load_date_works_without_logical_date():
+    # A run started from the CLI has no logical date, so plain {{ ds }} is
+    # undefined there; the template falls back to the run's run_after date.
+    src = (DAGS / "vigil_md_acquisition.py").read_text()
+    assert "{{ ds }}" not in src
+    assert "ds if ds is defined else dag_run.run_after | ds" in src
