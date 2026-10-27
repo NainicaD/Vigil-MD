@@ -23,7 +23,9 @@ CHECK_SCRIPTS = {
     "check":    "scripts/warehouse/check_staging.py",
 }
 VALIDATION_RESULTS_DIR = "/opt/airflow/logs/validation"   # outside the repo
-VALIDATE_EXTRA_ARGS = ["--values", "--max-gb", "2", "--results-dir", VALIDATION_RESULTS_DIR]
+STATISTICS_DIR = "/opt/airflow/logs/statistics"           # outside the repo
+VALIDATE_EXTRA_ARGS = ["--values", "--max-gb", "2", "--results-dir", VALIDATION_RESULTS_DIR,
+                       "--stats", "--stats-max-gb", "5", "--out-dir", STATISTICS_DIR]
 
 
 class DataCheckFailed(AirflowFailException):

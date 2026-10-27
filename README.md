@@ -574,8 +574,10 @@ steps for each source, after staging and before the merge into PROD:
 unzip -> load_raw -> staging -> validate -> check -> merge
 ```
 
-- `validate`: `run_validation.py --values` (schema check and Great Expectations). Results go to
-  `logs/validation/<source>/<ingest_date>.json`.
+- `validate`: `run_validation.py --values --stats` (schema check, Great Expectations and per-column
+  statistics). Results go to `logs/validation/<source>/<ingest_date>.json` and statistics to
+  `logs/statistics/<source>/<ingest_date>.json`. A partition with no rows saves no statistics file,
+  and statistics above 5 GB are skipped with a warning (a cost limit is not a data failure).
 - `check`: `scripts/warehouse/check_staging.py` (anomaly checks: raw-to-staged gap, volume,
   null rates, dates, allowed values, category mix).
 
