@@ -600,6 +600,10 @@ as in `.env.example`, then run `docker compose up -d`.
 
 ## Testing
 
+**CI:** `.github/workflows/tests.yml` runs `pytest` on GitHub Actions (Python 3.12) for every
+pull request and every push to `main`. It has no GCP credentials, so the integration tests are
+excluded (as locally), and the data-contract and DAG tests skip; the log lists each skip reason.
+
 > **DAG tests** (`tests/dags`) skip where Airflow is not installed. Run them in the worker:
 > `docker compose exec -w /opt/airflow/Vigil-MD airflow-worker python -m pytest tests/dags -q`.
 > They use a temporary SQLite database and refuse to reset any other. Older versions of

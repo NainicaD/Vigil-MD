@@ -1,0 +1,28 @@
+# Runs the unit tests on GitHub's servers for every pull request and every push to main.
+# No GCP credentials: pytest.ini excludes the integration tests (-m "not integration"),
+# the data-contract tests skip without the DVC samples, and the DAG tests skip
+# without Airflow. -rs prints the reason for each skip.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the tests
+        run: pytest -q -rs
