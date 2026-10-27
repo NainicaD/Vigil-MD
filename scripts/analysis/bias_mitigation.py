@@ -30,13 +30,18 @@ cells, and measures what it achieves and costs:
 Nothing is written to BigQuery. The query is dry-run first, stops above
 --max-gb, and the real job runs with maximum_bytes_billed.
 
-Output (--out, default reports/bias/): mitigation_summary.json and
-mitigation_shares.csv; the cell counts go to data/interim/bias/mitigation_cells.csv.
+Output (--out, default reports/bias/): mitigation_summary.json,
+mitigation_shares.csv and mitigation_weights.csv (the weight for each
+event_type x manufacturer_tier x year_group, for reuse in later analyses and
+when sampling training or labelling pairs). The cell counts go to
+data/interim/bias/mitigation_cells.csv; --from-cells recomputes everything
+from that file without querying BigQuery.
 
 Usage:
     python scripts/analysis/bias_mitigation.py --project vigil-md-1792696816 --print-only
     python scripts/analysis/bias_mitigation.py --project vigil-md-1792696816 --estimate-only
     python scripts/analysis/bias_mitigation.py --project vigil-md-1792696816
+    python scripts/analysis/bias_mitigation.py --project vigil-md-1792696816 --from-cells data/interim/bias/mitigation_cells.csv
 
 Exit codes: 0 = done, 3 = stopped by the cost guard, anything else = unexpected error.
 """
@@ -270,6 +275,26 @@ def cross_check(fair: dict, coverage_csv: Path) -> dict:
 
 # ── Output ────────────────────────────────────────────────────────────────────
 
+def weights_table(cells: list[dict], versions: dict) -> list[dict]:
+    """One row per event_type x manufacturer_tier x year_group with its counts and
+    the full and full_trimmed weights (the same for every cell sharing the key)."""
+    rows = {}
+    for i, c in enumerate(cells):
+        k = _key(c, WEIGHT_VARS)
+        r = rows.setdefault(k, {**dict(zip(WEIGHT_VARS, k)), "n_rows": 0, "n_linked": 0,
+                                "weight_full": round(versions["full"][0][i], 6),
+                                "weight_full_trimmed": round(versions["full_trimmed"][0][i], 6)})
+        r["n_rows"] += c["n_rows"]
+        r["n_linked"] += c["n_linked"]
+    return [rows[k] for k in sorted(rows)]
+
+
+def load_cells(path: Path) -> list[dict]:
+    with open(path, newline="") as f:
+        return [{k: (int(v) if k in ("n_rows", "n_linked") else v) for k, v in r.items()}
+                for r in csv.DictReader(f)]
+
+
 def share_rows(results: dict, pop: dict) -> list[dict]:
     rows = []
     for version, (_, _, lnk) in results.items():
@@ -342,13 +367,19 @@ def run(client, project: str, out: Path, cells_out: Path, coverage_csv: Path,
     log.info("ran cells: %d cells, %.3f GB processed", len(cells),
              (getattr(job, "total_bytes_processed", 0) or 0) / 1e9)
     write_csv(cells_out, cells)
+    write_outputs(cells, out, coverage_csv, min_linked, trim,
+                  {"estimated": est, "processed": getattr(job, "total_bytes_processed", None)})
+    return EXIT_OK
 
+
+def write_outputs(cells: list[dict], out: Path, coverage_csv: Path, min_linked: int,
+                  trim: float, bytes_info: dict | None) -> None:
     summary, rows = analyse(cells, min_linked, trim, coverage_csv=coverage_csv)
     summary = {"generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
                "scope": "read-only SELECT on vigil_md_prod (maude, gudid)",
-               "bytes": {"estimated": est, "processed": getattr(job, "total_bytes_processed", None)},
-               **summary}
+               "bytes": bytes_info, **summary}
     out.mkdir(parents=True, exist_ok=True)
+    write_csv(out / "mitigation_weights.csv", weights_table(cells, run_versions(cells, min_linked, trim)))
     (out / "mitigation_summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     write_csv(out / "mitigation_shares.csv", rows)
     for name, v in summary["versions"].items():
@@ -356,8 +387,7 @@ def run(client, project: str, out: Path, cells_out: Path, coverage_csv: Path,
                  "ESS %.1f%% max w %.1fx", name, v["tvd"]["event_type"], v["tvd"]["manufacturer_tier"],
                  v["tvd"]["year_group"], v["tvd"]["adverse_event_flag"], v["tvd"]["product_code"],
                  100 * v["ess_ratio"], v["max_weight_ratio"])
-    log.info("wrote %s and %s", out / "mitigation_summary.json", out / "mitigation_shares.csv")
-    return EXIT_OK
+    log.info("wrote mitigation_summary.json, mitigation_shares.csv and mitigation_weights.csv in %s", out)
 
 
 def main() -> None:
@@ -372,7 +402,14 @@ def main() -> None:
     ap.add_argument("--trim", type=float, default=TRIM)
     ap.add_argument("--estimate-only", action="store_true", help="dry run only (free)")
     ap.add_argument("--print-only", action="store_true", help="print the SQL; no GCP calls")
+    ap.add_argument("--from-cells", type=Path,
+                    help="recompute from a saved mitigation_cells.csv; no GCP calls")
     args = ap.parse_args()
+
+    if args.from_cells:
+        write_outputs(load_cells(args.from_cells), args.out, args.coverage_csv,
+                      args.min_linked, args.trim, None)
+        sys.exit(EXIT_OK)
 
     if args.print_only:
         sql = render_cells_sql(args.project)

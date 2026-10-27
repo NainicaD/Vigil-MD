@@ -126,3 +126,19 @@ def test_unrepresentable_share():
     cells = [cell(et="Malfunction", n=90, l=50), cell(et="(null)", n=10, l=0)]
     u = bm.unrepresentable(cells)
     assert u["event_type"] == pytest.approx(0.10) and u["manufacturer_tier"] == 0
+
+
+def test_weights_table_one_row_per_weighting_key():
+    cells = [cell(flag="Y", n=60, l=30), cell(flag="N", n=40, l=20), cell(et="Death", n=100, l=10)]
+    table = bm.weights_table(cells, bm.run_versions(cells, min_linked=1))
+    assert len(table) == 2
+    malf = next(r for r in table if r["event_type"] == "Malfunction")
+    assert (malf["n_rows"], malf["n_linked"]) == (100, 50)
+    death = next(r for r in table if r["event_type"] == "Death")
+    assert death["weight_full"] / malf["weight_full"] == pytest.approx(5.0, rel=1e-4)
+
+
+def test_load_cells_round_trip(tmp_path):
+    p = tmp_path / "cells.csv"
+    bm.write_csv(p, [cell()])
+    assert bm.load_cells(p) == [cell()]

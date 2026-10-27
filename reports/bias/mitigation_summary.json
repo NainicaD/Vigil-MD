@@ -1,9 +1,9 @@
 {
- "generated_at": "2026-10-27T11:26:49+00:00",
+ "generated_at": "2026-10-27T11:40:55+00:00",
  "scope": "read-only SELECT on vigil_md_prod (maude, gudid)",
  "bytes": {
   "estimated": 1324159989,
-  "processed": 1324159989
+  "processed": 0
  },
  "maude_rows": 21532440,
  "linked_rows": 10815717,
