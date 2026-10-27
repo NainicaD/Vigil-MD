@@ -677,10 +677,10 @@ Exit code `3` means a check found a data problem. The task then fails without re
 
 | Value | What a failed check does |
 |---|---|
-| `False` (current) | Logs a warning; the merge continues |
-| `True` | Fails the task: that source is not merged and the alert e-mail is sent |
+| `False` | Logs a warning; the merge continues |
+| `True` (current, since 2026-10-27) | Fails the task: that source is not merged and the alert e-mail is sent |
 
-Keep `False` until several daily loads have passed without false alarms, then set `True`.
+Enforcement was switched on on 2026-10-27, after the checks passed on real loads (anomaly checks 18/18 for enforcement and 19/19 for recall; value checks on all four sources). Set `False` to go back to warn-only, for example while a threshold is tuned.
 
 **Scheduling.** Each step runs in one of three pools (`dags/vigil_checks.py`):
 

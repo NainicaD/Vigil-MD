@@ -16,7 +16,7 @@ CHECK_STEPS = {"validate", "check"}
 
 # False = warn-only: a check failure is logged and the merge still runs.
 # Set True once thresholds are tuned, so a failure stops that source's merge.
-CHECKS_ENFORCE = False
+CHECKS_ENFORCE = True    # on since 2026-10-27, after the checks passed on real loads
 
 CHECK_SCRIPTS = {
     "validate": "scripts/validation/run_validation.py",
