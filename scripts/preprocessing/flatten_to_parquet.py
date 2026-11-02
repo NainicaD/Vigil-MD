@@ -29,8 +29,9 @@ INTERIM.mkdir(parents=True, exist_ok=True)
 # ── Normalization helpers ─────────────────────────────────────────────────────
 
 # Legal suffixes to strip from manufacturer names
+# The suffix must be a separate word: start of string, a space or a comma before it.
 SUFFIXES = re.compile(
-    r",?\s*(inc\.?|incorporated|corp\.?|corporation|llc|ltd\.?|limited"
+    r"(^|[\s,])(inc\.?|incorporated|corp\.?|corporation|llc\.?|ltd\.?|limited"
     r"|co\.?|company|gmbh|s\.a\.?|b\.v\.?)$",
     re.IGNORECASE,
 )
