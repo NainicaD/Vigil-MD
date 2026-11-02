@@ -16,7 +16,7 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 | 10 | Open | Unused code |
 | 11 | Fixed for the daily run (2 follow-ups open) | GUDID egress |
 | 12 | Fixed, confirmed on real GCS | Partial NDJSON on error |
-| 13 | Open | Manufacturer name normalization |
+| 13 | Fixed in code 2026-11-02 (existing PROD rows not rebuilt) | Manufacturer name normalization |
 | 14 | Open | DAG helpers copied in 3 files |
 
 ---
@@ -102,13 +102,15 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Fix:** write with `blob.open("wb")` and the new `convert.Utf8Writer` adapter (UTF-8 encode, no `close()` of its own). An error now reaches `BlobWriter.__exit__` → `terminate()`.
 - **Note:** binary writes (`stream_to_gcs` in `fetch_sources.py`) were never affected. The local fake bucket did not model this behaviour. It now does.
 
-## 13. Manufacturer name normalization has two suffix bugs — Open
+## 13. Manufacturer name normalization has two suffix bugs — Fixed in code (PROD rows not rebuilt)
 
 - **Where:** `scripts/preprocessing/flatten_to_parquet.py:32-46` (`SUFFIXES`, `normalize_manufacturer`). The staging SQL `norm_mfr` in `scripts/warehouse/build_staging.py` copies it exactly (parity checked on BigQuery, 2026-10-25), so prod has the same behaviour.
 - **Problem 1:** the pattern `,?\s*(…|co\.?|…)$` allows zero spaces before the suffix. A name that ends in the letters "co" loses them: `"Tesco"` → `"tes"`, `"Costco"` → `"cost"`.
 - **Problem 2:** `llc` has no optional dot. `"Foo, LLC."` → `"foo, llc"` (not stripped). `inc.`, `corp.`, `ltd.`, `co.` have the dot.
 - **Effect:** wrong `manufacturer_name_norm` values. This affects entity matching (`scripts/matching/`).
-- **Fix idea:** require a word boundary before the suffix (`(^|[\s,])(…)$`) and add `llc\.?`. Change Python and SQL together, then re-run the parity check.
+- **Fix (2026-11-02):** the suffix must now be a separate word (`(^|[\s,])(…)$`), and `llc` takes an optional dot. Python (`SUFFIXES`) and SQL (`norm_mfr` in `build_staging.py`) changed together. Six test cases were added to `tests/test_preprocessing.py`.
+- **Parity check (2026-11-02):** a one-off script compared BigQuery `norm_mfr` with `normalize_manufacturer` on 32 names (new cases, older suffix cases, edge cases): 0 mismatches. The script is not in the repo.
+- **Still open:** `manufacturer_name_norm` values already loaded into STAGING and PROD keep the old results (`"tes"`, `"cost"`, `"foo, llc"`) until those rows are rebuilt or reloaded. A rebuild writes to BigQuery and needs its own plan. Not checked: whether the daily MERGE would correct them on reload.
 - **Related (not a bug):** for an impossible date such as `20241399`, Python `normalize_date` returns the string `"2024-13-99"`. SQL `norm_date` returns NULL. The SQL behaviour is intended.
 
 ## 14. DAG helpers are copied in 3 DAG files — Open

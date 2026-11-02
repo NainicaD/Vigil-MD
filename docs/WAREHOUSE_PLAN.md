@@ -282,7 +282,7 @@ Tick each box in `docs/WAREHOUSE_PLAN.md`. Stop after each step (G1, G2).
 > - **Write mode:** a DELETE + INSERT transaction for `_ingest_date`, not `WRITE_TRUNCATE` to `stg$YYYYMMDD`. The staging tables have REQUIRED columns, and I expect a WRITE_TRUNCATE query load to fail on them, because query output columns are NULLABLE. The DML version is just as idempotent.
 > - **MAUDE empty `device[]`:** `IFNULL` alone does not catch `[]`, so the SQL uses `IF(ARRAY_LENGTH(…) = 0, [JSON '{}'], …)`.
 > - **Dedup tie-break:** `ORDER BY _loaded_at DESC, record_hash`, so a second run picks the same row.
-> - **BigQuery checks:** all 4 staging scripts pass a dry run. The parity check on inline values (0 bytes read) matches `flatten_to_parquet.py` for every cell of enforcement, recall and MAUDE. `norm_date` and `norm_mfr` match Python on 24 test values. The one difference is intended: an impossible date gives NULL in SQL. Two old suffix bugs in Python are copied on purpose (docs/issue.md #13).
+> - **BigQuery checks:** all 4 staging scripts pass a dry run. The parity check on inline values (0 bytes read) matches `flatten_to_parquet.py` for every cell of enforcement, recall and MAUDE. `norm_date` and `norm_mfr` match Python on 24 test values. The one difference is intended: an impossible date gives NULL in SQL. Two old suffix bugs in Python were copied on purpose at this point; fixed in both on 2026-11-02 (docs/issue.md #13).
 
 ### ☑ Step 6: MERGE into prod
 - **Allowed files:** create `scripts/warehouse/merge_prod.py` and `scripts/warehouse/sql/merge_{enforcement,recall,maude,gudid}.sql`.
@@ -543,5 +543,5 @@ docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
 - **#2 (known limitation, by design):** the MAUDE scope is 2016–2026 (`END_YEAR = 2026`). Quarters from 2027 on are not fetched.
 - **#5:** the four parallel fetch tasks can overwrite each other's `manifest_state.json` keys (wasted re-fetch, no data loss).
 - **#8:** task logs appear only when a task ends.
-- **#13:** manufacturer name normalization bugs (`"Tesco"` → `"tes"`).
+- **#13:** fixed in code 2026-11-02 (`"Tesco"` no longer becomes `"tes"`). STAGING and PROD rows loaded before the fix keep the old names until rebuilt.
 - **Tests** for the new scripts and DAGs are not written yet (Out of scope).
