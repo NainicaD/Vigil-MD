@@ -38,6 +38,16 @@ class TestManufacturerNormalization:
     def test_strips_ltd(self):
         assert normalize_manufacturer("Smith Medical Ltd.") == "smith medical"
 
+    def test_strips_llc_with_period(self):
+        assert normalize_manufacturer("Foo, LLC.") == "foo"
+
+    @pytest.mark.parametrize("name", ["Tesco", "Costco", "Medico", "Carco"])
+    def test_keeps_names_that_end_in_suffix_letters(self, name):
+        assert normalize_manufacturer(name) == name.lower()
+
+    def test_strips_suffix_without_space_after_comma(self):
+        assert normalize_manufacturer("Acme,Inc") == "acme"
+
     def test_lowercases(self):
         assert normalize_manufacturer("MEDTRONIC") == "medtronic"
 
