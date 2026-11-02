@@ -110,7 +110,7 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Effect:** wrong `manufacturer_name_norm` values. This affects entity matching (`scripts/matching/`).
 - **Fix (2026-11-02):** the suffix must now be a separate word (`(^|[\s,])(…)$`), and `llc` takes an optional dot. Python (`SUFFIXES`) and SQL (`norm_mfr` in `build_staging.py`) changed together. Six test cases were added to `tests/test_preprocessing.py`.
 - **Parity check (2026-11-02):** a one-off script compared BigQuery `norm_mfr` with `normalize_manufacturer` on 32 names (new cases, older suffix cases, edge cases): 0 mismatches. The script is not in the repo.
-- **Still open:** `manufacturer_name_norm` values already loaded into STAGING and PROD keep the old results (`"tes"`, `"cost"`, `"foo, llc"`) until those rows are rebuilt or reloaded. A rebuild writes to BigQuery and needs its own plan. Not checked: whether the daily MERGE would correct them on reload.
+- **Still open:** `manufacturer_name_norm` values already loaded into STAGING and PROD keep the old results (`"tes"`, `"cost"`, `"foo, llc"`) until those rows are rebuilt or reloaded. A rebuild writes to BigQuery and needs its own plan. `record_hash` includes `manufacturer_name_norm`, so the daily MERGE corrects a row when its source file is loaded again; rows in files that never change stay wrong until a rebuild.
 - **Related (not a bug):** for an impossible date such as `20241399`, Python `normalize_date` returns the string `"2024-13-99"`. SQL `norm_date` returns NULL. The SQL behaviour is intended.
 
 ## 14. DAG helpers are copied in 3 DAG files — Open
