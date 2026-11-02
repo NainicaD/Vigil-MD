@@ -33,8 +33,6 @@ Two modes use the same scripts:
 | D3 | A raw table keeps each record in one `payload` JSON column, with no transformation. |
 | D4 | Datasets: `vigil_md_raw` (exists, add new tables), `vigil_md_staging`, `vigil_md_prod`, `vigil_md_ops` (all new). Location `US`. |
 | D5 | **(Revised in Step 3.)** The GUDID bulk zip contains 210 XML parts (`FULLDownload_Part{n}_Of_{N}_{date}.xml`, about 100 MB each), not NDJSON. The unzip step converts each `<device>` element to one JSON record, with every field and value kept. openFDA files contain one `{"meta","results":[…]}` object. |
-| D6 | Tests are out of scope for this plan. Do not edit any file in `tests/`. |
-| D7 | Repo: `\\wsl.localhost\Ubuntu\home\hitika\Vigik-MD-airflow` only. Do not touch the `Vigil-MD` copy. |
 | D8 | This plan is copied to `Vigik-MD-airflow/docs/WAREHOUSE_PLAN.md` in Step 0. The checklist is ticked in that file. |
 
 ---
@@ -544,4 +542,4 @@ docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
 - **#5:** the four parallel fetch tasks can overwrite each other's `manifest_state.json` keys (wasted re-fetch, no data loss).
 - **#8:** task logs appear only when a task ends.
 - **#13:** fixed in code 2026-11-02 (`"Tesco"` no longer becomes `"tes"`). STAGING and PROD rows loaded before the fix keep the old names until rebuilt.
-- **Tests** for the new scripts and DAGs are not written yet (Out of scope).
+- **Tests** for the new scripts and DAGs are written: see `docs/TESTS_PLAN.md` and `tests/TEST_CASES.md`.
