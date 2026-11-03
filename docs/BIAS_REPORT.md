@@ -186,7 +186,7 @@ All other fields are at least 99.4% complete. Every enforcement field is at leas
 - **L2. Primary DI only.** GUDID PROD keeps only the primary DI, so "matches any DI" (secondary, package, unit of use) cannot be tested.
 - **L3. No MAUDE/GUDID→recall link.** There is no identifier rule for it. Joining on product_code or manufacturer would be a new matching rule, so it was not measured.
 - **L4. Normalization diagnostic only.** MAUDE `udi_di` is unnormalized. The shape breakdown sizes the effect (20 rows) but does not change the rule.
-- **L5. Manufacturer names.** `manufacturer_name_norm` has the known `norm_mfr` suffix bugs (`docs/issue.md` #13). One firm can appear under several names, for example "nobel biocare ab" and "nobel biocare ab göteborg", which affects both manufacturer slices and tiers.
+- **L5. Manufacturer names.** The numbers in this report were computed before the `norm_mfr` suffix fix (`docs/issue.md` #13; STAGING/PROD corrected 2026-11-03, about 185,000 MAUDE and 14,700 GUDID PROD rows). Manufacturer slices and tiers may shift slightly on a re-run. One firm can still appear under several names, for example "nobel biocare ab" and "nobel biocare ab göteborg", which affects both manufacturer slices and tiers.
 - **L6. Bucketing.** Top-25 bucketing hides the long tail inside OTHER. Tiers are ranked within each table.
 - **L7. Year meaning differs by table.** MAUDE year is the date received, not the event date. Recall year is `event_date_posted`, and 22.8% of recall rows have none ("unknown").
 - **L8. Causes are not verified.** The explanations in section 4 fit the data but were not checked further. Checking them needs RAW or extra sources, which were out of scope.
@@ -260,7 +260,7 @@ These follow from the results above. Item 1 is now implemented (section 6); the 
 3. **† Test the non-primary-DI hypothesis.** For the diabetes makers, match unmatched UDIs against GUDID secondary, package and unit-of-use DIs. If confirmed, extend the DI set used for matching. This is the biggest recoverable gap; trimming or prefix normalization is not worth doing, since it recovers 20 rows.
 4. **Check the 2026 dip.** Re-run this analysis after the next GUDID load. If the 2026 match rate rises, it was snapshot lag.
 5. **Label the enforcement coverage window.** Mark recalls before 2012 as "no enforcement source" rather than "unlinked", or restrict recall↔enforcement analyses to 2013 onward.
-6. **† Fix `norm_mfr` first** (`docs/issue.md` #13) before drawing conclusions about individual manufacturers.
+6. **Re-run after the `norm_mfr` fix.** The fix is done (`docs/issue.md` #13, 2026-11-03); re-run `bias_slices.py` before drawing conclusions about individual manufacturers.
 7. **† Load the FDA product classification table** to unlock the device class and review panel slices.
 8. **Make this a recurring check.** Run `bias_slices.py` after each full load and alert when a monitored rate (overall end-to-end, Death availability, long-tail availability) moves by more than 5 pp.
 

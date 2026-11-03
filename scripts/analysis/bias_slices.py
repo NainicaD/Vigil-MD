@@ -91,8 +91,8 @@ LIMITATIONS = [
     "manufacturer, which would be a new matching rule), so it is not measured.",
     "MAUDE udi_di is stored unnormalized. Part of the non-match may be formatting; "
     "unmatched_udi_shape.csv sizes it as a diagnostic only, the rule is not changed.",
-    "manufacturer_name_norm carries the known norm_mfr suffix bugs (docs/issue.md #13), "
-    "which can split one manufacturer across slices.",
+    "manufacturer_name_norm strips one legal suffix (docs/issue.md #13, fixed 2026-11-03); "
+    "one manufacturer can still appear under several names, which can split it across slices.",
     f"High-cardinality slices keep the top {TOP_N} values; the rest are pooled as OTHER.",
     "Blank strings are reported as '(null)'. year 'unknown' = no record_date "
     "(the 1900-01-01 _part_date sentinel).",
