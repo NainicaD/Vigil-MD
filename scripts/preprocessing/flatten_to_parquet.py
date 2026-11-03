@@ -29,20 +29,23 @@ INTERIM.mkdir(parents=True, exist_ok=True)
 # ── Normalization helpers ─────────────────────────────────────────────────────
 
 # Legal suffixes to strip from manufacturer names
-# The suffix must be a separate word: start of string, a space or a comma before it.
+# The suffix must not follow a letter or digit, so "Tesco" keeps its "co". The character
+# before it is kept: "Gentec(Shanghai)Corporation" -> "gentec(shanghai)".
+# Exception: "llc" is also stripped when glued on ("AcumedLLC" -> "acumed"); no word ends in "llc".
 SUFFIXES = re.compile(
-    r"(^|[\s,])(inc\.?|incorporated|corp\.?|corporation|llc\.?|ltd\.?|limited"
-    r"|co\.?|company|gmbh|s\.a\.?|b\.v\.?)$",
+    r"(^|[^a-z0-9])(inc\.?|incorporated|corp\.?|corporation|llc\.?|ltd\.?|limited"
+    r"|co\.?|company|gmbh|s\.a\.?|b\.v\.?)$"
+    r"|llc\.?$",
     re.IGNORECASE,
 )
 
 
 def normalize_manufacturer(name: str) -> str:
-    """Lowercase, strip punctuation and legal suffixes, collapse whitespace."""
+    """Matching key: lowercase, strip one legal suffix and trailing " ,.", collapse whitespace."""
     if not name:
         return None
     name = name.strip().lower()
-    name = SUFFIXES.sub("", name).strip(" ,.")
+    name = SUFFIXES.sub(r"\1", name).strip(" ,.")
     name = re.sub(r"\s+", " ", name)
     return name or None
 

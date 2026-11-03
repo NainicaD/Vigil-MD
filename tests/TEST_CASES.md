@@ -299,7 +299,7 @@ These need real BigQuery, so they are not tests (no real GCP in pytest). They we
 | Dry run of the RAW load script and each statement (`load_raw_to_bq.py`) | Pass. A DELETE without the `_ingest_date` filter is rejected, as intended |
 | Dry run of the 4 staging scripts (`build_staging.py`) | Pass |
 | Dry run of bounds, MERGE, rebuild and date-stability SQL (`merge_prod.py`) | Pass after a fix (GUDID typed NULL) |
-| Parity: `norm_date` / `norm_mfr` vs `normalize_date` / `normalize_manufacturer`, on inline values (0 bytes read) | Match on 23 of 24 values. The impossible date `20241399` gives NULL in SQL (intended). The suffix bugs were copied on purpose until the #13 fix (2026-11-02); after it, a one-off check of 32 names matched with 0 mismatches. |
+| Parity: `norm_date` / `norm_mfr` vs `normalize_date` / `normalize_manufacturer`, on inline values (0 bytes read) | Match on 23 of 24 values. The impossible date `20241399` gives NULL in SQL (intended). The suffix bugs were copied on purpose until the #13 fix (2026-11-02); after it, a one-off check of 48 names (incl. suffixes after punctuation and glued `llc`) matched with 0 mismatches. |
 | Parity: each staging SELECT vs `flatten_*` on inline payloads | Enforcement, recall and MAUDE: 0 cell differences. GUDID: matches hand-written expectations |
 | GUDID fetch-time conversion on a real GCS sample (`samples/gudid/gudid_sample_20261001.zip`) | T1–T4 pass after the #12 fix |
 

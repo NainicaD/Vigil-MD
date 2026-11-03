@@ -263,7 +263,7 @@ Tick each box in `docs/WAREHOUSE_PLAN.md`. Stop after each step (G1, G2).
   - Extract with `JSON_VALUE(payload, '$.field')`.
   - MAUDE: `CROSS JOIN UNNEST(IFNULL(JSON_QUERY_ARRAY(payload,'$.device'), [JSON '{}'])) AS dev WITH OFFSET AS device_seq`. This keeps a report that has no devices, like `flatten_maude` line 131.
   - Dates: `COALESCE(SAFE.PARSE_DATE('%Y%m%d',x), SAFE.PARSE_DATE('%m/%d/%Y',x), SAFE.PARSE_DATE('%Y-%m-%d',x))`, the same as `normalize_date` (lines 49-61).
-  - `manufacturer_name_norm`: the same rules as `normalize_manufacturer` (lines 39-46) and the `SUFFIXES` regex (lines 32-36): `LOWER`, `TRIM`, strip the suffix, trim `" ,."`, collapse whitespace, then `NULLIF(…,'')`.
+  - `manufacturer_name_norm`: the same rules as `normalize_manufacturer` and the `SUFFIXES` regex: `LOWER`, `TRIM`, strip the suffix, trim `" ,."`, collapse whitespace, then `NULLIF(…,'')`.
   - Empty strings become NULL (`NULLIF`), like `clean()` (lines 64-68).
   - Dedup: `QUALIFY ROW_NUMBER() OVER (PARTITION BY <merge key> ORDER BY _loaded_at DESC) = 1`.
   - `record_hash = TO_HEX(SHA256(TO_JSON_STRING(STRUCT(<all business columns>))))`. Do not include the `_` columns.

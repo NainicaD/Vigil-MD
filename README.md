@@ -234,6 +234,7 @@ Rows with a NULL merge key are not staged (a warning with the count is logged). 
 ### Columns (staging and prod)
 
 Same names as `flatten_to_parquet.py`. `record_date` / `publish_date` are DATE. Full lists: `schemas.FLAT_COLUMNS`.
+`manufacturer_name_norm` is a matching key (lowercase, legal suffix removed); show `manufacturer_name_raw`, the complete name, to users.
 
 | Source | Columns |
 |---|---|
@@ -248,7 +249,7 @@ RAW and STAGING **reject queries without a filter on `_ingest_date`** (this keep
 
 ```sql
 -- PROD: the source of truth (no filter needed; filter on _part_date to scan less)
-SELECT source_record_id, manufacturer_name_norm, recall_class, record_date
+SELECT source_record_id, manufacturer_name_raw, manufacturer_name_norm, recall_class, record_date
 FROM `vigil-md-1792696816.vigil_md_prod.enforcement`
 WHERE _part_date >= '2024-01-01';
 
