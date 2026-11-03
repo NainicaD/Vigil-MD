@@ -16,7 +16,7 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 | 10 | Open | Unused code |
 | 11 | Fixed for the daily run (2 follow-ups open) | GUDID egress |
 | 12 | Fixed, confirmed on real GCS | Partial NDJSON on error |
-| 13 | Fixed in code 2026-11-02 (existing STAGING/PROD rows not yet corrected) | Manufacturer name normalization |
+| 13 | Fixed 2026-11-03 (code and STAGING/PROD rows) | Manufacturer name normalization |
 | 14 | Open | DAG helpers copied in 3 files |
 
 ---
@@ -102,7 +102,7 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Fix:** write with `blob.open("wb")` and the new `convert.Utf8Writer` adapter (UTF-8 encode, no `close()` of its own). An error now reaches `BlobWriter.__exit__` → `terminate()`.
 - **Note:** binary writes (`stream_to_gcs` in `fetch_sources.py`) were never affected. The local fake bucket did not model this behaviour. It now does.
 
-## 13. Manufacturer name normalization has two suffix bugs — Fixed in code (STAGING/PROD rows not yet corrected)
+## 13. Manufacturer name normalization has two suffix bugs — Fixed (code 2026-11-02, rows corrected 2026-11-03)
 
 - **Where:** `scripts/preprocessing/flatten_to_parquet.py` (`SUFFIXES`, `normalize_manufacturer`). The staging SQL `norm_mfr` in `scripts/warehouse/build_staging.py` copies it exactly (parity checked on BigQuery, 2026-10-25), so prod has the same behaviour.
 - **Problem 1:** the pattern `,?\s*(…|co\.?|…)$` allows zero spaces before the suffix. A name that ends in the letters "co" loses them: `"Tesco"` → `"tes"`, `"Costco"` → `"cost"`.
@@ -113,7 +113,7 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Parity check (2026-11-02):** a one-off script compared BigQuery `norm_mfr` with `normalize_manufacturer` on 48 names (new cases, older suffix cases, punctuation, edge cases): 0 mismatches. The script is not in the repo.
 - **Known limits (accepted):** a glued `co` is kept (`"ScripHessCo"` → `"scriphessco"`), since stripping it would break `"Tesco"`; `"Vygon U.S.A"` → `"vygon u"`; `"Acme-Inc"` → `"acme-"`; only the last suffix is stripped (`"Mediana.Co.Ltd"` → `"mediana.co"`); an accented letter before the suffix counts as a boundary.
 - **Display:** `manufacturer_name_norm` is a matching key, not for display. The complete name stays in `manufacturer_name_raw` (and RAW `payload`). Search should match on `_norm` and show `_raw`.
-- **Still open:** rows already in STAGING and PROD keep the old values. A read-only check (2026-11-02) found about 216,000 STAGING and 200,000 PROD rows to change, mostly MAUDE, before the glued-`llc` exception; exact counts come with the correction plan. The check also confirmed that `record_hash` and the old values can be recomputed from `manufacturer_name_raw` (0 mismatches), so a targeted UPDATE is possible. It writes to BigQuery and needs its own approval. `record_hash` includes `manufacturer_name_norm`, so the daily MERGE corrects a row when its source file is loaded again; rows in files that never change stay wrong until then.
+- **Rows corrected (2026-11-03):** a one-off targeted UPDATE (not in the repo) set `manufacturer_name_norm = norm_mfr(manufacturer_name_raw)` and recomputed `record_hash` in all STAGING and PROD tables, STAGING first, with the DAGs stopped. Rows changed: STAGING 215,754 (enforcement 582, recall 804, MAUDE 185,037, GUDID 29,331), PROD 200,133 (194, 201, 185,037, 14,701). A read-only check afterwards found `to_change = 0` and `hash_mismatch = 0` in all 8 tables, so the daily MERGE leaves these rows unchanged. Cost about 39 GB scanned (UPDATE plus check). Other columns were not changed.
 - **Related (not a bug):** for an impossible date such as `20241399`, Python `normalize_date` returns the string `"2024-13-99"`. SQL `norm_date` returns NULL. The SQL behaviour is intended.
 
 ## 14. DAG helpers are copied in 3 DAG files — Open
