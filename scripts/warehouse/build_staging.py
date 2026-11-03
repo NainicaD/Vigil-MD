@@ -38,7 +38,8 @@ SQL_DIR   = Path(__file__).resolve().parent / "sql"
 RAW_TOKEN = "__RAW_TABLE__"
 
 # Same rules as normalize_date / normalize_manufacturer + SUFFIXES
-# (flatten_to_parquet.py:32-61). Anchored formats, like the Python regexes.
+# (flatten_to_parquet.py). Anchored formats, like the Python regexes.
+# The norm_mfr regex must equal SUFFIXES.pattern (tests/test_build_staging.py checks this).
 FUNCTIONS = r"""
 CREATE TEMP FUNCTION norm_date(v STRING) AS ((
   CASE

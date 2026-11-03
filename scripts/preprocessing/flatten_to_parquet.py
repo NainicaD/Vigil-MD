@@ -41,7 +41,7 @@ SUFFIXES = re.compile(
 
 
 def normalize_manufacturer(name: str) -> str:
-    """Lowercase, strip punctuation and legal suffixes, collapse whitespace."""
+    """Matching key: lowercase, strip one legal suffix and trailing " ,.", collapse whitespace."""
     if not name:
         return None
     name = name.strip().lower()

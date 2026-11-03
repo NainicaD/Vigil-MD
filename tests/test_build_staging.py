@@ -110,3 +110,9 @@ def test_staging_script_runs_after_the_count(fake_gcp, monkeypatch, capsys):
     script = client.query.call_args_list[1].args[0]
     assert "BEGIN TRANSACTION" in script and "recall_stg" in script
     assert "8 staged (1 null-key rows dropped, 1 duplicates removed)" in capsys.readouterr().out
+
+
+def test_norm_mfr_regex_matches_python_suffixes():
+    """SQL norm_mfr and Python SUFFIXES must use the same pattern (docs/issue.md #13)."""
+    from scripts.preprocessing.flatten_to_parquet import SUFFIXES
+    assert f"r'{SUFFIXES.pattern}'" in B.FUNCTIONS
