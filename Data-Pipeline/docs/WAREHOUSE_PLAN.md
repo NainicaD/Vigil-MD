@@ -463,7 +463,7 @@ Without this pool, the scheduler does not start any warehouse task.
 
 **2. Create the tables.** This is already done. A second run is safe (`exists_ok=True`). It raises if a table has columns different from `schemas.py`.
 ```bash
-docker compose exec -w /opt/airflow/Vigil-MD airflow-worker \
+docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker \
   python scripts/warehouse/create_tables.py --project vigil-md-1792696816
 ```
 
