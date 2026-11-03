@@ -51,8 +51,8 @@ CREATE TEMP FUNCTION norm_date(v STRING) AS ((
 CREATE TEMP FUNCTION norm_mfr(v STRING) AS ((
   NULLIF(REGEXP_REPLACE(
     TRIM(REGEXP_REPLACE(LOWER(TRIM(v)),
-      r'(^|[\s,])(inc\.?|incorporated|corp\.?|corporation|llc\.?|ltd\.?|limited|co\.?|company|gmbh|s\.a\.?|b\.v\.?)$',
-      ''), ' ,.'),
+      r'(^|[^a-z0-9])(inc\.?|incorporated|corp\.?|corporation|llc\.?|ltd\.?|limited|co\.?|company|gmbh|s\.a\.?|b\.v\.?)$|llc\.?$',
+      r'\1'), ' ,.'),
     r'\s+', ' '), '')
 ));
 """

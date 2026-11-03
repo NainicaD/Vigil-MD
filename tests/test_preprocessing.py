@@ -41,12 +41,26 @@ class TestManufacturerNormalization:
     def test_strips_llc_with_period(self):
         assert normalize_manufacturer("Foo, LLC.") == "foo"
 
-    @pytest.mark.parametrize("name", ["Tesco", "Costco", "Medico", "Carco"])
+    @pytest.mark.parametrize("name", ["Tesco", "Costco", "Medico", "Carco",
+                                      "US Surgical Puerto Rico", "Medtronic Mexico"])
     def test_keeps_names_that_end_in_suffix_letters(self, name):
         assert normalize_manufacturer(name) == name.lower()
 
     def test_strips_suffix_without_space_after_comma(self):
         assert normalize_manufacturer("Acme,Inc") == "acme"
+
+    @pytest.mark.parametrize("name, expected", [
+        ("Gentec(Shanghai)Corporation", "gentec(shanghai)"),
+        ("J.Morita Mfg.Corp", "j.morita mfg"),
+        ("Mediana.Co.Ltd", "mediana.co"),
+        ("Medical Wire & Equipment Co.(Bath)Limited", "medical wire & equipment co.(bath)"),
+    ])
+    def test_strips_suffix_after_punctuation(self, name, expected):
+        assert normalize_manufacturer(name) == expected
+
+    @pytest.mark.parametrize("name", ["AcumedLLC", "AcumedLLC.", "Acumed LLC", "Acumed, LLC."])
+    def test_strips_glued_llc(self, name):
+        assert normalize_manufacturer(name) == "acumed"
 
     def test_lowercases(self):
         assert normalize_manufacturer("MEDTRONIC") == "medtronic"
