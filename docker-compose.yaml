@@ -67,7 +67,7 @@ x-airflow-common:
     AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY:-}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    AIRFLOW__CORE__DAGS_FOLDER: '/opt/airflow/Vigil-MD/dags'
+    AIRFLOW__CORE__DAGS_FOLDER: '/opt/airflow/Vigil-MD/Data-Pipeline/dags'
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-airflow_jwt_secret}
     AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW__API_AUTH__JWT_ISSUER:-airflow}
@@ -86,10 +86,10 @@ x-airflow-common:
 
 
   volumes:
-    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/Data-Pipeline/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
-    # Whole repo: DAGs import scripts/ and write to data/raw/samples/
+    # Whole repo: DAGs import Data-Pipeline/scripts/ and write to Data-Pipeline/data/raw/samples/
     - ${AIRFLOW_PROJ_DIR:-.}:/opt/airflow/Vigil-MD
     - ~/.config/gcloud:/home/airflow/.config/gcloud:ro
   user: "${AIRFLOW_UID:-50000}:0"

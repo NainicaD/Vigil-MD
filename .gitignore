@@ -1,7 +1,7 @@
 
-data/raw/*
+Data-Pipeline/data/raw/*
 # keep the DVC pointer visible to git and DVC
-!data/raw/samples.dvc
+!Data-Pipeline/data/raw/samples.dvc
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -160,7 +160,7 @@ activemq-data/
 .envrc
 
 # Airflow (docker compose)
-/logs/
+/Data-Pipeline/logs/
 /config/
 /plugins/
 .venv

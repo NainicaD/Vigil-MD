@@ -51,7 +51,7 @@ New code to cover:
 - T-G9. One behaviour per test, with a name that states it (`test_same_fingerprint_copies_without_download`).
 - T-G10. Prefer the pure functions (`classify_partition`, `render_*_sql`, `convert_zip`, `pick_latest`, …). Use a `main()` test only for orchestration (which manifests are read or deleted, which errors propagate).
 - T-G11. SQL tests check structure with regex and `str.index` order. They do not compare whole SQL strings, so formatting changes do not break them.
-- T-G12. Tests run from the repo root and must not write into the repo (`tmp_path` only). The DAG tests keep the rule of `test_parsing_has_no_side_effects`.
+- T-G12. Tests run from `Data-Pipeline/` and must not write into the repo (`tmp_path` only). The DAG tests keep the rule of `test_parsing_has_no_side_effects`.
 - T-G13. Do not reformat or edit existing tests. The only allowed edits to existing files are the ones named in a step.
 - T-G14. No git commit or push unless the user asks.
 
