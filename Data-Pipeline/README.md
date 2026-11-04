@@ -547,8 +547,6 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 
 ## Changes
 
-> **2026-11-04 — action needed after pulling:** the pipeline moved into `Data-Pipeline/`. From the repository root: `mv logs Data-Pipeline/logs` (if `logs/` is still there), then recreate the containers with `docker compose up -d` (the new DAG folder and logs mount apply only then; the Airflow database is kept). Run `pytest`, `dvc` and the scripts from `Data-Pipeline/`; worker commands use `-w /opt/airflow/Vigil-MD/Data-Pipeline`. Branches started before the move will conflict: rebase them on `main`. Both pools, `vigil_warehouse` and `vigil_upload`, must exist on your machine ([Quickstart](#quickstart) step 5).
-
 ### 2026-11-04 — Repository layout: `Data-Pipeline/`
 
 - **Moved** `dags/`, `scripts/`, `tests/`, `docs/`, `reports/`, `data/`, `logs/`, `dvc.yaml`, `dvc.lock`, `pytest.ini`, `requirements.txt` and this README into `Data-Pipeline/` (course layout). File history is kept (renames).
