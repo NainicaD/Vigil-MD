@@ -103,6 +103,31 @@ def read_pending(bucket, source: str) -> list[tuple[str, list[dict]]]:
             for b in blobs if b.name.endswith(".json")]
 
 
+def drop_superseded(manifests: list[tuple[str, list[dict]]]
+                    ) -> tuple[list[tuple[str, list[dict]]], list[dict]]:
+    """Keep only the newest version of each partition across the pending manifests. Pure.
+
+    An entry is superseded when another pending entry for the same partition_key has a
+    newer export_date: the newer full export replaces it, and both would write the same
+    NDJSON path (ndjson_path has no export date). Equal dates, and entries without an
+    export_date, are kept. Returns (manifests, dropped); manifest order is unchanged.
+    """
+    newest: dict[str, str] = {}
+    for _, entries in manifests:
+        for e in entries:
+            d = e.get("export_date")
+            if d is not None and d > newest.get(e["partition_key"], ""):
+                newest[e["partition_key"]] = d
+    kept, dropped = [], []
+    for name, entries in manifests:
+        keep = []
+        for e in entries:
+            d = e.get("export_date")
+            (dropped if d is not None and d < newest[e["partition_key"]] else keep).append(e)
+        kept.append((name, keep))
+    return kept, dropped
+
+
 def write_pending(bucket, blob_name: str, entries: list[dict]) -> None:
     bucket.blob(blob_name).upload_from_string(
         json.dumps(entries, indent=2), content_type="application/json")

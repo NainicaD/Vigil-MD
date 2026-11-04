@@ -54,6 +54,35 @@ def test_pick_latest_empty():
     assert common.pick_latest([], "recall") == []
 
 
+# ── drop_superseded (several pending exports, docs/issue.md #15) ─────────────
+
+def pe(key, export_date):
+    return {"partition_key": key, "gcs_path": f"raw/event/{export_date}/{key}",
+            "export_date": export_date}
+
+
+@pytest.mark.parametrize("older_first", [True, False])
+def test_drop_superseded_keeps_the_newest_version(older_first):
+    old = ("m_old", [pe("A", "2026-11-02"), pe("B", "2026-11-02")])
+    new = ("m_new", [pe("A", "2026-11-03")])
+    manifests = [old, new] if older_first else [new, old]
+    kept, dropped = common.drop_superseded(manifests)
+    assert dict(kept) == {"m_old": [pe("B", "2026-11-02")],     # only in the old export: kept
+                          "m_new": [pe("A", "2026-11-03")]}
+    assert [n for n, _ in kept] == [n for n, _ in manifests]     # order unchanged
+    assert dropped == [pe("A", "2026-11-02")]
+
+
+def test_drop_superseded_keeps_equal_dates_and_missing_dates():
+    nodate = {"partition_key": "A", "gcs_path": "raw/x"}
+    manifests = [("m1", [pe("A", "2026-11-03")]), ("m2", [pe("A", "2026-11-03"), nodate])]
+    assert common.drop_superseded(manifests) == (manifests, [])
+
+
+def test_drop_superseded_empty():
+    assert common.drop_superseded([]) == ([], [])
+
+
 # ── apply_content_check ──────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("state_entry, must_load", [
@@ -139,6 +168,37 @@ def test_main_changed_skips_entries_already_converted(run_main):
     assert saved[0] == done                                       # untouched
     assert saved[1]["row_count"] == 2 and "content_sha256" in saved[1]
     assert "raw/other.zip" not in bucket.store                    # never read
+
+
+OLD_ZIP = "raw/enforcement/2026-10-01/enforcement/device-enforcement-0001-of-0001.json.zip"
+
+
+def test_main_converts_only_the_newest_export_and_rewrites_the_older_manifest(run_main):
+    """docs/issue.md #15: the older version is never read, so it can't share the NDJSON path."""
+    bucket, run = run_main
+    old = entry_for(gcs_path=OLD_ZIP, export_date="2026-10-01")     # not in GCS: reading it fails
+    other = entry_for(partition_key="other", gcs_path="raw/other.zip", export_date="2026-10-01",
+                      content_sha256="c", row_count=9, ndjson_path="ndjson/x")
+    m_old = "manifests/pending/enforcement/20261024T060000Z.json"
+    m_new = "manifests/pending/enforcement/20261025T060000Z.json"
+    bucket.store[m_old] = json.dumps([old, other]).encode()
+    bucket.store[m_new] = json.dumps([entry_for()]).encode()
+    run("--scope", "changed")
+    assert json.loads(bucket.store[m_old]) == [other]                # superseded entry removed
+    (new,) = json.loads(bucket.store[m_new])
+    assert new["gcs_path"] == ZIP_PATH and new["row_count"] == 2
+    assert [n for n in bucket.store if n.startswith("ndjson/")] == [
+        common.ndjson_path("enforcement", D, KEY)]
+
+
+def test_main_deletes_a_manifest_whose_entries_are_all_superseded(run_main):
+    bucket, run = run_main
+    m_old = "manifests/pending/enforcement/20261024T060000Z.json"
+    m_new = "manifests/pending/enforcement/20261025T060000Z.json"
+    bucket.store[m_old] = json.dumps([entry_for(gcs_path=OLD_ZIP, export_date="2026-10-01")]).encode()
+    bucket.store[m_new] = json.dumps([entry_for()]).encode()
+    run("--scope", "changed")
+    assert m_old not in bucket.store and m_new in bucket.store
 
 
 def test_main_all_writes_a_full_manifest(run_main):
