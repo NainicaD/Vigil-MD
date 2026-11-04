@@ -535,7 +535,7 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 - **MAUDE scope is 2016–2026 by design** (`START_YEAR` / `END_YEAR` in the DAGs). To extend it, change `END_YEAR` in `vigil_md_acquisition.py` and `vigil_md_full_load.py`.
 - **Matching runs on the samples only** (DVC pipeline). Exact linking on the PROD tables as a DAG task is the next step; blocking and ML matching on the full data come with the model pipeline.
 - **The daily DAG runs only while the machine and Docker are running.** A missed run happens when Airflow next runs (`catchup=False` runs the most recent interval).
-- Open issues are tracked in [`docs/issue.md`](docs/issue.md). Examples: the parallel fetch tasks can overwrite `manifest_state.json` keys (#5), task logs appear only when a task ends (#8), and the manufacturer suffix rule turns `"Tesco"` into `"tes"` (#13).
+- Open issues are tracked in [`docs/issue.md`](docs/issue.md). Example: the parallel fetch tasks can overwrite `manifest_state.json` keys (#5).
 
 ---
 

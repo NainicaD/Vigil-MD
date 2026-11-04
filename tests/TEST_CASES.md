@@ -1,6 +1,6 @@
 # Vigil-MD test cases
 
-582 collected test cases across 25 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
+605 collected test cases across 26 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
 
 Files 9–18 cover the RAW → STAGING → PROD warehouse (`docs/WAREHOUSE_PLAN.md`), added by `docs/TESTS_PLAN.md`.
 
@@ -40,6 +40,7 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 49 | pass |
 | `test_bias_slices.py` | Bias slice analysis of PROD (read-only SQL, statistics, outputs) | 37 | pass |
 | `test_gudid_release.py` | Newest GUDID release from the RSS feed | 8 | pass |
+| `dags/test_vigil_helpers.py` | Shared DAG helpers: live logs, kill on stop, alert names failed tasks | 23 | pass |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 
@@ -302,6 +303,19 @@ The SQL is checked as text; `run()` uses a `FakeClient` that returns canned rows
 | `test_single_release`, `test_newest_wins_whatever_the_feed_order` (2) | The largest 8-digit date wins, whether it's listed first or last |
 | `test_ignores_other_links`, `test_date_comes_from_the_file_name_only` | Non-zip and non-GUDID links are ignored; a date in the host or path is not used |
 | `test_needs_exactly_eight_digits`, `test_raises_without_a_dated_release` (2) | No dated release (or an empty feed) raises instead of guessing a snapshot |
+
+## 21. `dags/test_vigil_helpers.py`: shared DAG helpers (issues #8, #10, #14)
+
+`run_script` runs tiny scripts written to `tmp_path`; the alert tests use a fake task instance and no SMTP.
+
+| Test | What it checks |
+|---|---|
+| `test_line_level` (7) | Our log format keeps WARNING/ERROR/CRITICAL; other lines (incl. "WARNING" inside data text) are INFO |
+| `test_run_script_logs_every_line_in_order_with_its_level`, `test_run_script_child_is_unbuffered` | Lines are logged in real order with their level; the script gets `PYTHONUNBUFFERED=1` |
+| `test_run_script_raises_on_non_zero_exit_with_the_output_tail` (3), `test_run_script_tail_keeps_the_last_lines` | Exit 3 → `DataCheckFailed`, other codes → `RuntimeError`, with the last `TAIL_LINES` lines |
+| `test_run_script_kills_the_script_when_the_task_stops`, `test_run_script_kills_the_script_on_any_error` | A stopped or failing task never leaves the script running |
+| `test_failed_task_ids_*` (2), `test_build_failure_message_*` (2), `test_alert_logs_the_failed_tasks_without_email_settings` | The alert lists only `failed` tasks; a lookup error gives "unknown"; subject and body name the tasks |
+| `test_dags_use_the_shared_helpers` (3) | Each DAG uses the shared `run_script` and `alert_on_failure` (no copies) |
 
 ## Manual checks (real BigQuery, not in pytest)
 

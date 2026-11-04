@@ -23,8 +23,6 @@ pool, shared with vigil_md_acquisition.
 from __future__ import annotations
 
 import logging
-import os
-import subprocess
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -35,16 +33,15 @@ from airflow.sdk.exceptions import AirflowSkipException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    CHECK_SCRIPTS, EXIT_DATA_FAIL, SOURCE_PRIORITY, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
+    CHECK_SCRIPTS, SOURCE_PRIORITY, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
     DataCheckFailed, pool_for, warn_only)
+from vigil_helpers import alert_on_failure, run_script  # noqa: E402,F401  (shared, issue #14)
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.task.trigger_rule import TriggerRule
 
 log = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
-REPO       = Path(__file__).resolve().parents[1]
-PYTHON     = sys.executable
 BUCKET     = "vigil-md-raw-nd"
 PROJECT    = "vigil-md-1792696816"
 START_YEAR = 2016
@@ -62,30 +59,6 @@ default_args = {
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-# TODO: move to shared module (copied from vigil_md_acquisition.py:run_script)
-def run_script(script: str, *args: str) -> str:
-    """Run a repo script as a subprocess. Returns stdout. Raises on failure."""
-    cmd = [PYTHON, str(REPO / script)] + list(args)
-    log.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(
-        cmd, cwd=str(REPO),
-        capture_output=True, text=True
-    )
-    if result.stdout:
-        log.info(result.stdout)
-    if result.stderr:
-        log.warning(result.stderr)
-    if result.returncode == EXIT_DATA_FAIL:
-        raise DataCheckFailed(
-            f"{script} found a data problem (exit {EXIT_DATA_FAIL})\n{result.stderr}"
-        )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"{script} failed (exit {result.returncode})\n{result.stderr}"
-        )
-    return result.stdout
-
 
 def full_load_args(step: str, source: str, ingest_date: str,
                    rebuild: bool = False) -> list[str]:
@@ -179,54 +152,6 @@ def run_load_step(step: str, source: str, **context):
         raise
     log.info("%s %s completed%s", step, source, " (rebuild)" if rebuild else "")
 
-
-# TODO: move to shared module (copied from vigil_md_acquisition.py:alert_on_failure)
-def alert_on_failure(**context):
-    """Runs when any upstream task fails. Sends email alert."""
-    import smtplib
-    from email.mime.text import MIMEText
-
-    ti = context["ti"]
-    dag_run = context.get("dag_run")
-    run_id = dag_run.run_id if dag_run else "unknown"
-
-    url = (f"{os.environ.get('VIGIL_AIRFLOW_URL', 'http://localhost:8080')}"
-           f"/dags/{ti.dag_id}/grid")
-
-    log.error("PIPELINE FAILURE in run %s", run_id)
-
-    to = os.environ.get("VIGIL_ALERT_EMAIL_TO")
-    smtp_user = os.environ.get("AIRFLOW__SMTP__SMTP_USER")
-    smtp_password = os.environ.get("AIRFLOW__SMTP__SMTP_PASSWORD")
-
-    if not to:
-        log.warning("VIGIL_ALERT_EMAIL_TO not set, skipping email")
-        return
-    if not smtp_user or not smtp_password:
-        log.warning("SMTP credentials not set, skipping email")
-        return
-
-    subject = f"[Vigil-MD] FAILED: {ti.dag_id}"
-    html = (
-        f"<p>DAG <b>{ti.dag_id}</b> failed.</p>"
-        f"<p>Run: <code>{run_id}</code></p>"
-        f'<p><a href="{url}">Open in Airflow</a></p>'
-    )
-
-    msg = MIMEText(html, "html")
-    msg["Subject"] = subject
-    msg["From"] = smtp_user
-    msg["To"] = to
-
-    try:
-        with smtplib.SMTP("smtp.gmail.com", 587) as s:
-            s.ehlo()
-            s.starttls()
-            s.login(smtp_user, smtp_password)
-            s.send_message(msg)
-        log.info("Alert email sent to %s", to)
-    except Exception:
-        log.exception("Failed to send alert email")
 
 # ── DAG ───────────────────────────────────────────────────────────────────────
 
