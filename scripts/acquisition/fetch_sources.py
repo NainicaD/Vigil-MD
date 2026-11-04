@@ -41,13 +41,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
-from email import parser
 import hashlib
 import json
 import logging
 import re
 import time
-import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -59,10 +57,10 @@ import sys as _sys
 
 _sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.logger import get_logger
+from scripts.acquisition.gudid_release import RSS_URL as GUDID_RSS_URL, pick_latest_gudid
 log = get_logger("fetch_sources")
 
 MANIFEST_URL  = "https://api.fda.gov/download.json"
-GUDID_RSS_URL = "https://accessgudid.nlm.nih.gov/download.rss?files=full"
 CHUNK_SIZE    = 8 * 1024 * 1024   # 8 MB per GCS write chunk
 STATE_BLOB    = "manifests/manifest_state.json"
 
@@ -389,17 +387,10 @@ def fetch_openfda_endpoint(session: requests.Session,
 # ── GUDID ─────────────────────────────────────────────────────────────────────
 
 def latest_gudid_url(session: requests.Session) -> tuple[str, str]:
-    """Return (url, snapshot_date) of the latest GUDID full release."""
-    root = ET.fromstring(session.get(GUDID_RSS_URL, timeout=60).content)
-    for item in root.iter("item"):
-        link = (item.findtext("link") or "").strip()
-        if link and "gudid" in link.lower() and link.endswith(".zip"):
-            m = re.search(r"(\d{8})", link)
-            snapshot = m.group(1) if m else \
-                datetime.now(timezone.utc).strftime("%Y%m%d")
-            log.info("GUDID release: %s (snapshot %s)", link, snapshot)
-            return link, snapshot
-    raise RuntimeError("No GUDID full release found in RSS feed")
+    """Return (url, snapshot_date) of the latest GUDID full release (gudid_release.py)."""
+    url, snapshot = pick_latest_gudid(session.get(GUDID_RSS_URL, timeout=60).content)
+    log.info("GUDID release: %s (snapshot %s)", url, snapshot)
+    return url, snapshot
 
 
 def fetch_gudid(session: requests.Session,

@@ -124,10 +124,10 @@ def branch(acq, fake_gcp, monkeypatch):
     client.bucket.return_value = bucket
     client.list_blobs.side_effect = bucket.client.list_blobs
 
-    def run(dates, snapshot, pending=False):
+    def run(dates, snapshot, pending=False, link=None):
         if pending:
             bucket.store["manifests/pending/maude/20261024T060000Z.json"] = b"[]"
-        link = f"https://accessgudid.nlm.nih.gov/x/gudid_full_release_{snapshot}.zip"
+        link = link or f"https://accessgudid.nlm.nih.gov/x/gudid_full_release_{snapshot}.zip"
         manifest = {"results": {"device": {e: {"export_date": d} for e, d in dates.items()}}}
 
         def get(url, timeout=None):
@@ -155,6 +155,36 @@ def test_branch_triggers_load_for_pending_files(branch):
 
 def test_branch_no_update(branch):
     assert branch(SAME, "20261001") == "no_update"
+
+
+def test_branch_raises_without_a_dated_gudid_release(branch):
+    """No guessed snapshot (docs/issue.md #6): the task fails instead of re-fetching GUDID daily."""
+    with pytest.raises(RuntimeError, match="No GUDID full release"):
+        branch(SAME, None, link="https://accessgudid.nlm.nih.gov/x/gudid_full_release.zip")
+
+
+# ── log_summary ──────────────────────────────────────────────────────────────
+
+def test_log_summary_counts_only_the_newest_export(acq, fake_gcp, caplog):
+    """docs/issue.md #9: older export folders are not counted."""
+    bucket = FakeBucket(acq.BUCKET)
+    bucket.store.update({
+        "raw/event/2026-11-02/2020q1/a.zip": b"x" * 10,
+        "raw/event/2026-11-03/2020q1/a.zip": b"x" * 20,
+        "raw/event/2026-11-03/2020q2/b.zip": b"x" * 30,
+        "raw/event/2026-11-03/2020q2/b.json": b"x" * 99,    # not a zip
+        "raw/gudid/20261001/g_20261001.zip": b"x" * 40,
+        "raw/gudid/20261102/g_20261102.zip": b"x" * 50,
+    })
+    fake_gcp.storage.Client.return_value.list_blobs.side_effect = bucket.client.list_blobs
+    caplog.set_level("INFO")
+    acq.log_summary()
+    lines = {r.getMessage().split()[0]: r.getMessage().split() for r in caplog.records
+             if r.getMessage().split() and "zip" in r.getMessage()}
+    assert lines["maude_event"][1:3] == ["2026-11-03", "2"]
+    assert lines["gudid"][1:3] == ["20261102", "1"]
+    assert lines["enforcement"][1:3] == ["-", "0"]
+    assert lines["TOTAL"][1] == "3"
 
 
 # ── script arguments (accepted by each script's argparse) ────────────────────

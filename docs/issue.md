@@ -6,14 +6,14 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 |---|---|---|
 | 1 | Resolved 2026-10-25 | Worker credentials |
 | 2 | Known limitation (by design) | MAUDE year range |
-| 3 | Planned (Step 7) | Fetch scope |
-| 4 | Planned (Step 2 done, Step 7 wires it) | Full re-download |
+| 3 | Fixed (Step 7) | Fetch scope |
+| 4 | Fixed (Step 7); rewritten files still reload | Full re-download |
 | 5 | Open (partly mitigated) | State race |
-| 6 | Open | GUDID date parsing |
-| 7 | Open | GUDID RSS order |
+| 6 | Fixed 2026-11-04 | GUDID date parsing |
+| 7 | Fixed 2026-11-04 | GUDID RSS order |
 | 8 | Open | Live task logs |
-| 9 | Open | Summary counts |
-| 10 | Open | Unused code |
+| 9 | Fixed 2026-11-04 | Summary counts |
+| 10 | Partly fixed (import removed; alert part waits for #14) | Unused code |
 | 11 | Fixed for the daily run (2 follow-ups open) | GUDID egress |
 | 12 | Fixed, confirmed on real GCS | Partial NDJSON on error |
 | 13 | Fixed 2026-11-03 (code and STAGING/PROD rows) | Manufacturer name normalization |
@@ -34,17 +34,18 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Effect to know:** MAUDE quarters from 2027 on are not fetched. Enforcement, recall and GUDID are not filtered by year.
 - **To extend the scope later:** change `END_YEAR` in both DAG files, then run `vigil_md_full_load` (or let the next daily run fetch the new quarters).
 
-## 3. Any change fetches all four sources — Planned (Step 7)
+## 3. Any change fetches all four sources — Fixed (Step 7)
 
-- **Where:** `dags/vigil_md_acquisition.py:165`.
-- **Problem:** one new recall export also starts the MAUDE and GUDID fetches.
-- **Fix:** Step 7 returns only the fetch tasks of sources that changed.
+- **Where:** `check_manifest` in `dags/vigil_md_acquisition.py`.
+- **Problem:** one new recall export also started the MAUDE and GUDID fetches.
+- **Fix:** Step 7 (`docs/WAREHOUSE_PLAN.md`): `check_manifest` returns only the fetch tasks of the sources that changed. Test: `test_branch_fetches_only_changed_sources`.
 
-## 4. A new export date downloads everything again — Planned
+## 4. A new export date downloads everything again — Fixed (Step 7); rewritten files still reload
 
 - **Where:** `fetch_sources.py` full mode (blob path contains `export_date`).
-- **Problem:** MAUDE 2016–2026 downloads again about once a week.
-- **Fix:** Step 2 added `--mode incremental` (fingerprint + SHA-256 per partition). Step 7 makes the DAG use it.
+- **Problem:** MAUDE 2016–2026 downloaded again about once a week.
+- **Fix:** Step 2 added `--mode incremental`; Step 7 makes the daily DAG use it (test: `test_fetch_one_source_uses_incremental_mode`). Per partition: same fingerprint (records, size) in the openFDA manifest → server-side copy, no download; downloaded with the same zip SHA-256 → not loaded; same content hash as the partition state → `skip_load` in the unzip step.
+- **Still happens:** when openFDA rewrites the files (new fingerprint and new bytes), they are downloaded and loaded again even if no PROD row changes. 2026-11-02/03: two MAUDE re-exports, 497 files loaded (about 7 h), 0 PROD rows inserted or updated. The partition state is written only after a file's load commits; both exports were unzipped before either was loaded, so 32 files with unchanged content were not skipped.
 
 ## 5. Parallel tasks can overwrite each other's state — Open (partly mitigated)
 
@@ -54,17 +55,17 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Fix idea:** write with `if_generation_match` and retry on a precondition failure, or one state file per source.
 - **Also:** the pull manifest name `manifests/pull_{run_time}.json` can collide if two tasks start in the same second.
 
-## 6. GUDID date parsing is in two places and the copies differ — Open
+## 6. GUDID date parsing is in two places and the copies differ — Fixed 2026-11-04
 
-- **Where:** `dags/vigil_md_acquisition.py:154` (fallback `""`), `fetch_sources.py:387` (fallback today's date).
+- **Where (before the fix):** `check_manifest` in `dags/vigil_md_acquisition.py` (fallback `""`), `latest_gudid_url` in `fetch_sources.py` (fallback today's date).
 - **Problem:** if the URL ever has no 8-digit date, every run sees a new snapshot and downloads GUDID again. Today's URLs have the date, so this does not happen now.
-- **Fix idea:** one shared function. Raise if no date is found.
+- **Fix:** one shared function, `pick_latest_gudid` in `scripts/acquisition/gudid_release.py`, used by `check_manifest` and `latest_gudid_url`. It raises if no link has an 8-digit date, so the task fails instead of guessing a snapshot. Tests: `tests/test_gudid_release.py`, `test_branch_raises_without_a_dated_gudid_release`.
 
-## 7. The newest GUDID release is assumed to be first in the RSS feed — Open
+## 7. The newest GUDID release is assumed to be first in the RSS feed — Fixed 2026-11-04
 
-- **Where:** `fetch_sources.py:380-391` (`latest_gudid_url`), and the same loop in `check_manifest`.
+- **Where (before the fix):** `latest_gudid_url` in `fetch_sources.py`, and the same loop in `check_manifest`.
 - **Problem:** the code takes the first item that ends in `.zip`. If the feed lists the oldest first, it fetches an old release. The feed order is not verified.
-- **Fix idea:** collect all items and pick the largest 8-digit date.
+- **Fix:** `pick_latest_gudid` collects all items and picks the largest 8-digit date in the file name. On 2026-11-04 the feed listed one release (`gudid_full_release_20261102.zip`), so the old code was not wrong yet; the fix guards against a change in the feed.
 
 ## 8. Script logs appear only at the end — Open
 
@@ -72,17 +73,18 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Problem:** a fetch or conversion that runs an hour shows nothing in Airflow until it ends.
 - **Fix idea:** stream the subprocess output line by line to the task log.
 
-## 9. The summary counts every old version — Open
+## 9. The summary counts every old version — Fixed 2026-11-04
 
-- **Where:** `dags/vigil_md_acquisition.py:206` (`log_summary`).
+- **Where:** `log_summary` in `dags/vigil_md_acquisition.py`.
 - **Problem:** it counts every zip under `raw/{source}/` across all export dates. The total grows with each export and does not show the current data.
-- **Fix idea:** count only the newest export folder per source.
+- **Fix:** `log_summary` counts only the newest export folder per source and logs its date (same rule as `scripts/warehouse/common.pick_latest`). Test: `test_log_summary_counts_only_the_newest_export`.
 
-## 10. Unused code — Open
+## 10. Unused code — Partly fixed
 
-- **Where:** `fetch_sources.py:41` (`from email import parser`), `dags/vigil_md_acquisition.py:248` (`build_failure_message`, never called).
+- **Where:** `fetch_sources.py` imports (`from email import parser`), `build_failure_message` in `dags/vigil_md_acquisition.py` (never called).
 - **Problem:** clutter. The alert email does not name the failed task.
-- **Fix idea:** delete the import. Use `build_failure_message` in `alert_on_failure` with the failed task ids.
+- **Fixed 2026-11-04:** the unused import is deleted (and `xml.etree`, no longer needed in `fetch_sources.py`).
+- **Still open:** use `build_failure_message` in `alert_on_failure` with the failed task ids. Planned with #14, so the change is made once in the shared helper.
 
 ## 11. GUDID is read back out of GCS for the XML → JSON conversion — Fixed for the daily run
 
