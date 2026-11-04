@@ -37,8 +37,9 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_schemas.py` | Warehouse table definitions | 24 | pass |
 | `test_build_staging.py` | STAGING SQL (flatten, cast, dedup) | 30 | pass |
 | `test_merge_prod.py` | MERGE into PROD and `--rebuild` | 33 | pass |
-| `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 47 | pass |
+| `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 49 | pass |
 | `test_bias_slices.py` | Bias slice analysis of PROD (read-only SQL, statistics, outputs) | 37 | pass |
+| `test_gudid_release.py` | Newest GUDID release from the RSS feed | 8 | pass |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 
@@ -269,7 +270,8 @@ Skipped when Airflow isn't installed. No `dag.test()`: the tasks call real scrip
 | `test_all_warehouse_dags_parse` | The 3 DAGs load with no import errors |
 | `test_acquisition_schedule_is_unchanged`, `test_acquisition_branch_targets`, `test_acquisition_trigger_rules`, `test_acquisition_has_no_warehouse_tasks`, `test_fetch_one_source_uses_incremental_mode` | Acquisition DAG: schedule, branch targets (`trigger_load`), trigger rules, no loading tasks left, incremental fetch |
 | `test_trigger_load_starts_the_loading_dag_once` | `trigger_load` starts `vigil_md_load` with `conf={"ingest_date": "{{ ds }}"}`, a fixed run id and `skip_when_already_exists`, so a retried acquisition does not load twice |
-| `test_branch_*` (4) | `check_manifest`: changed sources only, new GUDID snapshot, pending files only (→ `trigger_load`), no update |
+| `test_branch_*` (5) | `check_manifest`: changed sources only, new GUDID snapshot, pending files only (→ `trigger_load`), no update; a feed without a dated GUDID release raises (issue #6) |
+| `test_log_summary_counts_only_the_newest_export` | `log_summary` counts the newest export folder per source, not older versions (issue #9) |
 | `test_load_dag_is_triggered_only`, `test_load_dag_chain` (4) | Loading DAG: no schedule, `max_active_runs=1`, 4 chains in pool `vigil_warehouse`, each chain → alert |
 | `test_resolve_ingest_date` (3), `test_resolve_ingest_date_rejects_missing_or_bad` (2), `test_load_step_uses_the_triggered_ingest_date` | `ingest_date`: trigger conf, then param, then `ds`; missing or bad dates raise |
 | `test_warehouse_args_parse` (4), `test_full_load_args_parse` (5), `test_full_load_args_modes` | Every argument list is accepted by its script (`--print-only`, subprocess) |
@@ -289,6 +291,16 @@ The SQL is checked as text; `run()` uses a `FakeClient` that returns canned rows
 | `test_completeness_covers_every_business_column` (4), `test_completeness_treats_blank_strings_and_empty_arrays_as_missing` | Completeness covers `FLAT_COLUMNS`; blanks and empty arrays count as missing |
 | `test_wilson`, `test_score_*` (3), `test_four_fifths_is_not_applied_to_error_rates`, `test_maude_rows_split_into_three_metrics`, `test_completeness_skips_the_slice_own_column` | Wilson CI, gap and flag rules, small cells, metric split |
 | `test_run_writes_csvs_and_summary`, `test_run_stops_above_max_gb_before_any_real_query`, `test_estimate_only_runs_no_real_query`, `test_empty_result_fails_loudly`, `test_print_only_makes_no_gcp_call` | CSVs and `summary.json`; cost guard; `maximum_bytes_billed`; fails loudly on zero rows |
+
+## 20. `test_gudid_release.py`: newest GUDID release (no network)
+
+`pick_latest_gudid` is used by `check_manifest` and `fetch_sources.latest_gudid_url` (issues #6, #7).
+
+| Test | What it checks |
+|---|---|
+| `test_single_release`, `test_newest_wins_whatever_the_feed_order` (2) | The largest 8-digit date wins, whether it's listed first or last |
+| `test_ignores_other_links`, `test_date_comes_from_the_file_name_only` | Non-zip and non-GUDID links are ignored; a date in the host or path is not used |
+| `test_needs_exactly_eight_digits`, `test_raises_without_a_dated_release` (2) | No dated release (or an empty feed) raises instead of guessing a snapshot |
 
 ## Manual checks (real BigQuery, not in pytest)
 

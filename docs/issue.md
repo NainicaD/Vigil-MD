@@ -9,11 +9,11 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 | 3 | Planned (Step 7) | Fetch scope |
 | 4 | Planned (Step 2 done, Step 7 wires it) | Full re-download |
 | 5 | Open (partly mitigated) | State race |
-| 6 | Open | GUDID date parsing |
-| 7 | Open | GUDID RSS order |
+| 6 | Fixed 2026-11-04 | GUDID date parsing |
+| 7 | Fixed 2026-11-04 | GUDID RSS order |
 | 8 | Open | Live task logs |
-| 9 | Open | Summary counts |
-| 10 | Open | Unused code |
+| 9 | Fixed 2026-11-04 | Summary counts |
+| 10 | Partly fixed (import removed; alert part waits for #14) | Unused code |
 | 11 | Fixed for the daily run (2 follow-ups open) | GUDID egress |
 | 12 | Fixed, confirmed on real GCS | Partial NDJSON on error |
 | 13 | Fixed 2026-11-03 (code and STAGING/PROD rows) | Manufacturer name normalization |
@@ -54,17 +54,17 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Fix idea:** write with `if_generation_match` and retry on a precondition failure, or one state file per source.
 - **Also:** the pull manifest name `manifests/pull_{run_time}.json` can collide if two tasks start in the same second.
 
-## 6. GUDID date parsing is in two places and the copies differ — Open
+## 6. GUDID date parsing is in two places and the copies differ — Fixed 2026-11-04
 
-- **Where:** `dags/vigil_md_acquisition.py:154` (fallback `""`), `fetch_sources.py:387` (fallback today's date).
+- **Where (before the fix):** `check_manifest` in `dags/vigil_md_acquisition.py` (fallback `""`), `latest_gudid_url` in `fetch_sources.py` (fallback today's date).
 - **Problem:** if the URL ever has no 8-digit date, every run sees a new snapshot and downloads GUDID again. Today's URLs have the date, so this does not happen now.
-- **Fix idea:** one shared function. Raise if no date is found.
+- **Fix:** one shared function, `pick_latest_gudid` in `scripts/acquisition/gudid_release.py`, used by `check_manifest` and `latest_gudid_url`. It raises if no link has an 8-digit date, so the task fails instead of guessing a snapshot. Tests: `tests/test_gudid_release.py`, `test_branch_raises_without_a_dated_gudid_release`.
 
-## 7. The newest GUDID release is assumed to be first in the RSS feed — Open
+## 7. The newest GUDID release is assumed to be first in the RSS feed — Fixed 2026-11-04
 
-- **Where:** `fetch_sources.py:380-391` (`latest_gudid_url`), and the same loop in `check_manifest`.
+- **Where (before the fix):** `latest_gudid_url` in `fetch_sources.py`, and the same loop in `check_manifest`.
 - **Problem:** the code takes the first item that ends in `.zip`. If the feed lists the oldest first, it fetches an old release. The feed order is not verified.
-- **Fix idea:** collect all items and pick the largest 8-digit date.
+- **Fix:** `pick_latest_gudid` collects all items and picks the largest 8-digit date in the file name. On 2026-11-04 the feed listed one release (`gudid_full_release_20261102.zip`), so the old code was not wrong yet; the fix guards against a change in the feed.
 
 ## 8. Script logs appear only at the end — Open
 
@@ -72,17 +72,18 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Problem:** a fetch or conversion that runs an hour shows nothing in Airflow until it ends.
 - **Fix idea:** stream the subprocess output line by line to the task log.
 
-## 9. The summary counts every old version — Open
+## 9. The summary counts every old version — Fixed 2026-11-04
 
-- **Where:** `dags/vigil_md_acquisition.py:206` (`log_summary`).
+- **Where:** `log_summary` in `dags/vigil_md_acquisition.py`.
 - **Problem:** it counts every zip under `raw/{source}/` across all export dates. The total grows with each export and does not show the current data.
-- **Fix idea:** count only the newest export folder per source.
+- **Fix:** `log_summary` counts only the newest export folder per source and logs its date (same rule as `scripts/warehouse/common.pick_latest`). Test: `test_log_summary_counts_only_the_newest_export`.
 
-## 10. Unused code — Open
+## 10. Unused code — Partly fixed
 
-- **Where:** `fetch_sources.py:41` (`from email import parser`), `dags/vigil_md_acquisition.py:248` (`build_failure_message`, never called).
+- **Where:** `fetch_sources.py` imports (`from email import parser`), `build_failure_message` in `dags/vigil_md_acquisition.py` (never called).
 - **Problem:** clutter. The alert email does not name the failed task.
-- **Fix idea:** delete the import. Use `build_failure_message` in `alert_on_failure` with the failed task ids.
+- **Fixed 2026-11-04:** the unused import is deleted (and `xml.etree`, no longer needed in `fetch_sources.py`).
+- **Still open:** use `build_failure_message` in `alert_on_failure` with the failed task ids. Planned with #14, so the change is made once in the shared helper.
 
 ## 11. GUDID is read back out of GCS for the XML → JSON conversion — Fixed for the daily run
 
