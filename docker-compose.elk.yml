@@ -41,7 +41,7 @@ services:
     user: root
     volumes:
       - ./elk/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-      - ./logs:/airflow-logs:ro    # reads Airflow logs from your Mac
+      - ./Data-Pipeline/logs:/airflow-logs:ro    # reads Airflow logs from your Mac
     depends_on:
       - logstash
     restart: unless-stopped
