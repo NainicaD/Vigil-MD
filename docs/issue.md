@@ -11,13 +11,13 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 | 5 | Open (partly mitigated) | State race |
 | 6 | Fixed 2026-11-04 | GUDID date parsing |
 | 7 | Fixed 2026-11-04 | GUDID RSS order |
-| 8 | Open | Live task logs |
+| 8 | Fixed 2026-11-04 | Live task logs |
 | 9 | Fixed 2026-11-04 | Summary counts |
-| 10 | Partly fixed (import removed; alert part waits for #14) | Unused code |
+| 10 | Fixed 2026-11-04 | Unused code |
 | 11 | Fixed for the daily run (2 follow-ups open) | GUDID egress |
 | 12 | Fixed, confirmed on real GCS | Partial NDJSON on error |
 | 13 | Fixed 2026-11-03 (code and STAGING/PROD rows) | Manufacturer name normalization |
-| 14 | Open | DAG helpers copied in 3 files |
+| 14 | Fixed 2026-11-04 | DAG helpers copied in 3 files |
 | 15 | Fixed 2026-11-04 | Several pending exports of one partition |
 
 ---
@@ -68,11 +68,11 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Problem:** the code takes the first item that ends in `.zip`. If the feed lists the oldest first, it fetches an old release. The feed order is not verified.
 - **Fix:** `pick_latest_gudid` collects all items and picks the largest 8-digit date in the file name. On 2026-11-04 the feed listed one release (`gudid_full_release_20261102.zip`), so the old code was not wrong yet; the fix guards against a change in the feed.
 
-## 8. Script logs appear only at the end — Open
+## 8. Script logs appear only at the end — Fixed 2026-11-04
 
-- **Where:** `dags/vigil_md_acquisition.py:52-68` (`run_script`, `capture_output=True`).
+- **Where:** `run_script` (now in `dags/vigil_helpers.py`; before: a copy in each DAG, `capture_output=True`).
 - **Problem:** a fetch or conversion that runs an hour shows nothing in Airflow until it ends.
-- **Fix idea:** stream the subprocess output line by line to the task log.
+- **Fix:** `run_script` reads the script's output line by line while it runs and logs each line (stdout and stderr merged, so the order is real). `PYTHONUNBUFFERED=1` is set for the script; without it, `print()` output arrives only at the end (checked by experiment). Lines from our logger keep their level (WARNING/ERROR/CRITICAL); other lines are INFO, so normal stderr no longer shows as a warning. If the task is stopped, the script is killed, as `subprocess.run` did. Limit: a multi-line log message keeps its level on its first line only. Tests: `tests/dags/test_vigil_helpers.py`.
 
 ## 9. The summary counts every old version — Fixed 2026-11-04
 
@@ -80,12 +80,12 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Problem:** it counts every zip under `raw/{source}/` across all export dates. The total grows with each export and does not show the current data.
 - **Fix:** `log_summary` counts only the newest export folder per source and logs its date (same rule as `scripts/warehouse/common.pick_latest`). Test: `test_log_summary_counts_only_the_newest_export`.
 
-## 10. Unused code — Partly fixed
+## 10. Unused code — Fixed 2026-11-04
 
 - **Where:** `fetch_sources.py` imports (`from email import parser`), `build_failure_message` in `dags/vigil_md_acquisition.py` (never called).
 - **Problem:** clutter. The alert email does not name the failed task.
 - **Fixed 2026-11-04:** the unused import is deleted (and `xml.etree`, no longer needed in `fetch_sources.py`).
-- **Still open:** use `build_failure_message` in `alert_on_failure` with the failed task ids. Planned with #14, so the change is made once in the shared helper.
+- **Fixed 2026-11-04 (alert):** `alert_on_failure` lists the tasks in state `failed` (Airflow 3 `ti.get_task_states`, through the supervisor) in the subject and body, via `build_failure_message`. The list is "so far": the alert starts as soon as one task fails. If the lookup fails, the e-mail still goes out with "unknown". The real lookup is first exercised at the next real failure.
 
 ## 11. GUDID is read back out of GCS for the XML → JSON conversion — Fixed for the daily run
 
@@ -119,11 +119,11 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Rows corrected (2026-11-03):** a one-off targeted UPDATE (not in the repo) set `manufacturer_name_norm = norm_mfr(manufacturer_name_raw)` and recomputed `record_hash` in all STAGING and PROD tables, STAGING first, with the DAGs stopped. Rows changed: STAGING 215,754 (enforcement 582, recall 804, MAUDE 185,037, GUDID 29,331), PROD 200,133 (194, 201, 185,037, 14,701). A read-only check afterwards found `to_change = 0` and `hash_mismatch = 0` in all 8 tables, so the daily MERGE leaves these rows unchanged. Cost about 39 GB scanned (UPDATE plus check). Other columns were not changed.
 - **Related (not a bug):** for an impossible date such as `20241399`, Python `normalize_date` returns the string `"2024-13-99"`. SQL `norm_date` returns NULL. The SQL behaviour is intended.
 
-## 14. DAG helpers are copied in 3 DAG files — Open
+## 14. DAG helpers are copied in 3 DAG files — Fixed 2026-11-04
 
 - **Where:** `run_script` and `alert_on_failure` in `dags/vigil_md_acquisition.py`, `dags/vigil_md_load.py` and `dags/vigil_md_full_load.py` (marked `# TODO: move to shared module`).
 - **Problem:** a fix in one copy (for example issue #8, live logs, or #10, the failed-task list in the alert) must be made three times.
-- **Fix idea:** one helper module that all three DAGs import. Check that the DAG processor's import path can reach it, and that `tests/dags/` still parse every file.
+- **Fix:** `dags/vigil_helpers.py` (listed in `dags/.airflowignore`) holds `run_script`, `alert_on_failure` and `build_failure_message`; the 3 DAGs import them. The acquisition DAG gets the exit-3 branch too (its scripts never exit 3). A test checks that each DAG uses the shared functions.
 
 ## 15. Several pending exports of the same partition were all loaded — Fixed 2026-11-04
 

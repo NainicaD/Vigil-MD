@@ -52,7 +52,7 @@ Two modes use the same scripts:
   - any new script without `--print-only`
   - `dag.test()` on the real DAGs
 - G7. Every new script that calls GCP must have `--print-only`. That flag prints the DDL, SQL or file plan and exits **before** it creates a client. Verify scripts with that flag only.
-- G8. Put the logic in **pure functions**: SQL rendering, zip conversion, hash compare, change detection. Call GCP only in thin wrappers and `main()`. This follows `build_failure_message` in `vigil_md_acquisition.py:248`.
+- G8. Put the logic in **pure functions**: SQL rendering, zip conversion, hash compare, change detection. Call GCP only in thin wrappers and `main()`. This follows `build_failure_message` in `dags/vigil_helpers.py`.
 - G9. Import `google.cloud` **inside functions**, never at module top. This follows `load_samples_to_bq.py:48`. DAG files must parse with no side effects (`tests/dags/test_acquisition_dag.py:42`).
 
 ### Do not change these
@@ -473,7 +473,7 @@ docker compose exec -w /opt/airflow/Vigil-MD airflow-worker \
 - `refetch: false` uses the zips already in `gs://vigil-md-raw-nd/raw/`. Use `true` only if GCS is missing data.
 - Tip: to test it first, trigger with `{"sources": ["recall"]}` (the smallest source), check step 4 for recall, then trigger again with the other sources.
 - Keep `vigil_md_acquisition` and `vigil_md_load` **paused** while the full load runs. The acquisition fetch tasks are not in the pool. The full-load guard fails if either daily DAG has a run in progress.
-- Run time is not measured yet. MAUDE (all quarters 2016–2026) and GUDID (about 5.2 million devices, 210 XML parts) are the slow parts. Logs appear only when each task ends (`docs/issue.md` #8). Tasks have no time limit.
+- Run time is not measured yet. MAUDE (all quarters 2016–2026) and GUDID (about 5.2 million devices, 210 XML parts) are the slow parts. Logs appear while each task runs (`docs/issue.md` #8, fixed 2026-11-04). Tasks have no time limit.
 - The GUDID full load converts the zip from GCS (one read of about 548 MB, `docs/issue.md` #11).
 
 **4. Check the result.** In the BigQuery console (replace `D` with the run's date, for example `2026-10-26`):
@@ -541,6 +541,5 @@ docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
 
 - **#2 (known limitation, by design):** the MAUDE scope is 2016–2026 (`END_YEAR = 2026`). Quarters from 2027 on are not fetched.
 - **#5:** the four parallel fetch tasks can overwrite each other's `manifest_state.json` keys (wasted re-fetch, no data loss).
-- **#8:** task logs appear only when a task ends.
 - **#13:** fixed in code 2026-11-02 (`"Tesco"` no longer becomes `"tes"`). STAGING and PROD rows loaded before the fix keep the old names until rebuilt.
 - **Tests** for the new scripts and DAGs are written: see `docs/TESTS_PLAN.md` and `tests/TEST_CASES.md`.
