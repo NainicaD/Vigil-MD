@@ -1,6 +1,6 @@
 # Vigil-MD test cases
 
-408 collected test cases across 18 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
+576 collected test cases across 25 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
 
 Files 9–18 cover the RAW → STAGING → PROD warehouse (`docs/WAREHOUSE_PLAN.md`), added by `docs/TESTS_PLAN.md`.
 

@@ -6,8 +6,8 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 |---|---|---|
 | 1 | Resolved 2026-10-25 | Worker credentials |
 | 2 | Known limitation (by design) | MAUDE year range |
-| 3 | Planned (Step 7) | Fetch scope |
-| 4 | Planned (Step 2 done, Step 7 wires it) | Full re-download |
+| 3 | Fixed (Step 7) | Fetch scope |
+| 4 | Fixed (Step 7); rewritten files still reload | Full re-download |
 | 5 | Open (partly mitigated) | State race |
 | 6 | Fixed 2026-11-04 | GUDID date parsing |
 | 7 | Fixed 2026-11-04 | GUDID RSS order |
@@ -34,17 +34,18 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Effect to know:** MAUDE quarters from 2027 on are not fetched. Enforcement, recall and GUDID are not filtered by year.
 - **To extend the scope later:** change `END_YEAR` in both DAG files, then run `vigil_md_full_load` (or let the next daily run fetch the new quarters).
 
-## 3. Any change fetches all four sources — Planned (Step 7)
+## 3. Any change fetches all four sources — Fixed (Step 7)
 
-- **Where:** `dags/vigil_md_acquisition.py:165`.
-- **Problem:** one new recall export also starts the MAUDE and GUDID fetches.
-- **Fix:** Step 7 returns only the fetch tasks of sources that changed.
+- **Where:** `check_manifest` in `dags/vigil_md_acquisition.py`.
+- **Problem:** one new recall export also started the MAUDE and GUDID fetches.
+- **Fix:** Step 7 (`docs/WAREHOUSE_PLAN.md`): `check_manifest` returns only the fetch tasks of the sources that changed. Test: `test_branch_fetches_only_changed_sources`.
 
-## 4. A new export date downloads everything again — Planned
+## 4. A new export date downloads everything again — Fixed (Step 7); rewritten files still reload
 
 - **Where:** `fetch_sources.py` full mode (blob path contains `export_date`).
-- **Problem:** MAUDE 2016–2026 downloads again about once a week.
-- **Fix:** Step 2 added `--mode incremental` (fingerprint + SHA-256 per partition). Step 7 makes the DAG use it.
+- **Problem:** MAUDE 2016–2026 downloaded again about once a week.
+- **Fix:** Step 2 added `--mode incremental`; Step 7 makes the daily DAG use it (test: `test_fetch_one_source_uses_incremental_mode`). Per partition: same fingerprint (records, size) in the openFDA manifest → server-side copy, no download; downloaded with the same zip SHA-256 → not loaded; same content hash as the partition state → `skip_load` in the unzip step.
+- **Still happens:** when openFDA rewrites the files (new fingerprint and new bytes), they are downloaded and loaded again even if no PROD row changes. 2026-11-02/03: two MAUDE re-exports, 497 files loaded (about 7 h), 0 PROD rows inserted or updated. The partition state is written only after a file's load commits; both exports were unzipped before either was loaded, so 32 files with unchanged content were not skipped.
 
 ## 5. Parallel tasks can overwrite each other's state — Open (partly mitigated)
 
