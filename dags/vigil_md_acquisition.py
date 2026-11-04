@@ -47,6 +47,9 @@ START_YEAR = 2016
 END_YEAR   = 2026
 LOAD_DAG_ID = "vigil_md_load"          # started by trigger_load
 
+if str(REPO) not in sys.path:          # for scripts.acquisition.gudid_release
+    sys.path.insert(0, str(REPO))
+
 default_args = {
     "owner":            "nainica",
     "retries":          2,
@@ -156,25 +159,14 @@ def check_manifest(**context):
         else:
             log.info("%s unchanged: %s", endpoint, new_date)
 
-    # Also check GUDID via RSS
-    import re
-    rss = requests.get(
-        "https://accessgudid.nlm.nih.gov/download.rss?files=full",
-        timeout=30
-    ).content
-    root = ET.fromstring(rss)
-    for item in root.iter("item"):
-        link = (item.findtext("link") or "").strip()
-        if link and "gudid" in link.lower() and link.endswith(".zip"):
-            m = re.search(r"(\d{8})", link)
-            snapshot = m.group(1) if m else ""
-            if snapshot != state.get("gudid_snapshot"):
-                log.info("GUDID changed: %s → %s",
-                         state.get("gudid_snapshot"), snapshot)
-                changed.append("gudid")
-            else:
-                log.info("GUDID unchanged: %s", snapshot)
-            break
+    # Also check GUDID via RSS (same picker as the fetch; raises if no dated release)
+    from scripts.acquisition.gudid_release import RSS_URL, pick_latest_gudid
+    _, snapshot = pick_latest_gudid(requests.get(RSS_URL, timeout=30).content)
+    if snapshot != state.get("gudid_snapshot"):
+        log.info("GUDID changed: %s → %s", state.get("gudid_snapshot"), snapshot)
+        changed.append("gudid")
+    else:
+        log.info("GUDID unchanged: %s", snapshot)
 
     if changed:
         log.info("Changes detected — fetching: %s", ", ".join(changed))
@@ -227,7 +219,11 @@ def validate_gcs(**context):
 # ── Task 4 — Log summary ──────────────────────────────────────────────────────
 
 def log_summary(**context):
-    """Log total file count, total size, and per-source breakdown to Airflow."""
+    """Log zip count and size of the newest export folder per source, and the total.
+
+    Older export folders hold older versions of the same files, so they are not counted
+    (same rule as scripts/warehouse/common.pick_latest).
+    """
     from google.cloud import storage
     client = storage.Client()
     bucket = client.bucket(BUCKET)
@@ -243,24 +239,26 @@ def log_summary(**context):
     total_bytes = 0
 
     log.info("=" * 50)
-    log.info("GCS BUCKET SUMMARY: gs://%s/raw/", BUCKET)
+    log.info("GCS BUCKET SUMMARY: gs://%s/raw/ (newest export per source)", BUCKET)
     log.info("=" * 50)
 
     for source, prefix in sources.items():
-        blobs = list(client.list_blobs(BUCKET, prefix=prefix))
-        zips  = [b for b in blobs if b.name.endswith(".zip")]
-        size  = sum(b.size for b in zips)
+        zips = [b for b in client.list_blobs(BUCKET, prefix=prefix) if b.name.endswith(".zip")]
+        # raw/{endpoint}/{export_date or snapshot}/...: keep the newest folder only
+        newest = max((b.name.split("/")[2] for b in zips), default="-")
+        zips = [b for b in zips if b.name.split("/")[2] == newest]
+        size = sum(b.size for b in zips)
         total_files += len(zips)
         total_bytes += size
         log.info(
-            "%-15s %3d zip files   %6.1f MB",
-            source, len(zips), size / 1e6
+            "%-15s %-10s %3d zip files   %8.1f MB",
+            source, newest, len(zips), size / 1e6
         )
 
     log.info("-" * 50)
     log.info(
-        "%-15s %3d zip files   %6.1f MB",
-        "TOTAL", total_files, total_bytes / 1e6
+        "%-15s %-10s %3d zip files   %8.1f MB",
+        "TOTAL", "", total_files, total_bytes / 1e6
     )
     log.info("=" * 50)
 
