@@ -1,6 +1,6 @@
 # Vigil-MD test cases
 
-576 collected test cases across 25 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
+582 collected test cases across 25 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
 
 Files 9–18 cover the RAW → STAGING → PROD warehouse (`docs/WAREHOUSE_PLAN.md`), added by `docs/TESTS_PLAN.md`.
 
@@ -32,7 +32,7 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_convert.py` | zip → `{"payload": record}` NDJSON (openFDA JSON, GUDID XML) | 17 | pass |
 | `test_gudid_convert.py` | GUDID: download once, keep the zip, convert locally | 8 | pass |
 | `test_fetch_incremental.py` | `fetch_sources.py` incremental mode | 29 | pass |
-| `test_unzip_to_ndjson.py` | Unzip step and `--scope all` file list | 14 | pass |
+| `test_unzip_to_ndjson.py` | Unzip step and `--scope all` file list | 20 | pass |
 | `test_load_raw_to_bq.py` | Idempotent RAW load into BigQuery (mocked) | 23 | pass |
 | `test_schemas.py` | Warehouse table definitions | 24 | pass |
 | `test_build_staging.py` | STAGING SQL (flatten, cast, dedup) | 30 | pass |
@@ -220,6 +220,7 @@ The fakes model google-cloud-storage 3.14. A fake that did not hid a real bug (`
 | `test_apply_content_check` (3) | New / changed / unchanged → `skip_load` |
 | `test_process_entry_*` (3) | NDJSON written and entry filled; zip hash mismatch raises; unchanged content refreshes pointers, never `content_sha256` |
 | `test_main_changed_skips_entries_already_converted`, `test_main_all_writes_a_full_manifest`, `test_main_nothing_pending_writes_nothing` | `main()` scopes |
+| `test_drop_superseded_*` (4), `test_main_converts_only_the_newest_export_and_rewrites_the_older_manifest`, `test_main_deletes_a_manifest_whose_entries_are_all_superseded` | Several pending exports: only the newest version of a partition is converted; older entries leave their manifest (issue #15) |
 | `test_print_only_imports_no_gcp` | `--print-only` loads no `google.cloud` |
 
 ## 14. `test_load_raw_to_bq.py`: idempotent RAW load (fake_gcp, FakeBucket)

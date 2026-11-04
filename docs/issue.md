@@ -18,6 +18,7 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 | 12 | Fixed, confirmed on real GCS | Partial NDJSON on error |
 | 13 | Fixed 2026-11-03 (code and STAGING/PROD rows) | Manufacturer name normalization |
 | 14 | Open | DAG helpers copied in 3 files |
+| 15 | Fixed 2026-11-04 | Several pending exports of one partition |
 
 ---
 
@@ -45,7 +46,7 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Where:** `fetch_sources.py` full mode (blob path contains `export_date`).
 - **Problem:** MAUDE 2016–2026 downloaded again about once a week.
 - **Fix:** Step 2 added `--mode incremental`; Step 7 makes the daily DAG use it (test: `test_fetch_one_source_uses_incremental_mode`). Per partition: same fingerprint (records, size) in the openFDA manifest → server-side copy, no download; downloaded with the same zip SHA-256 → not loaded; same content hash as the partition state → `skip_load` in the unzip step.
-- **Still happens:** when openFDA rewrites the files (new fingerprint and new bytes), they are downloaded and loaded again even if no PROD row changes. 2026-11-02/03: two MAUDE re-exports, 497 files loaded (about 7 h), 0 PROD rows inserted or updated. The partition state is written only after a file's load commits; both exports were unzipped before either was loaded, so 32 files with unchanged content were not skipped.
+- **Still happens:** when openFDA rewrites the files (new fingerprint and new bytes), they are downloaded and loaded again even if no PROD row changes. 2026-11-02/03: two MAUDE re-exports, 497 files loaded (about 7 h), 0 PROD rows inserted or updated. The partition state is written only after a file's load commits; both exports were unzipped before either was loaded, so 32 files with unchanged content were not skipped. Since #15, only the newest export of each partition is loaded.
 
 ## 5. Parallel tasks can overwrite each other's state — Open (partly mitigated)
 
@@ -123,3 +124,11 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Where:** `run_script` and `alert_on_failure` in `dags/vigil_md_acquisition.py`, `dags/vigil_md_load.py` and `dags/vigil_md_full_load.py` (marked `# TODO: move to shared module`).
 - **Problem:** a fix in one copy (for example issue #8, live logs, or #10, the failed-task list in the alert) must be made three times.
 - **Fix idea:** one helper module that all three DAGs import. Check that the DAG processor's import path can reach it, and that `tests/dags/` still parse every file.
+
+## 15. Several pending exports of the same partition were all loaded — Fixed 2026-11-04
+
+- **Where:** `unzip_to_ndjson.py` (scope `changed`) and `load_raw_to_bq.py` read every pending manifest; `common.ndjson_path` has no export date.
+- **Problem:** when a load is delayed and openFDA publishes a new export, two versions of a partition are pending in one run. Both are converted to the same NDJSON path (the newer overwrites the older), and both are loaded.
+- **Effect (ingest date 2026-11-03, MAUDE exports 2026-11-02 and 2026-11-03):** 497 files loaded for 249 partitions (about 3.5 h extra). The 248 loads of 2026-11-02 entries read the 2026-11-03 NDJSON (249 NDJSON objects, all written before the load started), so their `_source_file` and `_content_sha256` in RAW and `load_log` name the 2026-11-02 zip, but the rows are 2026-11-03 data. `check_maude` failed `raw_to_staged_gap` (49.9%) because RAW held two copies, and the merge was skipped. Row counts matched in all 248 pairs, so the row-count check did not stop the load; with a different count it would have failed. STAGING and PROD were correct: the manual merge on 2026-11-04 inserted or updated 0 rows.
+- **Fix:** `common.drop_superseded`: the unzip step keeps only the newest `export_date` per partition across the pending manifests, removes older entries from their manifest, and deletes a manifest left empty. `load_raw_to_bq.py` then sees one version per partition. Tests: `test_drop_superseded_*`, `test_main_converts_only_the_newest_export_and_rewrites_the_older_manifest`, `test_main_deletes_a_manifest_whose_entries_are_all_superseded`.
+- **Left as is:** the RAW rows of those 248 loads (ingest date 2026-11-03) are already staged; deleting them is a BigQuery write and not needed. `ndjson_path` keeps no export date (one version per run now).
