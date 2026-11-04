@@ -461,7 +461,7 @@ Without this pool, the scheduler does not start any warehouse task.
 
 **2. Create the tables.** This is already done. A second run is safe (`exists_ok=True`). It raises if a table has columns different from `schemas.py`.
 ```bash
-docker compose exec -w /opt/airflow/Vigil-MD airflow-worker \
+docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker \
   python scripts/warehouse/create_tables.py --project vigil-md-1792696816
 ```
 
@@ -535,7 +535,7 @@ docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
 | Prod looks wrong for a source | Trigger `vigil_md_full_load` with `{"sources": ["<source>"], "rebuild_prod": true}`. This replaces every prod row of that source from all staging history, in one transaction. |
 | GCS is missing raw files | Trigger `vigil_md_full_load` with `"refetch": true` for that source. This downloads the full history again. |
 | The MERGE raises "duplicate merge keys" | Nothing was written (rolled back). Usually `record_date` changed for a key; run the date-stability check and set `PRUNE_BY_DATE` to False for that source. |
-| A check failed, but the cause is known and STAGING is right (false alarm) | Read the check output first. Then merge by hand with the same script and transaction as `merge_*` (duplicate keys roll back), after `--print-only`: `docker compose exec -w /opt/airflow/Vigil-MD airflow-worker python scripts/warehouse/merge_prod.py --project vigil-md-1792696816 --source <source> --ingest-date <date>`. The DAG run stays failed. Example: MAUDE, 2026-11-04 (`docs/issue.md` #15). |
+| A check failed, but the cause is known and STAGING is right (false alarm) | Read the check output first. Then merge by hand with the same script and transaction as `merge_*` (duplicate keys roll back), after `--print-only`: `docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker python scripts/warehouse/merge_prod.py --project vigil-md-1792696816 --source <source> --ingest-date <date>`. The DAG run stays failed. Example: MAUDE, 2026-11-04 (`docs/issue.md` #15). |
 
 ### Open issues to keep in mind (`docs/issue.md`)
 

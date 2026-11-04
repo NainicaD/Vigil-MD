@@ -6,7 +6,7 @@ Files 9–18 cover the RAW → STAGING → PROD warehouse (`docs/WAREHOUSE_PLAN.
 
 ## How to run
 
-| Scope | Command (from the repo root) |
+| Scope | Command (from `Data-Pipeline/`) |
 |---|---|
 | Everything, including DAG tests | `~/.venvs/vigil-airflow/bin/python -m pytest tests` |
 | Without Airflow (DAG tests skip) | `~/.venvs/vigil-test/bin/python -m pytest tests` |
@@ -333,7 +333,7 @@ These need real BigQuery, so they are not tests (no real GCP in pytest). They we
 ## Known open issues
 
 1. **Null-typed Parquet column (unverified here):** on test-cases data, `gudid_flat.parquet` had `publish_date` typed `null`, which BigQuery probably can't load. If it recurs, the fix belongs in `flatten_to_parquet.py`: cast all-null columns to an explicit type.
-2. **Relative path in data-quality tests:** `test_data_quality.py` reads `data/interim` relative to the working directory, so it must run from the repo root.
+2. **Relative path in data-quality tests:** `test_data_quality.py` reads `data/interim` relative to the working directory, so it must run from `Data-Pipeline/`.
 
 ## Not covered
 
