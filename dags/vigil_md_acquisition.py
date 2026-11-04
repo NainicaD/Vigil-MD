@@ -49,6 +49,8 @@ LOAD_DAG_ID = "vigil_md_load"          # started by trigger_load
 
 if str(REPO) not in sys.path:          # for scripts.acquisition.gudid_release
     sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
+from vigil_helpers import alert_on_failure, run_script  # noqa: E402,F401  (shared, issue #14)
 
 default_args = {
     "owner":            "nainica",
@@ -58,25 +60,6 @@ default_args = {
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def run_script(script: str, *args: str) -> str:
-    """Run a repo script as a subprocess. Returns stdout. Raises on failure."""
-    cmd = [PYTHON, str(REPO / script)] + list(args)
-    log.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(
-        cmd, cwd=str(REPO),
-        capture_output=True, text=True
-    )
-    if result.stdout:
-        log.info(result.stdout)
-    if result.stderr:
-        log.warning(result.stderr)
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"{script} failed (exit {result.returncode})\n{result.stderr}"
-        )
-    return result.stdout
-
 
 def run_pytest(test_path: str, marker: str, env: dict[str, str] | None = None) -> None:
     """Run a pytest file as a subprocess. Raises on failure, skips, or no tests.
@@ -262,71 +245,6 @@ def log_summary(**context):
     )
     log.info("=" * 50)
 
-
-
-# ── Task 5 — Alert on failure ─────────────────────────────────────────────────
-
-def build_failure_message(dag_id: str, run_id: str, failed_task_ids: list[str],
-                          url: str) -> tuple[str, str]:
-    """Build the email subject and HTML body. Pure function, easy to test."""
-    items = "".join(f"<li>{t}</li>" for t in failed_task_ids) or \
-        "<li>unknown (see Airflow UI)</li>"
-    subject = f"[Vigil-MD] FAILED: {dag_id}"
-    html = (
-        f"<p>DAG <b>{dag_id}</b> failed.</p>"
-        f"<p>Run: <code>{run_id}</code></p>"
-        f"<p>Failed tasks:</p><ul>{items}</ul>"
-        f'<p><a href="{url}">Open in Airflow</a></p>'
-    )
-    return subject, html
-
-
-def alert_on_failure(**context):
-    """Runs when any upstream task fails. Sends email alert."""
-    import smtplib
-    from email.mime.text import MIMEText
-
-    ti = context["ti"]
-    dag_run = context.get("dag_run")
-    run_id = dag_run.run_id if dag_run else "unknown"
-
-    url = (f"{os.environ.get('VIGIL_AIRFLOW_URL', 'http://localhost:8080')}"
-           f"/dags/{ti.dag_id}/grid")
-
-    log.error("PIPELINE FAILURE in run %s", run_id)
-
-    to = os.environ.get("VIGIL_ALERT_EMAIL_TO")
-    smtp_user = os.environ.get("AIRFLOW__SMTP__SMTP_USER")
-    smtp_password = os.environ.get("AIRFLOW__SMTP__SMTP_PASSWORD")
-
-    if not to:
-        log.warning("VIGIL_ALERT_EMAIL_TO not set, skipping email")
-        return
-    if not smtp_user or not smtp_password:
-        log.warning("SMTP credentials not set, skipping email")
-        return
-
-    subject = f"[Vigil-MD] FAILED: {ti.dag_id}"
-    html = (
-        f"<p>DAG <b>{ti.dag_id}</b> failed.</p>"
-        f"<p>Run: <code>{run_id}</code></p>"
-        f'<p><a href="{url}">Open in Airflow</a></p>'
-    )
-
-    msg = MIMEText(html, "html")
-    msg["Subject"] = subject
-    msg["From"] = smtp_user
-    msg["To"] = to
-
-    try:
-        with smtplib.SMTP("smtp.gmail.com", 587) as s:
-            s.ehlo()
-            s.starttls()
-            s.login(smtp_user, smtp_password)
-            s.send_message(msg)
-        log.info("Alert email sent to %s", to)
-    except Exception:
-        log.exception("Failed to send alert email")
 
 # ── DAG ───────────────────────────────────────────────────────────────────────
 
