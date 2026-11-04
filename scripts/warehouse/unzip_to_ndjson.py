@@ -13,6 +13,10 @@ Content-hash check: the SHA-256 of the canonical records is compared with
 the partition state. Same hash → the entry is marked skip_load (nothing to
 load, even if the export path is new).
 
+Several pending exports (scope changed): only the newest export_date of each
+partition is kept; older entries are removed from their manifest, and a manifest
+left empty is deleted. Both versions would write the same NDJSON path.
+
 Usage:
     # Daily: files listed in manifests/pending/{source}/ by fetch_sources.py
     python scripts/warehouse/unzip_to_ndjson.py \
@@ -139,6 +143,7 @@ def main() -> None:
     from google.cloud import storage
     bucket = storage.Client().bucket(args.bucket)
     part_state = common.load_partition_state(bucket, args.source) or {}
+    dropped: list[dict] = []
 
     if args.scope == "all":
         entries = common.list_all_latest(bucket, args.source)
@@ -152,6 +157,21 @@ def main() -> None:
         if not manifests:
             log.info("%s: nothing pending", args.source)
             return
+        # Several exports pending (a delayed load): only the newest version of each
+        # partition is converted and loaded (docs/issue.md #15)
+        sizes = {name: len(entries) for name, entries in manifests}
+        manifests, dropped = common.drop_superseded(manifests)
+        for e in dropped:
+            log.info("  superseded by a newer export, not loaded: %s", e["gcs_path"])
+        for name, entries in manifests:
+            if len(entries) == sizes[name]:
+                continue
+            if entries:
+                common.write_pending(bucket, name, entries)
+            else:
+                bucket.blob(name).delete()
+                log.info("  deleted %s (every entry superseded)", name)
+        manifests = [(name, entries) for name, entries in manifests if entries]
 
     to_load = skipped = done_before = 0
     for blob_name, entries in manifests:
@@ -171,7 +191,7 @@ def main() -> None:
         common.save_partition_state(bucket, args.source, part_state)
 
     print(f"\n=== {args.source}: {to_load} to load, {skipped} unchanged (skip_load), "
-          f"{done_before} already converted ===")
+          f"{done_before} already converted, {len(dropped)} superseded ===")
 
 
 if __name__ == "__main__":
