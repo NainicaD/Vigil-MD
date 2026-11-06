@@ -1,0 +1,19 @@
+{
+  "run_at": "2026-11-06 13:40 UTC",
+  "project": "vigil-md-1792696816",
+  "max_gb": 5.0,
+  "bytes": {
+    "08_udi_link_agreement/crosstab": {
+      "estimated": 1426042322,
+      "processed": 1426042322
+    },
+    "08_udi_link_agreement/conflict_examples": {
+      "estimated": 2467706918,
+      "processed": 2467706918
+    },
+    "14_no_udi_pool/main": {
+      "estimated": 1231913933,
+      "processed": 1231913933
+    }
+  }
+}
