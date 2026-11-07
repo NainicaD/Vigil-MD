@@ -55,3 +55,17 @@ def identifier_match(maude_ids, gudid_ids):
     token = len(maude_keys & gudid_words) > 0 or len(gudid_keys & maude_words) > 0
 
     return int(exact), int(token and not exact)
+
+
+def raw_values(ids):
+    """Trimmed, uppercased raw identifiers, skipping missing values and placeholders."""
+    values = set()
+    for v in ids:
+        if normalize_key(v) is not None:
+            values.add(str(v).strip().upper())
+    return values
+
+
+def raw_identifier_equal(maude_ids, gudid_ids):
+    """1 if any identifier is equal BEFORE removing - _ . /  (guards E2 collisions)."""
+    return int(len(raw_values(maude_ids) & raw_values(gudid_ids)) > 0)

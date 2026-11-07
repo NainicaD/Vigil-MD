@@ -1,4 +1,4 @@
-from features import normalize_key, identifier_match
+from features import normalize_key, identifier_match, raw_identifier_equal
 
 
 def test_formatting_differences_match():  # E2
@@ -20,7 +20,7 @@ def test_empty_short_or_nan_is_missing():
 
 
 def test_hyphen_collision_is_a_known_risk():  # E2 exception
-    # different devices that collapse to one key; the raw-equality flag (step 3) guards this
+    # different devices that collapse to one key; the raw-equality flag guards this
     assert normalize_key("142-200") == normalize_key("14-2200")
 
 
@@ -47,3 +47,21 @@ def test_suffix_variant_is_not_a_match():  # E3
 
 def test_known_gap_gf_uct180():  # E2 example the rule does not cover (flagged to Hitika)
     assert identifier_match(["GF-UCT180", None], ["OLYMPUS GF TYPE UCT180", None]) == (0, 0)
+
+
+def test_raw_equal_same_text():
+    assert raw_identifier_equal(["IP-200", None], ["IP-200", None]) == 1
+
+
+def test_raw_equal_ignores_case():
+    assert raw_identifier_equal(["cl2078-blue", None], [None, "CL2078-BLUE"]) == 1
+
+
+def test_sontec_collision_is_flagged():  # E2 exception
+    # keys match, raw text does not: the model gets a warning sign
+    assert identifier_match(["142-200", None], ["14-2200", None]) == (1, 0)
+    assert raw_identifier_equal(["142-200", None], ["14-2200", None]) == 0
+
+
+def test_raw_equal_ignores_placeholders():  # E6
+    assert raw_identifier_equal(["NA", None], ["NA", None]) == 0
