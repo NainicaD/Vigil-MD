@@ -259,7 +259,7 @@ Built by [`scripts/warehouse/build_maude_events.py`](scripts/warehouse/build_mau
 
 - **One RAW scan per ingest date** (about 49 GB for a full MAUDE export) fills staging; the two prod tables are built from staging.
 - **Each report's rows are replaced**: delete the batch's reports, insert their new rows, roll back on a duplicate key, in one transaction.
-- **`maude_text` is filtered** by [`maude_events_config.py`](scripts/warehouse/maude_events_config.py): default `Description of Event or Problem`, `Death` and `Injury`, 2016–2026. Texts are trimmed, control characters removed, empty texts dropped, one row per (`mdr_report_key`, `mdr_text_key`). openFDA has two text types: `Description of Event or Problem` and `Additional Manufacturer Narrative`.
+- **`maude_text` is filtered** by [`maude_events_config.py`](scripts/warehouse/maude_events_config.py): default `Description of Event or Problem`; `Death`, `Injury` and `Malfunction`; 2016–2026. Texts are trimmed, control characters removed, empty texts dropped, one row per (`mdr_report_key`, `mdr_text_key`). openFDA has two text types: `Description of Event or Problem` and `Additional Manufacturer Narrative`.
 - **Cost guard:** every step is dry-run first and stops above `--max-gb` (defaults: staging 60, problems 10, text 40; a full MAUDE export scans about 49, 3 and 32 GB); the job also gets `maximum_bytes_billed`.
 - **Staging expires after 14 days**, so full text does not pile up. Within that time a changed text filter can be applied again from staging (`--step text`); later it needs the staging step again (one RAW scan).
 
@@ -581,6 +581,10 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ---
 
 ## Changes
+
+### 2026-11-07 — MAUDE narratives for Malfunction reports
+
+- **`maude_text` now includes Malfunction reports** (team decision), so the chatbot can describe malfunctions without harm too: 24,397,943 texts from 20,897,284 reports on the 2026-11-03 export (before: 9,227,647 texts, Death and Injury only). `Other`, `No answer provided` and reports without an event type stay out.
 
 ### 2026-11-07 — MAUDE event tables
 

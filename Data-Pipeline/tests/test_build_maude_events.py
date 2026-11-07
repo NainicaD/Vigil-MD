@@ -134,7 +134,7 @@ def test_text_filter_all_drops_the_condition():
 
 def test_default_text_filter():
     assert E.TEXT_FILTER == {"text_types": ["Description of Event or Problem"],
-                             "event_types": ["Death", "Injury"],
+                             "event_types": ["Death", "Injury", "Malfunction"],
                              "from_year": 2016, "to_year": 2026}
 
 
@@ -263,7 +263,7 @@ def test_text_step_sends_the_filter_as_parameters(bq, monkeypatch):
     run_main(monkeypatch, "--ingest-date", "2026-11-03", "--step", "text", "--from-year", "2020")
     arrays = {c.args[0]: c.args[2] for c in bq.bigquery.ArrayQueryParameter.call_args_list}
     assert arrays == {"text_types": ["Description of Event or Problem"],
-                      "event_types": ["Death", "Injury"]}
+                      "event_types": ["Death", "Injury", "Malfunction"]}
     scalars = [c.args for c in bq.bigquery.ScalarQueryParameter.call_args_list]
     assert ("from_date", "DATE", "2020-01-01") in scalars and ("to_date", "DATE", "2026-12-31") in scalars
 
