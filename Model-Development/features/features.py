@@ -197,3 +197,67 @@ def suffix_conflict(maude_ids, gudid_ids, gudid_labeler, labeler_keys):
                     prefix = True
 
     return int(conflict), int(prefix and not conflict)
+
+
+# fixed column order, used by every track in training and serving
+FEATURE_NAMES = [
+    "id_exact",
+    "id_token_only",
+    "raw_identifier_equal",
+    "mfr_equal",
+    "mfr_alias",
+    "id_and_mfr",
+    "model_key_di_count",
+    "model_key_distinctive",
+    "conflicting_sibling",
+    "prefix_only",
+    "product_code_match",
+    "maude_has_identifier",
+]
+
+
+def product_code_match(maude_code, gudid_code):
+    """1 if equal, 0 if different, None if either is missing (E8: soft evidence)."""
+    m = clean_name(maude_code)
+    g = clean_name(gudid_code)
+    if m is None or g is None:
+        return None
+    return int(m == g)
+
+
+def make_features(pair, aliases, di_counts, labeler_keys):
+    """Turn one MAUDE-GUDID pair into the shared feature row. Every track uses this.
+
+    pair: dict with maude_model, maude_catalog, maude_manufacturer, maude_product_code,
+          gudid_model, gudid_catalog, gudid_labeler, gudid_product_code
+    """
+    maude_ids = [pair.get("maude_model"), pair.get("maude_catalog")]
+    gudid_ids = [pair.get("gudid_model"), pair.get("gudid_catalog")]
+    labeler = pair.get("gudid_labeler")
+
+    id_exact, id_token_only = identifier_match(maude_ids, gudid_ids)
+    mfr_equal, mfr_alias = manufacturer_match(pair.get("maude_manufacturer"), labeler, aliases)
+    conflict, prefix_only = suffix_conflict(maude_ids, gudid_ids, labeler, labeler_keys)
+
+    # feature cross from the plan: identifier AND manufacturer both agree
+    id_and_mfr = int(id_exact == 1 and (mfr_equal == 1 or mfr_alias == 1))
+
+    maude_keys = [normalize_key(v) for v in maude_ids]
+    has_identifier = int(any(k is not None for k in maude_keys))
+
+    return {
+        "id_exact": id_exact,
+        "id_token_only": id_token_only,
+        "raw_identifier_equal": raw_identifier_equal(maude_ids, gudid_ids),
+        "mfr_equal": mfr_equal,
+        "mfr_alias": mfr_alias,
+        "id_and_mfr": id_and_mfr,
+        "model_key_di_count": model_key_di_count(labeler, pair.get("gudid_model"), di_counts),
+        "model_key_distinctive": is_distinctive(labeler, pair.get("gudid_model"), di_counts),
+        "conflicting_sibling": conflict,
+        "prefix_only": prefix_only,
+        "product_code_match": product_code_match(
+            pair.get("maude_product_code"), pair.get("gudid_product_code")
+        ),
+        "maude_has_identifier": has_identifier,
+    }

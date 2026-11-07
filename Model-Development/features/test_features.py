@@ -3,6 +3,7 @@ from features import (
     build_alias_table, manufacturer_match,
     build_di_counts, model_key_di_count, is_distinctive,
     build_labeler_keys, suffix_conflict,
+    FEATURE_NAMES, make_features,
 )
 
 def test_formatting_differences_match():  # E2
@@ -168,3 +169,52 @@ def test_unrelated_and_exact_are_not_suffix_variants():
 def test_suffix_longer_than_3_is_ignored():
     keys = make_keys([("Globus", "GP200", "DI1")])
     assert suffix_conflict(["GP200", None], ["GP200ABCD", None], "Globus", keys) == (0, 0)
+
+def lookups():
+    """Helper: small fake GUDID lookups shared by the make_features tests."""
+    gudid_rows = [
+        ("st. jude medical", "1006402", "DI1"),
+        ("globus", "GP200", "DI2"),
+        ("globus", "GP200S", "DI3"),
+    ]
+    di_counts = build_di_counts(gudid_rows)
+    aliases = {("abbott medical", "st. jude medical")}
+    return aliases, di_counts, build_labeler_keys(di_counts)
+
+
+def test_make_features_true_match_via_alias_and_catalog():  # E5 + E7
+    pair = {
+        "maude_model": "NA", "maude_catalog": "1006402",
+        "maude_manufacturer": "abbott medical", "maude_product_code": "LWS",
+        "gudid_model": "1006402", "gudid_catalog": None,
+        "gudid_labeler": "st. jude medical", "gudid_product_code": "LWS",
+    }
+    f = make_features(pair, *lookups())
+    assert f["id_exact"] == 1
+    assert f["mfr_alias"] == 1
+    assert f["id_and_mfr"] == 1
+    assert f["model_key_distinctive"] == 1
+    assert f["product_code_match"] == 1
+    assert f["conflicting_sibling"] == 0
+
+
+def test_make_features_suffix_conflict():  # E3
+    pair = {
+        "maude_model": "GP200S", "maude_manufacturer": "globus",
+        "gudid_model": "GP200", "gudid_labeler": "globus",
+    }
+    f = make_features(pair, *lookups())
+    assert f["id_exact"] == 0
+    assert f["conflicting_sibling"] == 1
+
+
+def test_make_features_missing_everything():  # E6
+    f = make_features({}, *lookups())
+    assert f["maude_has_identifier"] == 0
+    assert f["product_code_match"] is None   # unknown, not "disagree"
+    assert f["id_exact"] == 0
+
+
+def test_feature_names_match_output():  # same columns for every track
+    f = make_features({}, *lookups())
+    assert list(f.keys()) == FEATURE_NAMES
