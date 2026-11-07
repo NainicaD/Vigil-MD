@@ -21,6 +21,11 @@ DAGS = ROOT / "dags"
 SOURCES = ["enforcement", "recall", "maude", "gudid"]
 STEPS = ["unzip", "load_raw", "staging", "merge"]
 LOAD_DAG_STEPS = ["unzip", "load_raw", "staging", "validate", "check", "merge"]
+EVENT_STEPS = ["events_staging", "events_problems", "events_text"]     # MAUDE only, after merge
+
+
+def chain_steps(source):
+    return LOAD_DAG_STEPS + (EVENT_STEPS if source == "maude" else [])
 
 
 @pytest.fixture(scope="module")
@@ -194,7 +199,7 @@ def run_print_only(args):
                           capture_output=True, text=True)
 
 
-@pytest.mark.parametrize("step", STEPS)
+@pytest.mark.parametrize("step", STEPS + EVENT_STEPS)
 def test_warehouse_args_parse(load, step):
     args = load.warehouse_args(step, "maude", "2026-10-25")
     r = run_print_only(args)
@@ -203,7 +208,7 @@ def test_warehouse_args_parse(load, step):
         assert args[args.index("--scope") + 1] == "changed"
 
 
-@pytest.mark.parametrize("step, rebuild", [(s, False) for s in STEPS] + [("merge", True)])
+@pytest.mark.parametrize("step, rebuild", [(s, False) for s in STEPS + EVENT_STEPS] + [("merge", True)])
 def test_full_load_args_parse(full, step, rebuild):
     args = full.full_load_args(step, "maude", "2026-10-25", rebuild)
     r = run_print_only(args)
@@ -232,7 +237,7 @@ def test_load_dag_is_triggered_only(dagbag):
 @pytest.mark.parametrize("source", SOURCES)
 def test_load_dag_chain(dagbag, source):
     t = tasks(dagbag.get_dag("vigil_md_load"))
-    chain = [f"load.{step}_{source}" for step in LOAD_DAG_STEPS]
+    chain = [f"load.{step}_{source}" for step in chain_steps(source)]
     assert t[chain[0]].upstream_task_ids == set()          # chains start the run
     for up, down in zip(chain, chain[1:]):
         assert t[down].upstream_task_ids == {up}
@@ -280,7 +285,7 @@ def test_full_load_is_manual_with_params(dagbag):
 def test_full_load_chain(dagbag, source):
     t = tasks(dagbag.get_dag("vigil_md_full_load"))
     assert t["guard_no_acquisition_run"].downstream_task_ids == {"refetch", "alert_on_failure"}
-    chain = [f"load.{step}_{source}" for step in LOAD_DAG_STEPS]
+    chain = [f"load.{step}_{source}" for step in chain_steps(source)]
     assert t[chain[0]].upstream_task_ids == {"refetch"}
     for up, down in zip(chain, chain[1:]):
         assert t[down].upstream_task_ids == {up}
@@ -363,7 +368,8 @@ def test_full_load_check_args(full):
 PRIORITY = {"enforcement": 4, "recall": 3, "gudid": 2, "maude": 1}
 EXPECTED_POOL = {"unzip": "vigil_upload", "validate": "default_pool", "check": "default_pool",
                  "load_raw": "vigil_warehouse", "staging": "vigil_warehouse",
-                 "merge": "vigil_warehouse"}
+                 "merge": "vigil_warehouse", "events_staging": "vigil_warehouse",
+                 "events_problems": "vigil_warehouse", "events_text": "vigil_warehouse"}
 
 
 def _rule_name(task):
@@ -375,7 +381,7 @@ def _rule_name(task):
 def test_pools_and_priorities(dagbag, dag_id):
     t = tasks(dagbag.get_dag(dag_id))
     for source in SOURCES:
-        for step in LOAD_DAG_STEPS:
+        for step in chain_steps(source):
             task = t[f"load.{step}_{source}"]
             assert task.pool == EXPECTED_POOL[step], task.task_id
             assert task.priority_weight == PRIORITY[source], task.task_id
@@ -407,6 +413,24 @@ def test_effective_priorities_finish_small_sources_first(dagbag, dag_id):
     assert w("merge_recall") > w("load_raw_gudid")
 
 
+
+
+@pytest.mark.parametrize("dag_id", ["vigil_md_load", "vigil_md_full_load"])
+def test_event_steps_only_in_the_maude_chain(dagbag, dag_id):
+    ids = set(tasks(dagbag.get_dag(dag_id)))
+    for source in SOURCES:
+        present = {f"load.{e}_{source}" in ids for e in EVENT_STEPS}
+        assert present == {source == "maude"}, source
+    t = tasks(dagbag.get_dag(dag_id))
+    assert t["load.events_staging_maude"].upstream_task_ids == {"load.merge_maude"}
+
+
+def test_event_step_args(load, full):
+    for mod, args in ((load, load.warehouse_args("events_text", "maude", "2026-11-03")),
+                      (full, full.full_load_args("events_text", "maude", "2026-11-03"))):
+        assert args[0] == "scripts/warehouse/build_maude_events.py", mod
+        assert args[args.index("--step") + 1] == "text"
+        assert args[args.index("--ingest-date") + 1] == "2026-11-03"
 
 
 def test_trigger_load_date_works_without_logical_date():

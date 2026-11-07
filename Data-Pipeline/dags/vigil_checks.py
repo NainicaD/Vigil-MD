@@ -66,3 +66,22 @@ def pool_for(step: str) -> str:
         return READ_ONLY_POOL
     return WAREHOUSE_POOL
 
+
+# ── MAUDE event tables (problem terms, narrative text) ────────────────────────
+# Three extra steps at the end of the MAUDE chain, after merge_maude, in both
+# warehouse DAGs: build_maude_events.py --step staging | problems | text.
+# They write BigQuery, so they use the vigil_warehouse pool (pool_for).
+EVENT_STEPS = ["events_staging", "events_problems", "events_text"]
+EVENT_SOURCE = "maude"
+EVENTS_SCRIPT = "scripts/warehouse/build_maude_events.py"
+
+
+def steps_for(source: str, steps: list[str]) -> list[str]:
+    """The warehouse steps of one source's chain. Pure function."""
+    return steps + (EVENT_STEPS if source == EVENT_SOURCE else [])
+
+
+def events_args(step: str, project: str, ingest_date: str) -> list[str]:
+    """CLI args for one MAUDE event step. Pure function."""
+    return [EVENTS_SCRIPT, "--project", project, "--ingest-date", ingest_date,
+            "--step", step.removeprefix("events_")]
