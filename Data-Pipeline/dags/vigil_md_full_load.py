@@ -17,7 +17,9 @@ Tasks:
                                 --mode full → staging → validate → check → merge;
                                 MAUDE then: events_staging → events_problems →
                                 events_text (build_maude_events.py)
-  4. alert_on_failure         — triggered only if any task fails
+  4. build_summaries          — after every chain: rebuild the daily summary tables
+                                (build_summaries.py, always: a full load changes the sources)
+  5. alert_on_failure         — triggered only if any task fails
 
 Every task that writes GCS state or BigQuery uses the 1-slot vigil_warehouse
 pool, shared with vigil_md_acquisition.
@@ -35,8 +37,8 @@ from airflow.sdk.exceptions import AirflowSkipException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    CHECK_SCRIPTS, EVENT_STEPS, SOURCE_PRIORITY, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
-    DataCheckFailed, events_args, pool_for, steps_for, warn_only)
+    CHECK_SCRIPTS, EVENT_STEPS, SOURCE_PRIORITY, SUMMARY_TASK, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
+    DataCheckFailed, events_args, pool_for, steps_for, summary_args, warn_only)
 from vigil_helpers import alert_on_failure, run_script  # noqa: E402,F401  (shared, issue #14)
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.task.trigger_rule import TriggerRule
@@ -157,6 +159,12 @@ def run_load_step(step: str, source: str, **context):
     log.info("%s %s completed%s", step, source, " (rebuild)" if rebuild else "")
 
 
+def build_summaries(**context):
+    """Rebuild the daily summary tables after a full load."""
+    run_script(*summary_args(PROJECT, if_changed=False))
+    log.info("summary tables rebuilt")
+
+
 # ── DAG ───────────────────────────────────────────────────────────────────────
 
 with DAG(
@@ -214,5 +222,13 @@ with DAG(
         trigger_rule=TriggerRule.ONE_FAILED,
     )
 
+    summaries = PythonOperator(
+        task_id=SUMMARY_TASK,
+        python_callable=build_summaries,
+        trigger_rule=TriggerRule.ALL_DONE,
+        pool=WAREHOUSE_POOL,
+    )
+
     guard >> fetch
-    [guard, fetch, load_group] >> alert
+    load_group >> summaries
+    [guard, fetch, load_group, summaries] >> alert
