@@ -12,12 +12,15 @@ import pyarrow.parquet as pq
 import pytest
 
 from scripts.acquisition.load_interim_to_bq import SOURCES
+from scripts.warehouse.maude_events_config import TEXT_FILTER
 
 INTERIM = Path(__file__).resolve().parents[1] / "data" / "interim"
 
 FLAT = {s: INTERIM / f"{s}_flat.parquet" for s in SOURCES}
 LINKS = INTERIM / "links_maude_gudid.parquet"
-ALL_FILES = {**FLAT, "links_maude_gudid": LINKS}
+EVENTS = {n: INTERIM / f"{n}.parquet" for n in ("maude_problems", "maude_text")}
+ALL_FILES = {**FLAT, "links_maude_gudid": LINKS, **EVENTS}
+ID_COLUMN = {"maude_problems": "mdr_report_key", "maude_text": "mdr_report_key"}
 
 REQUIRED_COLUMNS = {
     "enforcement": {"source", "source_record_id", "link_key", "manufacturer_name_raw",
@@ -27,6 +30,10 @@ REQUIRED_COLUMNS = {
     "maude": {"source", "source_record_id", "manufacturer_name_norm", "udi_di", "raw_json"},
     "gudid": {"source", "source_record_id", "udi_di", "manufacturer_name_norm", "raw_json"},
     "links_maude_gudid": {"source_record_id", "udi_di"},
+    "maude_problems": {"mdr_report_key", "problem_type", "problem_term", "event_type",
+                       "date_received"},
+    "maude_text": {"mdr_report_key", "mdr_text_key", "text_type_code", "event_type",
+                   "date_received", "text"},
 }
 
 BQ_COLUMN_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,299}$")
@@ -109,11 +116,12 @@ def test_required_columns_present(table):
     assert not missing, f"{name}: missing required columns {missing}"
 
 
-def test_source_record_id_never_null_or_empty(table):
+def test_record_id_never_null_or_empty(table):
     name, _, t = table
-    ids = t.column("source_record_id").to_pylist()
+    column = ID_COLUMN.get(name, "source_record_id")
+    ids = t.column(column).to_pylist()
     bad = [i for i, v in enumerate(ids) if v is None or str(v).strip() == ""]
-    assert not bad, f"{name}: null/empty source_record_id at rows {bad[:10]}"
+    assert not bad, f"{name}: null/empty {column} at rows {bad[:10]}"
 
 
 # ── content contract ────────────────────────────────────────────────────────
@@ -170,3 +178,40 @@ def test_links_count_is_reasonable():
         pytest.skip("not generated")
     n = pq.read_metadata(LINKS).num_rows
     assert n <= 500, f"Unexpectedly many links: {n}"
+
+
+# ── MAUDE event tables (maude_problems, maude_text) ─────────────────────────
+
+def events(name):
+    if not EVENTS[name].exists():
+        pytest.skip("not generated")
+    return pq.read_table(EVENTS[name]).to_pylist()
+
+
+@pytest.mark.parametrize("name", sorted(EVENTS))
+def test_event_reports_exist_in_maude(name):
+    if not FLAT["maude"].exists():
+        pytest.skip("not generated")
+    maude = set(pq.read_table(FLAT["maude"], columns=["source_record_id"])
+                .column("source_record_id").to_pylist())
+    orphans = {r["mdr_report_key"] for r in events(name)} - maude
+    assert not orphans, f"{name}: report keys not in maude: {sorted(orphans)[:5]}"
+
+
+def test_problem_rows_are_clean_and_unique():
+    rows = events("maude_problems")
+    assert {r["problem_type"] for r in rows} <= {"device", "patient"}
+    assert all(r["problem_term"] and r["problem_term"].strip() == r["problem_term"] for r in rows)
+    keys = [(r["mdr_report_key"], r["problem_type"], r["problem_term"]) for r in rows]
+    assert len(keys) == len(set(keys)), "duplicate (report, type, term)"
+
+
+def test_text_rows_follow_the_filter_and_are_unique():
+    rows = events("maude_text")
+    assert all(r["text"] and r["text"].strip() == r["text"] for r in rows)
+    assert {r["text_type_code"] for r in rows} <= set(TEXT_FILTER["text_types"])
+    assert {r["event_type"] for r in rows} <= set(TEXT_FILTER["event_types"])
+    years = {int(r["date_received"][:4]) for r in rows}
+    assert all(TEXT_FILTER["from_year"] <= y <= TEXT_FILTER["to_year"] for y in years)
+    keys = [(r["mdr_report_key"], r["mdr_text_key"]) for r in rows]
+    assert len(keys) == len(set(keys)), "duplicate (report, mdr_text_key)"

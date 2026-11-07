@@ -21,44 +21,56 @@ stages:
       size: 19560092
     - path: scripts/preprocessing/flatten_to_parquet.py
       hash: md5
-      md5: 62ea3876d606f9a6c2a6034fb857a39a
-      size: 10774
+      md5: dedb303ec11b36cd25676392fe5eec0b
+      size: 15638
+    - path: scripts/warehouse/maude_events_config.py
+      hash: md5
+      md5: ba156830d85d95047d93b835ec9d7f6a
+      size: 944
     outs:
     - path: data/interim/enforcement_flat.parquet
       hash: md5
-      md5: f7ca0ee19c3e61df197e6aac9b35fb5b
-      size: 920816
+      md5: f42534c4bdcb33b1d80d525877f6f8ed
+      size: 913637
     - path: data/interim/gudid_flat.parquet
       hash: md5
-      md5: f58921cf6174b765ec620b55a0121860
-      size: 29430
+      md5: a270962ff97687152f8fc9ee63aa35c4
+      size: 29397
     - path: data/interim/maude_flat.parquet
       hash: md5
-      md5: 53cae2c70edbcd5c8101599f53fd1462
-      size: 198520
+      md5: 699df8572756882ff51e12677c9cb391
+      size: 197638
+    - path: data/interim/maude_problems.parquet
+      hash: md5
+      md5: 1aee5c7ba4e1ba489455382d880e3c50
+      size: 7023
+    - path: data/interim/maude_text.parquet
+      hash: md5
+      md5: c68f44f5b141806140db4d7f11b5d787
+      size: 10348
     - path: data/interim/recall_flat.parquet
       hash: md5
-      md5: 52640d64ca2f70289dc2148d623b2312
-      size: 9057441
+      md5: 7f8a2b6cee6d64ac1b6bee4b1e87e936
+      size: 9046042
   exact_linking:
     cmd: python scripts/matching/exact_linking.py
     deps:
     - path: data/interim/enforcement_flat.parquet
       hash: md5
-      md5: f7ca0ee19c3e61df197e6aac9b35fb5b
-      size: 920816
+      md5: f42534c4bdcb33b1d80d525877f6f8ed
+      size: 913637
     - path: data/interim/gudid_flat.parquet
       hash: md5
-      md5: f58921cf6174b765ec620b55a0121860
-      size: 29430
+      md5: a270962ff97687152f8fc9ee63aa35c4
+      size: 29397
     - path: data/interim/maude_flat.parquet
       hash: md5
-      md5: 53cae2c70edbcd5c8101599f53fd1462
-      size: 198520
+      md5: 699df8572756882ff51e12677c9cb391
+      size: 197638
     - path: data/interim/recall_flat.parquet
       hash: md5
-      md5: 52640d64ca2f70289dc2148d623b2312
-      size: 9057441
+      md5: 7f8a2b6cee6d64ac1b6bee4b1e87e936
+      size: 9046042
     - path: scripts/matching/exact_linking.py
       hash: md5
       md5: 48ec2e2d50919046b9ece2482a47d2be
@@ -70,31 +82,31 @@ stages:
       size: 238
     - path: data/interim/links_enforcement_recall.parquet
       hash: md5
-      md5: 2458ddca05c9bbb9f2a20b33f975e35a
-      size: 6378
+      md5: e98014504f4892331b60a3c307538fac
+      size: 6388
     - path: data/interim/links_maude_gudid.parquet
       hash: md5
-      md5: bd182e33de3fc30b4d70244447afc543
-      size: 10616
+      md5: 3c51b5ef6d925d38772730a84eb99bd8
+      size: 10613
   blocking:
     cmd: python scripts/matching/blocking.py
     deps:
     - path: data/interim/enforcement_flat.parquet
       hash: md5
-      md5: f7ca0ee19c3e61df197e6aac9b35fb5b
-      size: 920816
+      md5: f42534c4bdcb33b1d80d525877f6f8ed
+      size: 913637
     - path: data/interim/gudid_flat.parquet
       hash: md5
-      md5: f58921cf6174b765ec620b55a0121860
-      size: 29430
+      md5: a270962ff97687152f8fc9ee63aa35c4
+      size: 29397
     - path: data/interim/maude_flat.parquet
       hash: md5
-      md5: 53cae2c70edbcd5c8101599f53fd1462
-      size: 198520
+      md5: 699df8572756882ff51e12677c9cb391
+      size: 197638
     - path: data/interim/recall_flat.parquet
       hash: md5
-      md5: 52640d64ca2f70289dc2148d623b2312
-      size: 9057441
+      md5: 7f8a2b6cee6d64ac1b6bee4b1e87e936
+      size: 9046042
     - path: scripts/matching/blocking.py
       hash: md5
       md5: 438ba3a38fe5dc823f368b62fe41a3ec
@@ -106,5 +118,5 @@ stages:
       size: 333
     - path: data/interim/candidate_pairs.parquet
       hash: md5
-      md5: 83bfb3a3401af9c6b9ede6060b22ca4a
-      size: 144570
+      md5: 96fd665c04ddabe4bdd9f7aa74713b75
+      size: 155929

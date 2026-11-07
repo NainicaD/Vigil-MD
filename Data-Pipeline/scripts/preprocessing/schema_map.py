@@ -46,3 +46,24 @@ MAUDE_MAP = {
     "raw_json":         lambda r, d: r,
     # Note: expand one row per device in the device[] array
 }
+# MAUDE event tables, one-to-many per report (flatten_to_parquet.maude_problems /
+# maude_text; BigQuery: scripts/warehouse/build_maude_events.py).
+MAUDE_PROBLEMS_MAP = {
+    "mdr_report_key": lambda r, term: r.get("mdr_report_key"),
+    "problem_type":   lambda r, term: term[0],    # 'device' from product_problems,
+                                                  # 'patient' from patient[].patient_problems
+    "problem_term":   lambda r, term: term[1],    # one row per distinct term
+    "event_type":     lambda r, term: r.get("event_type"),
+    "date_received":  lambda r, term: r.get("date_received"),
+}
+
+MAUDE_TEXT_MAP = {                                # one row per mdr_text[] entry, filtered
+    "mdr_report_key":          lambda r, t: r.get("mdr_report_key"),
+    "mdr_text_key":            lambda r, t: t.get("mdr_text_key"),
+    "text_type_code":          lambda r, t: t.get("text_type_code"),
+    "patient_sequence_number": lambda r, t: t.get("patient_sequence_number"),
+    "event_type":              lambda r, t: r.get("event_type"),
+    "date_received":           lambda r, t: r.get("date_received"),
+    "date_report":             lambda r, t: r.get("date_report"),
+    "text":                    lambda r, t: t.get("text"),
+}

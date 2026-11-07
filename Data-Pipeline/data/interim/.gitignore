@@ -8,3 +8,5 @@
 /candidate_pairs.parquet
 /blocking_report.json
 /bias/
+/maude_problems.parquet
+/maude_text.parquet
