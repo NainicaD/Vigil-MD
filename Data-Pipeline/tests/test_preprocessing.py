@@ -10,6 +10,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scripts.preprocessing.flatten_to_parquet import (
+    clean_text,
+    maude_problems,
+    maude_text,
     normalize_manufacturer,
     normalize_date,
 )
@@ -139,3 +142,70 @@ class TestNormalizeDate:
 
     def test_invalid_format_returns_none(self):
         assert normalize_date("not-a-date") is None
+
+
+# ── MAUDE event tables ────────────────────────────────────────────────────────
+
+def report(key="1", event_type="Injury", received="20240105", **kw):
+    return {"mdr_report_key": key, "event_type": event_type, "date_received": received,
+            "date_report": "20240101", **kw}
+
+
+DESC = "Description of Event or Problem"
+MFR = "Additional Manufacturer Narrative"
+ALL = {"text_types": None, "event_types": None, "from_year": 2016, "to_year": 2026}
+
+
+class TestMaudeProblems:
+
+    def test_device_and_patient_terms_distinct_and_trimmed(self):
+        r = report(product_problems=["Break", " Break ", "", "Leak"],
+                   patient=[{"patient_problems": ["Pain", "Pain"]},
+                            {"patient_problems": ["Pain", "Burn"]}])
+        rows = maude_problems([r]).to_dict("records")
+        got = [(x["problem_type"], x["problem_term"]) for x in rows]
+        assert got == [("device", "Break"), ("device", "Leak"),
+                       ("patient", "Burn"), ("patient", "Pain")]
+        assert rows[0]["date_received"] == "2024-01-05" and rows[0]["event_type"] == "Injury"
+
+    def test_reports_without_terms_or_key_give_no_rows(self):
+        df = maude_problems([report(product_problems=None), report(key="", product_problems=["X"])])
+        assert df.empty and list(df.columns)[:3] == ["mdr_report_key", "problem_type", "problem_term"]
+
+
+class TestMaudeText:
+
+    def test_default_filter_keeps_event_descriptions_of_death_injury_malfunction(self):
+        texts = [{"mdr_text_key": "a", "text_type_code": DESC, "text": "It broke."},
+                 {"mdr_text_key": "b", "text_type_code": MFR, "text": "We checked."}]
+        recs = [report("1", "Injury", mdr_text=texts),
+                report("2", "Malfunction", mdr_text=texts),
+                report("3", "Other", mdr_text=texts),                         # not in the filter
+                report("4", "Death", received="20150101", mdr_text=texts)]    # before 2016
+        df = maude_text(recs)
+        assert df[["mdr_report_key", "mdr_text_key"]].values.tolist() == [["1", "a"], ["2", "a"]]
+
+    def test_empty_text_dropped_and_duplicate_keys_keep_the_longest(self):
+        texts = [{"mdr_text_key": "a", "text_type_code": DESC, "text": "short"},
+                 {"mdr_text_key": "a", "text_type_code": DESC, "text": "a longer text"},
+                 {"mdr_text_key": "b", "text_type_code": DESC, "text": "   "}]
+        df = maude_text([report(mdr_text=texts)], ALL)
+        assert df["text"].tolist() == ["a longer text"]
+
+    def test_no_filter_keeps_every_type(self):
+        texts = [{"mdr_text_key": "a", "text_type_code": DESC, "text": "x"},
+                 {"mdr_text_key": "b", "text_type_code": MFR, "text": "y"}]
+        assert len(maude_text([report(event_type="Malfunction", mdr_text=texts)], ALL)) == 2
+
+
+class TestCleanText:
+
+    def test_control_characters_removed_tab_and_newline_kept(self):
+        assert clean_text(" a\x00b\tc\nd ") == "ab\tc\nd"
+
+    def test_invalid_utf8_replaced(self):
+        assert clean_text("bad \ud83d end") == "bad ? end"
+
+    @pytest.mark.parametrize("value", [None, "", "   ", 5])
+    def test_empty_or_not_text_is_none(self, value):
+        assert clean_text(value) is None

@@ -122,7 +122,7 @@ Full design and decisions: [`docs/WAREHOUSE_PLAN.md`](docs/WAREHOUSE_PLAN.md).
 | DAG | Schedule | What it does |
 |---|---|---|
 | `vigil_md_acquisition` | daily 06:00 UTC | Checks the FDA manifests and fetches **only the sources that changed** to GCS. Validates GCS, logs a summary, then `trigger_load` starts `vigil_md_load` with the same date. |
-| `vigil_md_load` | none (triggered) | Per source: unzip → load RAW → build STAGING → **validate** → **check** → MERGE into PROD. A source with nothing pending does nothing. |
+| `vigil_md_load` | none (triggered) | Per source: unzip → load RAW → build STAGING → **validate** → **check** → MERGE into PROD. MAUDE then builds its [event tables](#maude-event-tables-problems-and-narrative-text) (problem terms, narrative text). A source with nothing pending does nothing. |
 | `vigil_md_full_load` | none (manual) | First load, backfill, rebuild or recovery: the same six steps per source. Params: `sources`, `refetch`, `rebuild_prod`. Refuses to run while a daily DAG has a run in progress. |
 
 ```
@@ -130,6 +130,7 @@ vigil_md_acquisition (daily)                                   vigil_md_load (tr
 check_manifest ─┬─ fetch.<changed sources> ─ validate_gcs ─ log_summary ─┐
                 ├─ (pending files only) ─────────────────────────────────┴─ trigger_load ──▶ load.<source>:
                 └─ no_update (nothing to do: no loading run)                  unzip → load_raw → staging → validate → check → merge
+                                                                              MAUDE only, after merge: events_staging → events_problems → events_text
 ```
 
 When does `vigil_md_load` run?
@@ -218,6 +219,8 @@ Defined in one place: [`scripts/warehouse/schemas.py`](scripts/warehouse/schemas
 | `vigil_md_prod.{enforcement,recall,maude}` | `_part_date` (MONTH) = `COALESCE(record_date, 1900-01-01)` | merge key | merge key | Upserted source of truth. `first_loaded_at`, `last_updated_at`. |
 | `vigil_md_prod.gudid` | none (its dates change) | `source_record_id` | `source_record_id` | Same as above. |
 | `vigil_md_ops.load_log` | none | `source` | — | One row per loaded file: `source_file`, `zip_sha256`, `content_sha256`, `ingest_date`, `row_count`, `mode`, `loaded_at`. |
+| `vigil_md_staging.maude_events_stg` | `_ingest_date` (DAY), filter required, **partitions expire after 14 days** | `mdr_report_key` | `mdr_report_key` | One row per MAUDE report: problem term arrays and the narrative text array. See below. |
+| `vigil_md_prod.maude_problems`, `vigil_md_prod.maude_text` | `_part_date` (MONTH) = `COALESCE(date_received, 1900-01-01)` | `mdr_report_key` | see below | MAUDE problem terms and narrative text, one-to-many per report. |
 
 `{source}` is `enforcement`, `recall`, `maude` or `gudid`.
 
@@ -243,6 +246,38 @@ Same names as `flatten_to_parquet.py`. `record_date` / `publish_date` are DATE. 
 | recall | `source`, `source_record_id`, `link_key`, `res_event_number`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `product_code`, `reason_text`, `scope_text`, `record_date`, `recall_status`, `root_cause`, `action` |
 | maude | `source`, `source_record_id`, `device_seq`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `model_number_raw`, `catalog_number`, `lot_number`, `udi_di`, `product_code`, `record_date`, `event_type`, `adverse_event_flag`, `report_number` |
 | gudid | `source`, `source_record_id`, `udi_di`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `model_number_raw`, `catalog_number`, `product_codes` (ARRAY), `device_record_status`, `publish_date`, `distribution_status` |
+
+### MAUDE event tables (problems and narrative text)
+
+Built by [`scripts/warehouse/build_maude_events.py`](scripts/warehouse/build_maude_events.py), three tasks after `merge_maude` in both warehouse DAGs. `mdr_report_key` joins to `maude.source_record_id`.
+
+| Table | One row per | Columns |
+|---|---|---|
+| `maude_events_stg` | report, per ingest date | `mdr_report_key`, `event_type`, `date_received`, `date_of_event`, `date_report`, `product_problems` (ARRAY), `patient_problems` (ARRAY), `mdr_text` (JSON), `record_hash` |
+| `maude_problems` | report × `problem_type` × `problem_term` | `mdr_report_key`, `problem_type` (`device` from `product_problems`, `patient` from `patient[].patient_problems`), `problem_term`, `event_type`, `date_received`, `last_updated_at` |
+| `maude_text` | narrative text entry | `mdr_report_key`, `mdr_text_key`, `text_type_code`, `patient_sequence_number`, `event_type`, `date_received`, `date_report`, `text`, `last_updated_at` |
+
+- **One RAW scan per ingest date** (about 49 GB for a full MAUDE export) fills staging; the two prod tables are built from staging.
+- **Each report's rows are replaced**: delete the batch's reports, insert their new rows, roll back on a duplicate key, in one transaction.
+- **`maude_text` is filtered** by [`maude_events_config.py`](scripts/warehouse/maude_events_config.py): default `Description of Event or Problem`; `Death`, `Injury` and `Malfunction`; 2016–2026. Texts are trimmed, control characters removed, empty texts dropped, one row per (`mdr_report_key`, `mdr_text_key`). openFDA has two text types: `Description of Event or Problem` and `Additional Manufacturer Narrative`.
+- **Cost guard:** every step is dry-run first and stops above `--max-gb` (defaults: staging 60, problems 10, text 40; a full MAUDE export scans about 49, 3 and 32 GB); the job also gets `maximum_bytes_billed`.
+- **Staging expires after 14 days**, so full text does not pile up. Within that time a changed text filter can be applied again from staging (`--step text`); later it needs the staging step again (one RAW scan).
+
+```bash
+python scripts/warehouse/build_maude_events.py --project vigil-md-1792696816 --ingest-date <date> --step staging --estimate-only
+python scripts/warehouse/build_maude_events.py --project vigil-md-1792696816 --ingest-date <date> --step text --count-only
+```
+
+```sql
+-- Top device problems for one product code, with how many reports were deaths or injuries
+SELECT p.problem_term, COUNT(DISTINCT p.mdr_report_key) AS reports,
+       COUNTIF(p.event_type IN ('Death', 'Injury')) AS death_or_injury
+FROM `vigil-md-1792696816.vigil_md_prod.maude_problems` AS p
+JOIN (SELECT DISTINCT source_record_id FROM `vigil-md-1792696816.vigil_md_prod.maude`
+      WHERE product_code = 'LZG') AS m ON m.source_record_id = p.mdr_report_key
+WHERE p.problem_type = 'device'
+GROUP BY p.problem_term ORDER BY reports DESC LIMIT 10;
+```
 
 ### Querying
 
@@ -546,6 +581,16 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ---
 
 ## Changes
+
+### 2026-11-07 — MAUDE narratives for Malfunction reports
+
+- **`maude_text` now includes Malfunction reports** (team decision), so the chatbot can describe malfunctions without harm too: 24,397,943 texts from 20,897,284 reports on the 2026-11-03 export (before: 9,227,647 texts, Death and Injury only). `Other`, `No answer provided` and reports without an event type stay out.
+
+### 2026-11-07 — MAUDE event tables
+
+- **New tables** for the chatbot: `vigil_md_staging.maude_events_stg` (partitions expire after 14 days), `vigil_md_prod.maude_problems` (device and patient problem terms) and `vigil_md_prod.maude_text` (narrative text, filtered). See [MAUDE event tables](#maude-event-tables-problems-and-narrative-text).
+- **DAGs:** three tasks at the end of the MAUDE chain in `vigil_md_load` and `vigil_md_full_load` (`events_staging`, `events_problems`, `events_text`).
+- **DVC samples:** the `flatten` stage also writes `data/interim/maude_problems.parquet` and `maude_text.parquet`, with data contract tests.
 
 ### 2026-11-04 — Repository layout: `Data-Pipeline/`
 

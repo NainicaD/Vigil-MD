@@ -5,10 +5,12 @@ Not scheduled. vigil_md_acquisition starts it with its last task
 conf {"ingest_date": "<acquisition ds>"}. See docs/WAREHOUSE_PLAN.md (Step 10).
 
 Tasks:
-  1. load.*            — per source: unzip → load_raw → staging → merge
-                         (--scope changed; pool vigil_warehouse, one BigQuery
-                         writer at a time). A source with nothing pending is a
-                         quick no-op.
+  1. load.*            — per source: unzip → load_raw → staging → validate →
+                         check → merge (--scope changed; pool vigil_warehouse,
+                         one BigQuery writer at a time). A source with nothing
+                         pending is a quick no-op. MAUDE then builds its event
+                         tables: events_staging → events_problems → events_text
+                         (build_maude_events.py).
   2. alert_on_failure  — triggered only if any task fails
 
 Manual trigger: set the ingest_date param (YYYY-MM-DD), or leave it empty to
@@ -28,8 +30,8 @@ from airflow.task.trigger_rule import TriggerRule
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    CHECK_SCRIPTS, SOURCE_PRIORITY, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
-    DataCheckFailed, pool_for, warn_only)
+    CHECK_SCRIPTS, EVENT_STEPS, SOURCE_PRIORITY, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
+    DataCheckFailed, events_args, pool_for, steps_for, warn_only)
 from vigil_helpers import alert_on_failure, run_script  # noqa: E402,F401  (shared, issue #14)
 
 log = logging.getLogger(__name__)
@@ -63,6 +65,8 @@ WAREHOUSE_STEPS = {
 def warehouse_args(step: str, source: str, ingest_date: str,
                    scope: str = "changed") -> list[str]:
     """CLI args for one warehouse script. Pure function."""
+    if step in EVENT_STEPS:
+        return events_args(step, PROJECT, ingest_date)
     script, takes_bucket, takes_scope = WAREHOUSE_STEPS[step]
     args = [script, "--source", source, "--ingest-date", ingest_date]
     if step != "unzip":
@@ -137,7 +141,7 @@ with DAG(
                     priority_weight=SOURCE_PRIORITY[source],
                     weight_rule=WEIGHT_RULE,
                 )
-                for step in WAREHOUSE_STEPS
+                for step in steps_for(source, list(WAREHOUSE_STEPS))
             ]
             for upstream, downstream in zip(chain, chain[1:]):
                 upstream >> downstream
