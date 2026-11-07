@@ -1,0 +1,131 @@
+"""Behaviour of scripts/same_device_features.py. Offline: no BigQuery. The golden fixture (H4) is separate."""
+import hashlib
+import re
+
+import pytest
+
+import same_device_features as f
+from same_device_features import DeviceSide, MatchContext, MatchKind
+
+
+def side(model=None, cat=None, mfr="acme", name=None, pcs=()):
+    return DeviceSide(mfr, name, model, cat, tuple(pcs))
+
+
+@pytest.mark.parametrize("raw,key", [("IP-200", "IP200"), ("ip 200", "IP200"), ("5925-040-12", "592504012"),
+                                     ("  a.b/c_d ", "ABCD"), (None, None), ("", "")])
+def test_identifier_key(raw, key):
+    assert f.identifier_key(raw) == key
+
+
+@pytest.mark.parametrize("raw", ["NA", "N/A", "NI", "UNKNOWN", "0000", "XXX", "?", "A", "", None, "n.a."])
+def test_placeholders_are_unusable(raw):
+    assert f.usable_key(raw) is None
+
+
+def test_nbsp_is_not_stripped_like_re2():
+    assert f.identifier_key("AB C") == "AB C"
+
+
+def test_raw_equal_guards_hyphen_collision():
+    assert f.identifier_key("142-200") == f.identifier_key("14-2200")
+    assert not f.raw_equal("142-200", "14-2200")
+    assert f.raw_equal(" IP-200", "IP-200 ") and not f.raw_equal("", "")
+
+
+def test_token_containment():
+    assert f.contains_as_token("OLYMPUS CV-190", "CV190")
+    assert not f.contains_as_token("OLYMPUS CV-1900", "CV190")
+    assert not f.contains_as_token(None, "CV190")
+
+
+@pytest.mark.parametrize("m,g,kind", [
+    (side("IP-200"), side("IP200"), MatchKind.SAME_MODEL_KEY),
+    (side("ABC123"), side("X1", "ABC123"), MatchKind.MAUDE_MODEL_EQ_GUDID_CATALOG),
+    (side("NA", "1006402"), side("1006402"), MatchKind.MAUDE_CATALOG_EQ_GUDID_MODEL),
+    (side("QQ1", "CAT55"), side("ZZ9", "CAT-55"), MatchKind.CATALOG_EQ_CATALOG),
+    (side("N/A"), side("GP200"), MatchKind.MAUDE_MODEL_MISSING_OR_PLACEHOLDER),
+    (side("GP200"), side(None), MatchKind.GUDID_MODEL_MISSING),
+    (side("GP200"), side("GP200S"), MatchKind.PREFIX_RELATED),
+    (side("GF-UCT180"), side("OLYMPUS GF TYPE UCT180 GFUCT180X"), MatchKind.CONTAINS),
+    (side("37711"), side("97714"), MatchKind.CONFLICT),
+])
+def test_identifier_match_follows_q08_order(m, g, kind):
+    assert f.identifier_match(m, g) is kind
+
+
+def test_na_equals_na_is_not_a_match():
+    assert f.identifier_match(side("NA"), side("NA")) is MatchKind.MAUDE_MODEL_MISSING_OR_PLACEHOLDER
+
+
+def test_conflicting_identifier_both_directions():
+    sib = frozenset({"GP200S"})
+    assert f.has_conflicting_identifier(side("GP200S"), side("GP200"), sib)
+    assert not f.has_conflicting_identifier(side("GP200S"), side("GP200S"), sib)
+    assert not f.has_conflicting_identifier(side("GP200S"), side("GP200SXXXX"), sib)  # 4 characters away
+    assert not f.has_conflicting_identifier(side("GP200S"), side("GP200"), frozenset())
+
+
+def test_distinctive_threshold():
+    assert f.is_distinctive(20) and not f.is_distinctive(21) and not f.is_distinctive(None)
+
+
+def test_pair_features_keys_are_exactly_the_contract():
+    ctx = MatchContext(frozenset({("a", "b")}), 3)
+    feats = f.pair_features(side("GP200", mfr="a", name="Infusion Pump Kit", pcs=["FRN"]),
+                            side("GP200", mfr="b", name="Pump", pcs=["FRN", "MEA"]), ctx)
+    assert tuple(feats) == f.FEATURE_COLUMNS and len(f.feature_vector(feats)) == len(f.FEATURE_COLUMNS)
+    assert feats["feat_labeler_alias_equal"] and not feats["feat_labeler_equal"]
+    assert feats["feat_product_code_agree"] is True and feats["feat_maude_name_has_kit_word"]
+    assert feats["feat_device_name_token_overlap"] == pytest.approx(1 / 3)
+    f.assert_no_leakage(feats)
+
+
+def test_feature_vector_rejects_unknown_and_missing():
+    with pytest.raises(KeyError):
+        f.feature_vector({"feat_match_kind": "x"})
+
+
+def test_name_leak_guard():
+    f.assert_no_leakage(f.FEATURE_COLUMNS)
+    with pytest.raises(f.LeakageError):
+        f.assert_no_leakage(["feat_ok", "udi_di"])
+
+
+def test_value_leak_guard_catches_derived_leaks():
+    di = "00812345678901"
+    f.assert_no_value_leakage({"feat_a": "same_model_key", "feat_b": 12, "feat_c": True}, di)
+    for leaked in (di, "x" + di, di[:10], int(di[:8])):
+        with pytest.raises(f.LeakageError):
+            f.assert_no_value_leakage({"feat_a": leaked}, di)
+    f.assert_no_value_leakage({"key_gudid_udi_di": di}, di)  # only feat_* columns are checked
+
+
+def test_split_and_pair_id_match_their_documented_formulas():
+    k = "acme|GP200"
+    assert f.split_bucket(k) == int(hashlib.sha256(b"v1|acme|GP200").hexdigest()[:8], 16) % 100
+    assert f.split_of(k) in ("train", "test")
+    assert f.pair_id("1", None, "D", "pos") == f.pair_id("1", None, "D", "pos") != f.pair_id("1", 0, "D", "pos")
+    assert f.pair_id("1", None, "D", "pos") == hashlib.sha256(b"1||D|pos").hexdigest()[:32]
+
+
+def test_split_is_roughly_20_percent():
+    n = sum(f.split_of(f"k{i}") == "test" for i in range(5000))
+    assert 0.17 < n / 5000 < 0.23
+
+
+def test_device_key_needs_an_identifier():
+    assert f.device_key(side("N/A", "CAT-9", mfr="acme")) == "acme|CAT9"
+    with pytest.raises(ValueError):
+        f.device_key(side("NA", None))
+
+
+def test_sql_match_kind_has_q08_labels_in_order():
+    sql = f.sql_match_kind("m", "g")
+    assert re.findall(r"(?:THEN|ELSE) '([a-z_]+)'", sql) == [k.value for k in f.MatchKind]
+
+
+def test_sql_emitters_carry_the_shared_constants():
+    assert f.STRIP_CHARS_RE in f.sql_identifier_key("x") and f.PLACEHOLDER_RE in f.sql_is_placeholder("k")
+    assert f"< {f.TEST_SPLIT_PCT}" in f.sql_split("k") and "'v1'" in f.sql_split("k")
+    assert "''" in f.sql_pair_id("a", "b", "c", "'pos'")  # NULL device_seq falls back to ''

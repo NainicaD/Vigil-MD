@@ -240,3 +240,6 @@ __marimo__/
 /*.ndjson
 # Per-user Claude Code settings
 .claude/settings.local.json
+# Airflow logs and data written at the repo root by docker compose
+/data/
+/logs/
