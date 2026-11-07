@@ -1,4 +1,4 @@
-"""Medical-advice guardrails around the question classifier.
+"""Medical-advice guardrails inside the query router.
 
 Strict rule: the chatbot never gives medical advice and never judges whether a device is
 safe. A model alone cannot guarantee that, so out_of_scope is decided in layers:

@@ -17,8 +17,8 @@ from pathlib import Path
 MODEL_DEV = Path(__file__).resolve().parents[2]          # Model-Development/
 DEFAULT_STORE = MODEL_DEV / "mlflow"
 WORKSTREAM = "chatbot"
-EXPERIMENT = "chatbot/question-classifier"
-REGISTERED_MODEL = "chatbot-question-classifier"
+EXPERIMENT = "chatbot/query-router"
+REGISTERED_MODEL = "chatbot-query-router"
 REQUIRED_TAGS = ("workstream", "git_commit", "git_dirty", "data_version", "author")
 
 

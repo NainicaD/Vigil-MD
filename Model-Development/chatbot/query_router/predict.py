@@ -1,13 +1,13 @@
 """The function the chatbot calls: question → labels, scores and a routing decision.
 
-    clf = QuestionClassifier.load("models/baseline")
+    clf = QueryRouter.load("models/baseline")
     clf.classify("How many deaths has the t:slim X2 had? Should I stop using it?")
     # {"labels": ["counts", "out_of_scope"], "scores": {...},
     #  "rule_hits": ["should_i", "stop_switch"], "out_of_scope": True,
     #  "run_queries": ["counts"], "refusal": "I can't give medical advice ...", "unclear": False}
 
 With the default policy (facts_with_refusal) the answer starts with the refusal text and
-then answers only the factual part. QuestionClassifier.load(dir, policy="strict") runs no
+then answers only the factual part. QueryRouter.load(dir, policy="strict") runs no
 query at all for out_of_scope questions.
 
 "unclear" is True when no label passes its threshold, no guardrail rule fires and the
@@ -24,12 +24,12 @@ from .guardrails import DEFAULT_POLICY, route
 from .labels import LABELS
 
 
-class QuestionClassifier:
+class QueryRouter:
     def __init__(self, pipe, thresholds: dict[str, float], policy: str = DEFAULT_POLICY):
         self.pipe, self.thresholds, self.policy = pipe, thresholds, policy
 
     @classmethod
-    def load(cls, model_dir: str | Path, policy: str = DEFAULT_POLICY) -> "QuestionClassifier":
+    def load(cls, model_dir: str | Path, policy: str = DEFAULT_POLICY) -> "QueryRouter":
         import joblib
         model_dir = Path(model_dir)
         meta = json.loads((model_dir / "meta.json").read_text())

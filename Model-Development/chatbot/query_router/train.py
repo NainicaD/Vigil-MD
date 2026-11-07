@@ -1,4 +1,4 @@
-"""Train the baseline question classifier: TF-IDF (words + characters) + logistic regression,
+"""Train the query router's baseline classifier: TF-IDF (words + characters) + logistic regression,
 one classifier per label (multi-label).
 
 Model selection: a small grid over the regularisation strength C, scored by macro-F1 on
@@ -12,15 +12,15 @@ Output (--out-dir, default models/baseline):
                     the guardrail rules fingerprint, and the MLflow run and model version
 
 MLflow (conventions: Model-Development/MLFLOW.md; store: tracking.py): one parent run per
-training session in experiment "chatbot/question-classifier", with one nested run per C.
+training session in experiment "chatbot/query-router", with one nested run per C.
 The parent run holds the required tags, the chosen params, the validation metrics, the
-model files, and the model, registered as "chatbot-question-classifier".
+model files, and the model, registered as "chatbot-query-router".
 evaluate.py later adds the held-out metrics to the same run.
 
 Usage (from Model-Development/chatbot/):
-    python -m question_classifier.generate
-    python -m question_classifier.train                    # registers a new model version
-    python -m question_classifier.train --alias champion   # and points the alias at it
+    python -m query_router.generate
+    python -m query_router.train                    # registers a new model version
+    python -m query_router.train --alias champion   # and points the alias at it
 """
 from __future__ import annotations
 
@@ -144,7 +144,7 @@ def train_and_log(data_dir: Path, out_dir: Path, c_grid=C_GRID, alias: str | Non
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Train the baseline question classifier.")
+    ap = argparse.ArgumentParser(description="Train the query router's baseline classifier.")
     ap.add_argument("--data-dir", type=Path, default=OUT_DIR)
     ap.add_argument("--out-dir", type=Path, default=MODEL_DIR)
     ap.add_argument("--alias", default=None,

@@ -1,4 +1,4 @@
-"""Tests for question_classifier: labels, guardrails, generator, metrics, train/predict/evaluate.
+"""Tests for query_router: labels, guardrails, generator, metrics, train/predict/evaluate.
 
 Training tests use a small generated set so the whole file runs in seconds on a CPU.
 """
@@ -9,14 +9,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from question_classifier import generate as gen
-from question_classifier import guardrails as gr
-from question_classifier.evaluate import evaluate, evaluate_false_alarms
-from question_classifier.labels import LABELS, OUT_OF_SCOPE, from_vector, to_vector
-from question_classifier.metrics import OOS_MAX_THRESHOLD, score, tune_thresholds
-from question_classifier.predict import QuestionClassifier
-from question_classifier.templates import TEMPLATES, UNRELATED
-from question_classifier.train import save, train
+from query_router import generate as gen
+from query_router import guardrails as gr
+from query_router.evaluate import evaluate, evaluate_false_alarms
+from query_router.labels import LABELS, OUT_OF_SCOPE, from_vector, to_vector
+from query_router.metrics import OOS_MAX_THRESHOLD, score, tune_thresholds
+from query_router.predict import QueryRouter
+from query_router.templates import TEMPLATES, UNRELATED
+from query_router.train import save, train
 
 OOS = LABELS.index(OUT_OF_SCOPE)
 
@@ -290,7 +290,7 @@ def test_meta_is_complete(model_dir):
 
 
 def test_classify_refuses_advice_even_if_model_misses(model_dir):
-    clf = QuestionClassifier.load(model_dir, policy="strict")
+    clf = QueryRouter.load(model_dir, policy="strict")
     for q in ADVICE:
         out = clf.classify(q)
         assert out["out_of_scope"] and out["run_queries"] == [], q
@@ -298,12 +298,12 @@ def test_classify_refuses_advice_even_if_model_misses(model_dir):
 
 
 def test_classify_answers_help_without_queries(model_dir):
-    out = QuestionClassifier.load(model_dir).classify("what can you do?")
+    out = QueryRouter.load(model_dir).classify("what can you do?")
     assert out["reply_kind"] == "help" and out["run_queries"] == [] and out["unclear"] is False
 
 
 def test_classify_routes_factual_questions(model_dir):
-    clf = QuestionClassifier.load(model_dir)
+    clf = QueryRouter.load(model_dir)
     out = clf.classify("How many death reports does the t:slim X2 have since 2020?")
     assert "counts" in out["run_queries"]     # runs even if the model also flags it
     assert set(out["scores"]) == set(LABELS) and out["unclear"] is False
@@ -315,7 +315,7 @@ def test_load_rejects_label_mismatch(model_dir, tmp_path):
     (tmp_path / "meta.json").write_text(json.dumps(meta))
     (tmp_path / "model.joblib").write_bytes((model_dir / "model.joblib").read_bytes())
     with pytest.raises(ValueError):
-        QuestionClassifier.load(tmp_path)
+        QueryRouter.load(tmp_path)
 
 
 def test_evaluate_reports_safety_numbers(model_dir):
@@ -325,7 +325,7 @@ def test_evaluate_reports_safety_numbers(model_dir):
                 "audience": "neutral", "oos_kind": "unrelated"}]
             + [{"text": "How many death reports does the t:slim X2 have since 2020?",
                 "labels": ["counts"], "audience": "researcher"}])
-    r = evaluate(QuestionClassifier.load(model_dir), rows)
+    r = evaluate(QueryRouter.load(model_dir), rows)
     assert r["advice_recall"] == 1.0 and r["missed_advice"] == []
     assert sum(r["unrelated"].values()) == 1
     assert set(r["slices"]) == {"patient", "neutral", "researcher"}
@@ -402,7 +402,7 @@ def test_rules_fingerprint_recorded(model_dir):
 
 
 def test_evaluate_reports_three_views_and_false_alarms(model_dir):
-    clf = QuestionClassifier.load(model_dir)
+    clf = QueryRouter.load(model_dir)
     rows = [{"text": q, "labels": [OUT_OF_SCOPE], "oos_kind": "advice"} for q in ADVICE]
     r = evaluate(clf, rows + [{"text": FACTUAL[0], "labels": ["counts"]}])
     assert set(r["safety"]) == {"rules", "model", "both"}

@@ -22,8 +22,8 @@ prefixed by --prefix ("heldout" by default, "test" for the hand-written set), wi
 report as an artifact. --no-log skips this.
 
 Usage (from Model-Development/chatbot/):
-    python -m question_classifier.evaluate                 # heldout + false-alarm set
-    python -m question_classifier.evaluate --test data/test/handwritten_test.jsonl
+    python -m query_router.evaluate                 # heldout + false-alarm set
+    python -m query_router.evaluate --test data/test/handwritten_test.jsonl
 """
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ from .generate import read_jsonl
 from .guardrails import rule_hits, rules_fingerprint
 from .labels import LABELS, OUT_OF_SCOPE, to_vector
 from .metrics import score
-from .predict import QuestionClassifier
+from .predict import QueryRouter
 
 OOS_IDX = LABELS.index(OUT_OF_SCOPE)
 FACTUAL_IDX = [i for i, lbl in enumerate(LABELS) if lbl != OUT_OF_SCOPE]
@@ -50,7 +50,7 @@ def _rate(mask: np.ndarray, idx) -> float | None:
     return round(float(np.asarray(mask)[idx].mean()), 4) if idx else None
 
 
-def evaluate(clf: QuestionClassifier, rows: list[dict]) -> dict:
+def evaluate(clf: QueryRouter, rows: list[dict]) -> dict:
     texts = [r["text"] for r in rows]
     y = np.array([to_vector(r["labels"]) for r in rows])
     s = clf.scores(texts)
@@ -109,7 +109,7 @@ def evaluate(clf: QuestionClassifier, rows: list[dict]) -> dict:
             "missed_out_of_scope": missed_oos, "slices": slices, "confusions": confusions}
 
 
-def evaluate_false_alarms(clf: QuestionClassifier, rows: list[dict]) -> dict:
+def evaluate_false_alarms(clf: QueryRouter, rows: list[dict]) -> dict:
     """Factual questions with trigger words: share flagged by rules, model and both."""
     r = evaluate(clf, rows)
     return {"rules_fingerprint": r["rules_fingerprint"], "n": len(rows),
@@ -165,7 +165,7 @@ def main(argv=None) -> int:
                     help="MLflow metric prefix: heldout, or test for the hand-written set")
     ap.add_argument("--no-log", action="store_true", help="don't log to MLflow")
     a = ap.parse_args(argv)
-    clf = QuestionClassifier.load(a.model_dir)
+    clf = QueryRouter.load(a.model_dir)
     report = evaluate(clf, read_jsonl(a.test))
     g = report["guarded"]
     print(f"guarded: macro-F1 {g['macro_f1']}, out_of_scope recall {g['out_of_scope_recall']}, "

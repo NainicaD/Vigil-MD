@@ -14,7 +14,7 @@ heldout is never used for tuning: it was scored once, after the guardrail rules 
 The hand-written test set is NOT generated here: see data/test/README.md.
 
 Usage (from Model-Development/chatbot/):
-    python -m question_classifier.generate
+    python -m query_router.generate
 """
 from __future__ import annotations
 

@@ -2,7 +2,7 @@
 
 Both workstreams (`chatbot/` and `matching/`) track experiments and register models the same
 way, so runs can be compared and the report can cite them. MLflow 3.18.0, free, runs on a
-laptop. Reference implementation: [`chatbot/question_classifier/tracking.py`](chatbot/question_classifier/tracking.py)
+laptop. Reference implementation: [`chatbot/query_router/tracking.py`](chatbot/query_router/tracking.py)
 (copy it into your workstream; change `WORKSTREAM`, `EXPERIMENT` and `REGISTERED_MODEL`).
 
 ## Setup
@@ -39,10 +39,10 @@ mlflow ui --backend-store-uri sqlite:///Model-Development/mlflow/mlflow.db
 
 | Thing | Convention | Examples |
 |---|---|---|
-| Experiment | `<workstream>/<task>` | `chatbot/question-classifier`, `matching/maude-gudid-pairwise` |
+| Experiment | `<workstream>/<task>` | `chatbot/query-router`, `matching/maude-gudid-pairwise` |
 | Parent run (one training session) | `<model>-<what varies>` | `tfidf_lr-grid` |
 | Nested run (one setting tried) | `<model>_<setting>` | `tfidf_lr_C2.0` |
-| Registered model | `<workstream>-<task>` | `chatbot-question-classifier`, `matching-maude-gudid` |
+| Registered model | `<workstream>-<task>` | `chatbot-query-router`, `matching-maude-gudid` |
 
 ## What every run records
 

@@ -7,11 +7,11 @@ import re
 
 import pytest
 
-from question_classifier import evaluate as ev
-from question_classifier import generate as gen
-from question_classifier import tracking
-from question_classifier.guardrails import rules_fingerprint
-from question_classifier.train import flat_metrics, train_and_log
+from query_router import evaluate as ev
+from query_router import generate as gen
+from query_router import tracking
+from query_router.guardrails import rules_fingerprint
+from query_router.train import flat_metrics, train_and_log
 
 
 def test_tests_use_the_temporary_store(mlflow_test_store):

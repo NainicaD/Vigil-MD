@@ -1,10 +1,10 @@
-# Hand-written test set for the question classifier
+# Hand-written test set for the query router
 
-This set is the only honest score for the classifier, because the training and validation
+This set is the only honest score for the router, because the training and validation
 questions come from templates and are easier than real questions. It is **never used for
 training or tuning**.
 
-**Who writes it:** teammates who have **not** read `question_classifier/templates.py`.
+**Who writes it:** teammates who have **not** read `query_router/templates.py`.
 Write questions the way real people would ask them.
 
 **File:** `handwritten_test.jsonl`, one JSON object per line:
@@ -17,7 +17,7 @@ Write questions the way real people would ask them.
 ```
 
 - `labels`: one or more of `counts`, `problems`, `recalls`, `narratives`, `identity`,
-  `out_of_scope`. Follow the labelling rules at the top of `question_classifier/labels.py`.
+  `out_of_scope`. Follow the labelling rules at the top of `query_router/labels.py`.
 - `audience`: `patient`, `clinician`, `researcher`, `procurement` or `neutral`.
 - `oos_kind`: required on every `out_of_scope` row: `advice` (medical advice or safety
   judgement) or `unrelated`.
