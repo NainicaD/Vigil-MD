@@ -3,6 +3,9 @@ Data-Pipeline/data/raw/*
 # keep the DVC pointer visible to git and DVC
 !Data-Pipeline/data/raw/samples.dvc
 
+# MLflow store for Model-Development (one per machine; see Model-Development/MLFLOW.md)
+Model-Development/mlflow/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

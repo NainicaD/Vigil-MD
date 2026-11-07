@@ -17,6 +17,10 @@ evaluate_false_alarms() scores factual questions that contain trigger words
   slices              macro-F1 and out_of_scope recall per audience
   confusions          for each true label, which wrong labels were predicted with it
 
+MLflow: the metrics are added to the model's training run (mlflow_run_id in meta.json),
+prefixed by --prefix ("heldout" by default, "test" for the hand-written set), with the full
+report as an artifact. --no-log skips this.
+
 Usage (from Model-Development/chatbot/):
     python -m question_classifier.evaluate                 # heldout + false-alarm set
     python -m question_classifier.evaluate --test data/test/handwritten_test.jsonl
@@ -114,6 +118,42 @@ def evaluate_false_alarms(clf: QuestionClassifier, rows: list[dict]) -> dict:
             "flagged_by_rules": r["rule_false_alarms"]["examples"]}
 
 
+def report_metrics(report: dict, prefix: str) -> dict[str, float]:
+    """The numbers to compare across models, as MLflow metric names. Pure function."""
+    g, s = report["guarded"], report["safety"]
+    out = {f"{prefix}_macro_f1": g["macro_f1"], f"{prefix}_exact_match": g["exact_match"],
+           f"{prefix}_answered_facts_with_refusal":
+               report["in_scope_answered"]["facts_with_refusal"]}
+    for view in VIEWS:
+        suffix = "" if view == "both" else f"_{view}"
+        out[f"{prefix}_advice_recall{suffix}"] = s[view]["advice_recall"]
+        out[f"{prefix}_false_refusal_rate{suffix}"] = s[view]["false_refusal_rate"]
+    if "false_alarm_set" in report:
+        for view, rate in report["false_alarm_set"]["flagged_rate"].items():
+            out[f"falsealarm_flagged{'' if view == 'both' else '_' + view}"] = rate
+    return {k: float(v) for k, v in out.items() if v is not None}
+
+
+def log_to_training_run(model_dir: Path, report: dict, prefix: str) -> str | None:
+    """Add the metrics and report to the model's training run. Returns the run id, or None
+    when the model was trained without MLflow."""
+    meta = json.loads((Path(model_dir) / "meta.json").read_text())
+    run_id = meta.get("mlflow_run_id")
+    if not run_id:
+        print("meta.json has no mlflow_run_id: the metrics are not logged")
+        return None
+    from . import tracking
+    mlflow = tracking.setup()
+    with mlflow.start_run(run_id=run_id):
+        mlflow.log_metrics(report_metrics(report, prefix))
+        mlflow.set_tag(f"{prefix}_rules_fingerprint", report["rules_fingerprint"])
+        mlflow.log_dict(report, f"eval/{prefix}_report.json")
+    if report["rules_fingerprint"] != meta.get("rules_fingerprint"):
+        print(f"WARNING: rules {report['rules_fingerprint']} differ from the training run's "
+              f"{meta.get('rules_fingerprint')}: these numbers are for changed rules")
+    return run_id
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Evaluate on the hand-written test set.")
     ap.add_argument("--model-dir", type=Path, default=Path("models/baseline"))
@@ -121,6 +161,9 @@ def main(argv=None) -> int:
     ap.add_argument("--false-alarms", default="data/test/false_alarm_set.jsonl",
                     help="factual questions with trigger words ('' to skip)")
     ap.add_argument("--out", type=Path, default=None, help="write the report as JSON")
+    ap.add_argument("--prefix", default="heldout",
+                    help="MLflow metric prefix: heldout, or test for the hand-written set")
+    ap.add_argument("--no-log", action="store_true", help="don't log to MLflow")
     a = ap.parse_args(argv)
     clf = QuestionClassifier.load(a.model_dir)
     report = evaluate(clf, read_jsonl(a.test))
@@ -147,6 +190,10 @@ def main(argv=None) -> int:
     if a.out:
         a.out.parent.mkdir(parents=True, exist_ok=True)
         a.out.write_text(json.dumps(report, indent=2))
+    if not a.no_log:
+        run_id = log_to_training_run(a.model_dir, report, a.prefix)
+        if run_id:
+            print(f"logged {a.prefix}_* metrics to MLflow run {run_id}")
     return 0
 
 

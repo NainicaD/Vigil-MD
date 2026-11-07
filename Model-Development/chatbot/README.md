@@ -111,14 +111,29 @@ phrasing are the next model's job.
 ```bash
 pip install -r requirements.txt
 python -m question_classifier.generate          # data/generated/{train,val,heldout}.jsonl
-python -m question_classifier.train             # models/baseline/{model.joblib,meta.json}
-python -m question_classifier.evaluate          # heldout + false-alarm set
-python -m question_classifier.evaluate --test data/test/handwritten_test.jsonl --out reports/test_report.json
-pytest -q
+python -m question_classifier.train             # models/baseline/{model.joblib,meta.json} + MLflow run
+python -m question_classifier.evaluate          # heldout + false-alarm set, added to that run
+python -m question_classifier.evaluate --test data/test/handwritten_test.jsonl --prefix test --out reports/test_report.json
+pytest -q                                       # logs to a temporary MLflow store only
 ```
 
-If MLflow is installed (`pip install mlflow`), every training run is logged to the
-`question-classifier` experiment.
+### Experiment tracking (MLflow)
+
+Follows the shared conventions in [`../MLFLOW.md`](../MLFLOW.md); the code is in
+[`tracking.py`](question_classifier/tracking.py).
+
+- **Store:** `Model-Development/mlflow/` on your machine (not in git). View it with
+  `mlflow ui --backend-store-uri sqlite:///Model-Development/mlflow/mlflow.db` from the repo root.
+- **`train`:** one parent run `tfidf_lr-grid` in experiment `chatbot/question-classifier`, with
+  one nested run per C. The parent run has the required tags (`git_commit`, `git_dirty`,
+  `data_version`, `author`, `workstream`) plus `rules_fingerprint`, the chosen C, the `val_*`
+  metrics (including `val_advice_recall`), the thresholds, the model files, and the model,
+  registered as a new version of `chatbot-question-classifier`. `--alias champion` points
+  the alias at it. `meta.json` gets `mlflow_run_id` and `model_version`.
+- **`evaluate`:** adds `heldout_*` metrics (advice recall and false refusals for rules,
+  model and both; macro-F1; share still answered) and `falsealarm_flagged*` to the same
+  run, plus the full report as an artifact. `--prefix test` for the hand-written set;
+  `--no-log` to skip.
 
 ### Next steps
 
@@ -126,5 +141,5 @@ If MLflow is installed (`pip install mlflow`), every training run is logged to t
   ([`data/test/README.md`](data/test/README.md)).
 - Small transformer (e.g. DistilBERT) fine-tuned for multi-label, compared with this baseline
   on the same frozen splits: goals are fewer false flags and recognising unseen phrasing.
-- Optuna tuning, DVC stages (generate → train → evaluate), MLflow model registry.
+- Optuna tuning, DVC stages (generate → train → evaluate).
 - Replace `slots.json` values with names from the warehouse tables.
