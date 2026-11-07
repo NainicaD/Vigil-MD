@@ -1,4 +1,7 @@
-from features import normalize_key, identifier_match, raw_identifier_equal
+from features import (
+    normalize_key, identifier_match, raw_identifier_equal,
+    build_alias_table, manufacturer_match,
+)
 
 
 def test_formatting_differences_match():  # E2
@@ -65,3 +68,37 @@ def test_sontec_collision_is_flagged():  # E2 exception
 
 def test_raw_equal_ignores_placeholders():  # E6
     assert raw_identifier_equal(["NA", None], ["NA", None]) == 0
+
+def test_alias_learned_from_enough_devices():  # E5
+    rows = [
+        ("abbott medical", "st. jude medical", "DI1"),
+        ("abbott medical", "st. jude medical", "DI2"),
+        ("abbott medical", "st. jude medical", "DI3"),
+    ]
+    assert ("abbott medical", "st. jude medical") in build_alias_table(rows)
+
+
+def test_one_off_pair_is_not_an_alias():  # open question 3
+    rows = [
+        ("typo medical", "real medical", "DI1"),
+        ("typo medical", "real medical", "DI1"),   # same device twice still counts once
+    ]
+    assert build_alias_table(rows) == set()
+
+
+def test_equal_names_are_not_aliases():
+    rows = [("medtronic", "medtronic", f"DI{i}") for i in range(5)]
+    assert build_alias_table(rows) == set()
+
+
+def test_manufacturer_equal_and_alias():
+    aliases = {("abbott medical", "st. jude medical")}
+    assert manufacturer_match("Medtronic ", "medtronic", aliases) == (1, 0)
+    assert manufacturer_match("abbott medical", "st. jude medical", aliases) == (0, 1)
+    assert manufacturer_match("abbott medical", "zimvie us corp", aliases) == (0, 0)
+
+
+def test_manufacturer_missing():
+    assert manufacturer_match(None, "medtronic", set()) == (0, 0)
+
+

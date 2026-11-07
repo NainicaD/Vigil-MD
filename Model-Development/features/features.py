@@ -69,3 +69,49 @@ def raw_values(ids):
 def raw_identifier_equal(maude_ids, gudid_ids):
     """1 if any identifier is equal BEFORE removing - _ . /  (guards E2 collisions)."""
     return int(len(raw_values(maude_ids) & raw_values(gudid_ids)) > 0)
+
+
+def clean_name(value):
+    """Lowercase and trim a manufacturer name, or None if missing."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return None
+    name = str(value).strip().lower()
+    if name == "":
+        return None
+    return name
+
+
+def build_alias_table(linked_rows, min_dis=3):
+    """Learn manufacturer aliases from UDI-linked rows of the TRAIN split only (E5).
+
+    linked_rows: list of (maude_name, gudid_name, udi_di).
+    Keeps a name pair only if it shows up with at least min_dis different devices,
+    so one-off typos stay out (open question 3).
+    Returns a set of (maude_name, gudid_name) pairs.
+    """
+    devices_per_pair = {}
+    for maude_name, gudid_name, udi_di in linked_rows:
+        m = clean_name(maude_name)
+        g = clean_name(gudid_name)
+        if m is None or g is None or m == g:
+            continue   # missing, or already equal: not an alias
+        if (m, g) not in devices_per_pair:
+            devices_per_pair[(m, g)] = set()
+        devices_per_pair[(m, g)].add(udi_di)
+
+    aliases = set()
+    for pair, devices in devices_per_pair.items():
+        if len(devices) >= min_dis:
+            aliases.add(pair)
+    return aliases
+
+
+def manufacturer_match(maude_name, gudid_name, aliases):
+    """Returns two flags (0 or 1): name_equal, alias_match (E5)."""
+    m = clean_name(maude_name)
+    g = clean_name(gudid_name)
+    if m is None or g is None:
+        return 0, 0
+    if m == g:
+        return 1, 0
+    return 0, int((m, g) in aliases)
