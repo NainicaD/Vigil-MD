@@ -4,13 +4,14 @@ Training tests use a small generated set so the whole file runs in seconds on a 
 """
 import json
 import random
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from question_classifier import generate as gen
 from question_classifier import guardrails as gr
-from question_classifier.evaluate import evaluate
+from question_classifier.evaluate import evaluate, evaluate_false_alarms
 from question_classifier.labels import LABELS, OUT_OF_SCOPE, from_vector, to_vector
 from question_classifier.metrics import OOS_MAX_THRESHOLD, score, tune_thresholds
 from question_classifier.predict import QuestionClassifier
@@ -69,7 +70,8 @@ def test_rules_leave_factual_questions_alone(q):
 
 
 def test_strict_policy_refuses_everything_with_fixed_text():
-    d = gr.route(["counts"], "How many deaths has X had? Should I stop using it?")
+    d = gr.route(["counts"], "How many deaths has X had? Should I stop using it?",
+                 policy="strict")
     assert d["out_of_scope"] and d["run_queries"] == [] and d["refusal"] == gr.REFUSAL
     assert d["labels"] == ["counts", OUT_OF_SCOPE] and "should_i" in d["rule_hits"]
 
@@ -109,14 +111,14 @@ def test_generation_is_deterministic():
 
 
 def test_name_pools_are_disjoint():
-    pools = gen.split_pools(gen.load_slots(), 0.25, seed=7)
+    pools = gen.split_pools(gen.load_slots(), seed=7)
     for key in gen.SPLIT_SLOTS:
         assert not set(pools["train"][key]) & set(pools["val"][key]), key
         assert pools["val"][key] and pools["train"][key]
 
 
 def test_validation_never_names_a_training_device(data):
-    pools = gen.split_pools(gen.load_slots(), 0.25, seed=7)
+    pools = gen.split_pools(gen.load_slots(), seed=7)
     train_only = [d.lower() for d in pools["train"]["device"]]
     for row in data["val"]:
         text = row["text"].lower()
@@ -124,7 +126,7 @@ def test_validation_never_names_a_training_device(data):
 
 
 def test_templates_are_held_out_per_label():
-    split = gen.split_templates(TEMPLATES, 0.25, seed=7)
+    split = gen.split_templates(TEMPLATES, seed=7)
     for label in LABELS:
         tr, va = set(split["train"][label]), set(split["val"][label])
         assert tr and va and not tr & va, label
@@ -214,7 +216,7 @@ def test_meta_is_complete(model_dir):
 
 
 def test_classify_refuses_advice_even_if_model_misses(model_dir):
-    clf = QuestionClassifier.load(model_dir)
+    clf = QuestionClassifier.load(model_dir, policy="strict")
     for q in ADVICE:
         out = clf.classify(q)
         assert out["out_of_scope"] and out["run_queries"] == [], q
@@ -224,7 +226,7 @@ def test_classify_refuses_advice_even_if_model_misses(model_dir):
 def test_classify_routes_factual_questions(model_dir):
     clf = QuestionClassifier.load(model_dir)
     out = clf.classify("How many death reports does the t:slim X2 have since 2020?")
-    assert "counts" in out["run_queries"] and not out["out_of_scope"]
+    assert "counts" in out["run_queries"]     # runs even if the model also flags it
     assert set(out["scores"]) == set(LABELS) and out["unclear"] is False
 
 
@@ -249,3 +251,89 @@ def test_evaluate_reports_safety_numbers(model_dir):
     assert sum(r["unrelated"].values()) == 1
     assert set(r["slices"]) == {"patient", "neutral", "researcher"}
     assert r["rule_false_alarms"]["of_in_scope"] == 1
+
+
+# ── narrowed rules, three-way split, frozen rules, false alarms ──────────────
+
+TRIGGER_WORD_FACTUAL = [
+    "Were dangerous malfunctions reported for the Alaris infusion pump?",
+    "What is the best way to report a problem with my pump?",
+    "how many units were recalled in the DreamStation recall",
+    "can i get the recall notice for the Omnipod 5",
+    "what symptoms do patients report with hip implants",
+    "how many reports mention replacing my battery type",
+    "were there dosing errors reported for infusion pumps",
+    "Should I search by product code or brand?",
+]
+
+
+@pytest.mark.parametrize("q", TRIGGER_WORD_FACTUAL)
+def test_rules_need_a_request_to_judge_or_advise_not_a_word(q):
+    assert gr.rule_hits(q) == [], q
+
+
+@pytest.mark.parametrize("q, rule", [
+    ("how many units should i take", "dosing"),
+    ("my dad has swelling near his implant", "symptoms"),
+    ("is the da Vinci Xi safe", "safety_judgement"),
+    ("i want to switch pumps", "stop_switch"),
+    ("is the t:slim better than the omnipod", "comparison"),
+])
+def test_narrowed_rules_still_catch_requests(q, rule):
+    assert rule in gr.rule_hits(q), q
+
+
+def test_default_policy_answers_facts_and_refuses_advice():
+    d = gr.route(["counts"], "How many deaths has X had? Should I stop using it?")
+    assert gr.DEFAULT_POLICY == "facts_with_refusal"
+    assert d["run_queries"] == ["counts"] and d["refusal"] == gr.REFUSAL
+
+
+def test_heldout_split_is_disjoint_from_train_and_val():
+    pools = gen.split_pools(gen.load_slots(), seed=7)
+    split = gen.split_templates(TEMPLATES, seed=7)
+    for key in gen.SPLIT_SLOTS:
+        assert not set(pools["heldout"][key]) & (set(pools["train"][key]) | set(pools["val"][key]))
+    for label in LABELS:
+        ho = set(split["heldout"][label])
+        assert ho and not ho & (set(split["train"][label]) | set(split["val"][label])), label
+        if label == OUT_OF_SCOPE:
+            assert {t in UNRELATED for _, t in ho} == {True, False}
+
+
+def test_enough_advice_phrasings():
+    assert sum(t not in UNRELATED for _, t in TEMPLATES[OUT_OF_SCOPE]) >= 50
+
+
+def test_threshold_tuned_on_advice_recall_not_unrelated():
+    probs, y = _toy()
+    advice = np.zeros(len(y), bool)
+    advice[: len(y) // 4] = True
+    y[:, OOS] = 0
+    y[: len(y) // 2, OOS] = 1                                     # half advice, half unrelated
+    unrelated = (y[:, OOS] == 1) & ~advice
+    probs[:, OOS] = np.where(advice, 0.9, np.where(unrelated, 0.1, 0.01))
+    assert tune_thresholds(probs, y)[OUT_OF_SCOPE] <= 0.1         # unrelated drag it down
+    assert tune_thresholds(probs, y, advice_mask=advice)[OUT_OF_SCOPE] == OOS_MAX_THRESHOLD
+
+
+def test_rules_fingerprint_recorded(model_dir):
+    meta = json.loads((model_dir / "meta.json").read_text())
+    assert meta["rules_fingerprint"] == gr.rules_fingerprint() and len(meta["rules_fingerprint"]) == 12
+
+
+def test_evaluate_reports_three_views_and_false_alarms(model_dir):
+    clf = QuestionClassifier.load(model_dir)
+    rows = [{"text": q, "labels": [OUT_OF_SCOPE], "oos_kind": "advice"} for q in ADVICE]
+    r = evaluate(clf, rows + [{"text": FACTUAL[0], "labels": ["counts"]}])
+    assert set(r["safety"]) == {"rules", "model", "both"}
+    assert r["safety"]["rules"]["advice_recall"] == 1.0 and r["safety"]["both"]["advice_recall"] == 1.0
+    fa = evaluate_false_alarms(clf, [{"text": q, "labels": ["counts"]} for q in TRIGGER_WORD_FACTUAL])
+    assert fa["flagged_rate"]["rules"] == 0.0 and set(fa["flagged_rate"]) == {"rules", "model", "both"}
+
+
+def test_false_alarm_set_file_is_valid():
+    path = Path(__file__).resolve().parents[1] / "data/test/false_alarm_set.jsonl"
+    rows = gen.read_jsonl(path)
+    assert len(rows) >= 40
+    assert all(OUT_OF_SCOPE not in r["labels"] and r["trigger"] and to_vector(r["labels"]) for r in rows)

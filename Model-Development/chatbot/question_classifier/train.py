@@ -8,11 +8,12 @@ Character n-grams make it robust to typos and to device names it has never seen.
 
 Output (--out-dir, default models/baseline):
     model.joblib    the fitted pipeline
-    meta.json       labels, thresholds, chosen params, validation metrics, data sizes
+    meta.json       labels, thresholds, chosen params, validation metrics, data sizes,
+                    and the guardrail rules fingerprint
 If MLflow is installed, every grid point is also logged as a run (experiment
 "question-classifier").
 
-Usage (from Model-Pipeline/):
+Usage (from Model-Development/chatbot/):
     python -m question_classifier.generate
     python -m question_classifier.train
 """
@@ -25,7 +26,7 @@ from pathlib import Path
 import numpy as np
 
 from .generate import OUT_DIR, read_jsonl
-from .guardrails import rule_hits
+from .guardrails import rule_hits, rules_fingerprint
 from .labels import LABELS, OUT_OF_SCOPE, to_vector
 from .metrics import apply_thresholds, score, tune_thresholds
 
@@ -65,6 +66,7 @@ def train(train_rows: list[dict], val_rows: list[dict], c_grid=C_GRID) -> tuple:
     X_tr, y_tr = xy(train_rows)
     X_va, y_va = xy(val_rows)
     rule_mask = np.array([bool(rule_hits(q)) for q in X_va])
+    advice_mask = np.array([r.get("oos_kind") == "advice" for r in val_rows])
     mlflow = _mlflow()
     if mlflow:
         mlflow.set_experiment("question-classifier")
@@ -72,7 +74,8 @@ def train(train_rows: list[dict], val_rows: list[dict], c_grid=C_GRID) -> tuple:
     for C in c_grid:
         pipe = build_pipeline(C).fit(X_tr, y_tr)
         probs = pipe.predict_proba(X_va)
-        thresholds = tune_thresholds(probs, y_va, rule_mask=rule_mask)
+        thresholds = tune_thresholds(probs, y_va, rule_mask=rule_mask,
+                                     advice_mask=advice_mask if advice_mask.any() else None)
         pred = apply_thresholds(probs, thresholds)
         pred[rule_mask, LABELS.index(OUT_OF_SCOPE)] = 1      # score what the chatbot uses
         metrics = score(y_va, pred)
@@ -86,6 +89,7 @@ def train(train_rows: list[dict], val_rows: list[dict], c_grid=C_GRID) -> tuple:
             best = (pipe, {"C": C}, metrics, thresholds)
     pipe, params, metrics, thresholds = best
     meta = {"model": "tfidf_lr", "labels": list(LABELS), "params": params,
+            "rules_fingerprint": rules_fingerprint(),
             "thresholds": thresholds, "val_metrics": metrics,
             "n_train": len(train_rows), "n_val": len(val_rows)}
     return pipe, meta

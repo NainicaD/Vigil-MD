@@ -27,20 +27,24 @@ def _fbeta(p: float, r: float, beta: float) -> float:
 
 
 def tune_thresholds(probs: np.ndarray, y: np.ndarray, oos_recall: float = OOS_RECALL_TARGET,
-                    rule_mask: np.ndarray | None = None) -> dict[str, float]:
+                    rule_mask: np.ndarray | None = None,
+                    advice_mask: np.ndarray | None = None) -> dict[str, float]:
     """Per label: the threshold with the best F1.
 
     out_of_scope is tuned for what the chatbot uses: model OR rule backstop (rule_mask,
     True where a guardrail rule fires). It takes the highest threshold whose combined
     recall meets oos_recall (fewest false refusals at the required recall), capped at
     OOS_MAX_THRESHOLD. If no threshold meets it, the one with the best F2 (recall weighted
-    twice) - never simply the lowest, which would refuse many legitimate questions."""
+    twice) - never simply the lowest, which would refuse many legitimate questions.
+    With advice_mask, recall is measured on the medical-advice rows only, so unrelated
+    topics (hard to learn, low-risk) don't drag the threshold down."""
     rules = np.zeros(len(y), dtype=bool) if rule_mask is None else np.asarray(rule_mask, bool)
     out = {}
     for j, label in enumerate(LABELS):
         if label == OUT_OF_SCOPE:
-            stats = [(t, *_prf(y[:, j], ((probs[:, j] >= t) | rules).astype(int)))
-                     for t in THRESHOLD_GRID]
+            safety = y[:, j] if advice_mask is None else np.asarray(advice_mask).astype(int)
+            flagged = [(t, ((probs[:, j] >= t) | rules).astype(int)) for t in THRESHOLD_GRID]
+            stats = [(t, _prf(y[:, j], f)[0], _prf(safety, f)[1], None) for t, f in flagged]
             ok = [t for t, _, r, _ in stats if r >= oos_recall]
             if ok:
                 out[label] = min(float(max(ok)), OOS_MAX_THRESHOLD)

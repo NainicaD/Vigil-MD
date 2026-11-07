@@ -9,6 +9,6 @@ Airflow DAGs, DVC, tests) is in [`Data-Pipeline/`](Data-Pipeline/). Start with i
 | Folder | Contents |
 |---|---|
 | `Data-Pipeline/` | The data pipeline: `dags/`, `scripts/`, `tests/`, `data/`, `logs/`, `docs/`, `reports/`, `dvc.yaml` |
-| `Model-Pipeline/` | Models: the chatbot's question classifier (`question_classifier/`, `tests/`) |
+| `Model-Development/chatbot/` | Chatbot models: the question classifier (`question_classifier/`, `tests/`) |
 | `.github/workflows/` | CI: both folders' test suites on every pull request |
 | `docker-compose.yaml`, `docker-compose.elk.yml` | Airflow and ELK (run from this folder or from `Data-Pipeline/`) |

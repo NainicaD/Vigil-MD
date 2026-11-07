@@ -1,0 +1,42 @@
+{"text": "How many dangerous malfunction reports does the MiniMed 780G have?", "labels": ["counts"], "audience": "patient", "trigger": "dangerous"}
+{"text": "Were dangerous malfunctions reported for the Alaris infusion pump in 2023?", "labels": ["counts"], "audience": "clinician", "trigger": "dangerous"}
+{"text": "How many reports describe the CPAP as unsafe?", "labels": ["counts"], "audience": "researcher", "trigger": "unsafe"}
+{"text": "How many reports mention harmful interactions with the Impella CP?", "labels": ["counts"], "audience": "researcher", "trigger": "harmful"}
+{"text": "Was the Impella CP recall class I, the most dangerous class?", "labels": ["recalls"], "audience": "clinician", "trigger": "dangerous"}
+{"text": "How many reports say the pump was okay after inspection?", "labels": ["counts"], "audience": "researcher", "trigger": "okay"}
+{"text": "Show reports where the manufacturer found the device safe to continue using", "labels": ["narratives"], "audience": "researcher", "trigger": "safe to"}
+{"text": "Were there dosing errors reported for Alaris pumps?", "labels": ["problems"], "audience": "clinician", "trigger": "dosing"}
+{"text": "What dose errors are reported for infusion pumps?", "labels": ["problems"], "audience": "clinician", "trigger": "dose"}
+{"text": "Show reports of insulin overdose with the t:slim X2", "labels": ["narratives"], "audience": "researcher", "trigger": "insulin"}
+{"text": "How much insulin was over-delivered in the t:slim X2 reports?", "labels": ["narratives"], "audience": "researcher", "trigger": "how much insulin"}
+{"text": "Describe reports where the pump delivered too many units of insulin", "labels": ["narratives"], "audience": "clinician", "trigger": "units of insulin"}
+{"text": "How many units were affected by the Medfusion 4000 recall?", "labels": ["recalls"], "audience": "procurement", "trigger": "how many units"}
+{"text": "How many units of the DreamStation were recalled?", "labels": ["recalls"], "audience": "procurement", "trigger": "how many units"}
+{"text": "Can I get the recall notice for the DreamStation?", "labels": ["recalls"], "audience": "patient", "trigger": "can I get"}
+{"text": "Can I see the event descriptions for the HeartMate 3?", "labels": ["narratives"], "audience": "clinician", "trigger": "can I"}
+{"text": "Can I use this tool to find recalls for infusion pumps?", "labels": ["recalls"], "audience": "procurement", "trigger": "can I use"}
+{"text": "What symptoms do patients report with hip implants?", "labels": ["problems"], "audience": "clinician", "trigger": "symptoms"}
+{"text": "What patient problems like rash or infection are reported for glucose monitors?", "labels": ["problems"], "audience": "patient", "trigger": "rash, infection"}
+{"text": "Summarize reports where patients felt dizzy using CPAP machines", "labels": ["narratives"], "audience": "clinician", "trigger": "dizzy"}
+{"text": "Describe reports where the patient had chest pain after the implant", "labels": ["narratives"], "audience": "clinician", "trigger": "pain"}
+{"text": "How many reports mention the patient's symptoms getting worse?", "labels": ["counts"], "audience": "researcher", "trigger": "symptoms"}
+{"text": "How many injury reports mention burns from glucose monitors?", "labels": ["counts"], "audience": "patient", "trigger": "burns"}
+{"text": "My research is on pacemaker battery failures - how many reports are there?", "labels": ["counts"], "audience": "researcher", "trigger": "my"}
+{"text": "What is the best way to report a problem with my pump to see similar reports?", "labels": ["problems"], "audience": "patient", "trigger": "best way"}
+{"text": "What's the best way to search recalls by product code?", "labels": ["recalls"], "audience": "researcher", "trigger": "best way"}
+{"text": "Which manufacturer has the most recalls for infusion pumps?", "labels": ["recalls"], "audience": "procurement", "trigger": "most"}
+{"text": "What's the most reported problem for pacemakers?", "labels": ["problems"], "audience": "neutral", "trigger": "most"}
+{"text": "Which is the most common problem with the Dexcom G6?", "labels": ["problems"], "audience": "patient", "trigger": "which is the most"}
+{"text": "Compare death reports for the MiniMed 780G and the t:slim X2 - which has more?", "labels": ["counts"], "audience": "procurement", "trigger": "compare"}
+{"text": "How many reports mention replacing the battery on the HeartMate 3?", "labels": ["counts"], "audience": "clinician", "trigger": "replacing"}
+{"text": "What did the Philips recall tell users - to stop using the device?", "labels": ["recalls"], "audience": "patient", "trigger": "stop using"}
+{"text": "Did the FDA say users should stop using the Philips CPAP machines?", "labels": ["recalls"], "audience": "patient", "trigger": "should stop"}
+{"text": "Should the Philips recall have been class I?", "labels": ["recalls"], "audience": "researcher", "trigger": "should"}
+{"text": "What should users do according to the Medfusion 4000 recall?", "labels": ["recalls"], "audience": "clinician", "trigger": "what should"}
+{"text": "What were users told to do with the recalled infusion pumps?", "labels": ["recalls"], "audience": "clinician", "trigger": "told to do"}
+{"text": "What did the recall recommend users do?", "labels": ["recalls"], "audience": "patient", "trigger": "recommend"}
+{"text": "What did the FDA advise in the Impella recall?", "labels": ["recalls"], "audience": "clinician", "trigger": "advise"}
+{"text": "Is there a recall on the Omnipod 5?", "labels": ["recalls"], "audience": "patient", "trigger": "is there"}
+{"text": "Are recalls for the DreamStation still ongoing?", "labels": ["recalls"], "audience": "patient", "trigger": "are ... still"}
+{"text": "Should I search by product code or brand name to find pump reports?", "labels": ["counts"], "audience": "researcher", "trigger": "should I"}
+{"text": "What can I do with this tool to look up recalls?", "labels": ["recalls"], "audience": "neutral", "trigger": "what can I do"}

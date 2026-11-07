@@ -36,3 +36,12 @@ Write questions the way real people would ask them.
 
 The disguised medical-advice rows are the most important: they test the guardrails where
 they are most likely to fail.
+
+## False-alarm set
+
+`false_alarm_set.jsonl` (already written, 42 rows) holds factual questions that contain
+words the guardrail rules react to ("dangerous malfunctions reported", "dosing errors",
+"how many units were recalled", "best way to report", "symptoms patients report"). Each row
+has its true labels and the `trigger` it contains. The evaluation reports the share of these
+questions that get flagged as out of scope, next to the medical-advice recall. Add to it,
+but don't tune the rules against it.

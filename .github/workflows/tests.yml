@@ -30,7 +30,7 @@ jobs:
         working-directory: Data-Pipeline
         run: pytest -q -rs
 
-  model-pipeline:
+  chatbot-models:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -40,12 +40,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: Model-Pipeline/requirements.txt
+          cache-dependency-path: Model-Development/chatbot/requirements.txt
 
       - name: Install dependencies
-        working-directory: Model-Pipeline
+        working-directory: Model-Development/chatbot
         run: pip install -r requirements.txt
 
       - name: Run the tests
-        working-directory: Model-Pipeline
+        working-directory: Model-Development/chatbot
         run: pytest -q -rs

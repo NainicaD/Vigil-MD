@@ -2,9 +2,13 @@
 
     clf = QuestionClassifier.load("models/baseline")
     clf.classify("How many deaths has the t:slim X2 had? Should I stop using it?")
-    # {"labels": ["counts", "out_of_scope"], "scores": {...}, "rule_hits": ["should_i"],
-    #  "out_of_scope": True, "run_queries": [], "refusal": "I can't give medical advice ...",
-    #  "unclear": False}
+    # {"labels": ["counts", "out_of_scope"], "scores": {...},
+    #  "rule_hits": ["should_i", "stop_switch"], "out_of_scope": True,
+    #  "run_queries": ["counts"], "refusal": "I can't give medical advice ...", "unclear": False}
+
+With the default policy (facts_with_refusal) the answer starts with the refusal text and
+then answers only the factual part. QuestionClassifier.load(dir, policy="strict") runs no
+query at all for out_of_scope questions.
 
 "unclear" is True when no label passes its threshold and no guardrail rule fires: the
 chatbot should ask the user to rephrase instead of guessing.
@@ -14,16 +18,16 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .guardrails import route
+from .guardrails import DEFAULT_POLICY, route
 from .labels import LABELS
 
 
 class QuestionClassifier:
-    def __init__(self, pipe, thresholds: dict[str, float], policy: str = "strict"):
+    def __init__(self, pipe, thresholds: dict[str, float], policy: str = DEFAULT_POLICY):
         self.pipe, self.thresholds, self.policy = pipe, thresholds, policy
 
     @classmethod
-    def load(cls, model_dir: str | Path, policy: str = "strict") -> "QuestionClassifier":
+    def load(cls, model_dir: str | Path, policy: str = DEFAULT_POLICY) -> "QuestionClassifier":
         import joblib
         model_dir = Path(model_dir)
         meta = json.loads((model_dir / "meta.json").read_text())
