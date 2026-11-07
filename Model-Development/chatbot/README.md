@@ -158,3 +158,51 @@ Follows the shared conventions in [`../MLFLOW.md`](../MLFLOW.md); the code is in
   on the same frozen splits: goals are fewer false flags and recognising unseen phrasing.
 - Optuna tuning, DVC stages (generate → train → evaluate).
 - Replace `slots.json` values with names from the warehouse tables.
+
+## Query layer
+
+[`query_layer/`](query_layer/) fetches the facts for an answer with fixed, parameterized
+BigQuery SQL. The router decides what to fetch; the device lookup (to build) decides which device.
+
+```python
+from query_layer import BigQueryBackend, Budget, device_summary, narratives, identity
+backend = BigQueryBackend()                 # dataset: VIGIL_BQ_DATASET (default vigil_md_prod)
+budget = Budget()                           # one per user question
+device_summary(backend, "product_code", "LZG", budget)     # always: counts, top problems, recalls
+narratives(backend, "brand", "MiniMed 780G", budget=budget) # when asked: a few report excerpts
+identity(backend, "udi_di", "00643169007222", budget)      # when asked: who makes it (GUDID)
+```
+
+| Function | Returns | Tables |
+|---|---|---|
+| `device_summary` | Reports by event type and year (each report once); top 10 device and patient problem terms, without "no information" terms, plus the count of reports saying no patient harm; recalls newest first with FDA class, reason, root cause, action | `maude`, `maude_problems`, `recall`, `enforcement` |
+| `narratives` | Up to 5 excerpts (about 600 characters, cut at a word), one per event type in turn (Death, Injury, Malfunction), newest first; texts under 50 characters skipped | `maude`, then `maude_text` for those reports only |
+| `identity` | Manufacturer, device name, model, product codes | `gudid` |
+
+- **Device keys:** `product_code`, `brand`, `manufacturer` (normalized name), `udi_di`. Recalls have
+  no UDI: a `udi_di` key returns no recalls with a note (look it up by brand or product code).
+- **Safety:** the key is always a bound parameter, never part of the SQL text; every statement
+  is checked to be a single read-only `SELECT` before it is sent.
+- **Cost guard:** before a step runs, its queries are dry-run (free). If together they would
+  scan more than the question has left (`MAX_GB_PER_QUESTION`, default 2 GB), nothing runs
+  (`QueryBudgetExceeded`); every job also has `maximum_bytes_billed`.
+- **Sources:** every result carries the queries run (SQL, parameters, bytes) and the tables'
+  last-modified times, for citations and for the gate.
+- **Settings** in [`config.py`](query_layer/config.py) (environment variables override them);
+  the non-informative and no-harm term lists in [`terms.py`](query_layer/terms.py).
+
+**Measured cost on `vigil_md_prod`** (dry runs, 2026-11-07, `python -m query_layer.estimate`):
+
+| Key | Device summary | Narratives |
+|---|---|---|
+| `product_code=LZG` | 3.55 GB | 0.73 GB |
+| `brand=DreamStation` | 4.74 GB | 1.33 GB |
+| `manufacturer=medtronic` | 4.22 GB | 1.06 GB |
+| `udi_di` (no recalls) | 3.68 GB | 0.84 GB |
+
+The cost hardly depends on the device: BigQuery reads whole columns, and `problems` (joining
+`maude` with `maude_problems`) is about 3 GB of it. At this rate the free 1 TiB covers about
+250 questions a month, and the 2 GB cap refuses the summary on PROD. **Daily summary tables**
+(per device, built once a day in the data pipeline) are needed before real use; until then,
+development runs against the small `vigil_md_dev` extract. The narrative texts themselves are
+cheap (under 1 MB): `maude_text` is pruned by month and report key.

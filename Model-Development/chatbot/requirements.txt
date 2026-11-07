@@ -1,7 +1,10 @@
-# Python 3.10+ (CI uses 3.12). Runs on a CPU; no cloud services needed.
+# Python 3.10+ (CI uses 3.12). Runs on a CPU. The query layer reads BigQuery; the tests do not.
 numpy>=1.26
 scikit-learn==1.7.2
 joblib>=1.4
+
+# Query layer (BigQuery; same version as Data-Pipeline/requirements.txt)
+google-cloud-bigquery==3.46.2
 
 # Testing
 pytest==9.1.1
