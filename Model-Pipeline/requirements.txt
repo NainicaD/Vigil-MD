@@ -1,0 +1,10 @@
+# Python 3.10+ (CI uses 3.12). Runs on a CPU; no cloud services needed.
+numpy>=1.26
+scikit-learn==1.7.2
+joblib>=1.4
+
+# Testing
+pytest==9.1.1
+
+# Optional: experiment tracking (training logs runs when it is installed)
+# mlflow

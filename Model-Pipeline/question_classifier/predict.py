@@ -1,0 +1,43 @@
+"""The function the chatbot calls: question → labels, scores and a routing decision.
+
+    clf = QuestionClassifier.load("models/baseline")
+    clf.classify("How many deaths has the t:slim X2 had? Should I stop using it?")
+    # {"labels": ["counts", "out_of_scope"], "scores": {...}, "rule_hits": ["should_i"],
+    #  "out_of_scope": True, "run_queries": [], "refusal": "I can't give medical advice ...",
+    #  "unclear": False}
+
+"unclear" is True when no label passes its threshold and no guardrail rule fires: the
+chatbot should ask the user to rephrase instead of guessing.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from .guardrails import route
+from .labels import LABELS
+
+
+class QuestionClassifier:
+    def __init__(self, pipe, thresholds: dict[str, float], policy: str = "strict"):
+        self.pipe, self.thresholds, self.policy = pipe, thresholds, policy
+
+    @classmethod
+    def load(cls, model_dir: str | Path, policy: str = "strict") -> "QuestionClassifier":
+        import joblib
+        model_dir = Path(model_dir)
+        meta = json.loads((model_dir / "meta.json").read_text())
+        if meta["labels"] != list(LABELS):
+            raise ValueError(f"model labels {meta['labels']} != {list(LABELS)}")
+        return cls(joblib.load(model_dir / "model.joblib"), meta["thresholds"], policy)
+
+    def scores(self, questions: list[str]) -> list[dict[str, float]]:
+        probs = self.pipe.predict_proba(questions)
+        return [{lbl: round(float(p), 4) for lbl, p in zip(LABELS, row)} for row in probs]
+
+    def classify(self, question: str) -> dict:
+        s = self.scores([question])[0]
+        labels = [lbl for lbl in LABELS if s[lbl] >= self.thresholds[lbl]]
+        decision = route(labels, question, self.policy)
+        return {**decision, "scores": s,
+                "unclear": not decision["labels"]}

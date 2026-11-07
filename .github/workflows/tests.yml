@@ -29,3 +29,23 @@ jobs:
       - name: Run the tests
         working-directory: Data-Pipeline
         run: pytest -q -rs
+
+  model-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Model-Pipeline/requirements.txt
+
+      - name: Install dependencies
+        working-directory: Model-Pipeline
+        run: pip install -r requirements.txt
+
+      - name: Run the tests
+        working-directory: Model-Pipeline
+        run: pytest -q -rs
