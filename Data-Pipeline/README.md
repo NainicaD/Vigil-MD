@@ -122,7 +122,7 @@ Full design and decisions: [`docs/WAREHOUSE_PLAN.md`](docs/WAREHOUSE_PLAN.md).
 | DAG | Schedule | What it does |
 |---|---|---|
 | `vigil_md_acquisition` | daily 06:00 UTC | Checks the FDA manifests and fetches **only the sources that changed** to GCS. Validates GCS, logs a summary, then `trigger_load` starts `vigil_md_load` with the same date. |
-| `vigil_md_load` | none (triggered) | Per source: unzip → load RAW → build STAGING → **validate** → **check** → MERGE into PROD. MAUDE then builds its [event tables](#maude-event-tables-problems-and-narrative-text) (problem terms, narrative text). A source with nothing pending does nothing. |
+| `vigil_md_load` | none (triggered) | Per source: unzip → load RAW → build STAGING → **validate** → **check** → MERGE into PROD. MAUDE then builds its [event tables](#maude-event-tables-problems-and-narrative-text) (problem terms, narrative text). A source with nothing pending does nothing. After all sources: [`build_summaries`](#daily-summary-tables) rebuilds the summary tables whose inputs changed. |
 | `vigil_md_full_load` | none (manual) | First load, backfill, rebuild or recovery: the same six steps per source. Params: `sources`, `refetch`, `rebuild_prod`. Refuses to run while a daily DAG has a run in progress. |
 
 ```
@@ -131,6 +131,7 @@ check_manifest ─┬─ fetch.<changed sources> ─ validate_gcs ─ log_summar
                 ├─ (pending files only) ─────────────────────────────────┴─ trigger_load ──▶ load.<source>:
                 └─ no_update (nothing to do: no loading run)                  unzip → load_raw → staging → validate → check → merge
                                                                               MAUDE only, after merge: events_staging → events_problems → events_text
+                                                                            after every source: build_summaries (only tables whose inputs changed)
 ```
 
 When does `vigil_md_load` run?
@@ -277,6 +278,53 @@ JOIN (SELECT DISTINCT source_record_id FROM `vigil-md-1792696816.vigil_md_prod.m
       WHERE product_code = 'LZG') AS m ON m.source_record_id = p.mdr_report_key
 WHERE p.problem_type = 'device'
 GROUP BY p.problem_term ORDER BY reports DESC LIMIT 10;
+```
+
+### Daily summary tables
+
+Pre-computed facts per **entity**, so the chatbot and the website read a few rows instead of
+scanning `maude` for every question (3.5-4.7 GB per question without them). Built by
+[`scripts/warehouse/build_summaries.py`](scripts/warehouse/build_summaries.py) in
+`vigil_md_prod`, each table replaced in one `CREATE OR REPLACE TABLE ... AS SELECT`. Column lists:
+`schemas.SUMMARY_TABLES`.
+
+**Lookups:** each table has a `bucket` column (0-999, from SHA-1 of `entity_type|entity_id`:
+`summary_config.entity_bucket()`) and is partitioned by it, clustered by entity. Filter on
+`bucket`, `entity_type` and `entity_id`: BigQuery then reads one partition. Clustering alone is
+not enough, because BigQuery checks `maximum_bytes_billed` against the whole table for a
+clustered-only filter (an `entity_reports` lookup was refused at 200 MB: "2.98 GB required").
+
+An entity is a **device** (GUDID records grouped by company and brand name; its reports are the
+MAUDE rows with one of its UDIs, i.e. exact UDI links only), a **product_code**, or a
+**manufacturer** (`manufacturer_name_norm`).
+
+| Table | One row per | Contents |
+|---|---|---|
+| `device_catalog` | device | `device_id` (`'dev:'` + 12 hex of SHA-1 of `company_norm|brand_key`, the same id as the chatbot's search index), name, company, product codes, UDIs, top model numbers |
+| `entity_reports` | entity × report | event type and date: which reports belong to each entity |
+| `entity_counts` | entity × year × event type | reports |
+| `entity_problems` | entity × problem term | top 25 device and patient terms by reports (no-information terms left out), plus one `no_harm` row; term lists in [`summary_config.py`](scripts/warehouse/summary_config.py) |
+| `entity_recalls` | entity × recall | class, date, status, product, firm, reason, root cause, action; `matched_by` = product code, manufacturer, or (device) the device's name in the recall text of one of its product codes |
+| `entity_catalog` | entity | title, company, product codes, top brand names, total reports, deaths, injuries, malfunctions (what a search index needs) |
+
+- **Daily:** the `build_summaries` task of `vigil_md_load` runs after every source's chain (also
+  when one failed) with `--if-changed`: it rebuilds only the tables whose inputs changed since
+  they were built (table metadata, free). Recall-only days rebuild `entity_recalls` (about
+  0.6 GB); MAUDE days about 11 GB; a new GUDID release all six (about 12 GB). The full load
+  always rebuilds all.
+- **Cost guard:** each statement is dry-run just before it runs; the build stops before passing
+  `--max-gb` (30); every job has `maximum_bytes_billed`. A duplicate `device_id` stops it (exit 3).
+- **Checked on `vigil_md_dev`** (2026-11-07, 0.24 GB): counts, top device and patient problems,
+  no-harm counts and recall totals equal the chatbot's live queries for LZG, BZD, PKU,
+  Respironics and the DreamStation device (0 differences).
+
+```bash
+python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --print-only
+python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --estimate-only
+python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --if-changed
+python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --dataset vigil_md_dev
+# after a layout change (partitioning, clustering): drops and rebuilds the six summary tables only
+python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --recreate --yes-recreate
 ```
 
 ### Querying
@@ -581,6 +629,11 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ---
 
 ## Changes
+
+### 2026-11-07 — Daily summary tables
+
+- **New tables** in `vigil_md_prod`: `device_catalog`, `entity_reports`, `entity_counts`, `entity_problems`, `entity_recalls`, `entity_catalog`, pre-computed per device, product code and manufacturer. See [Daily summary tables](#daily-summary-tables).
+- **DAGs:** a `build_summaries` task after every source in `vigil_md_load` (only tables whose inputs changed) and `vigil_md_full_load` (all tables).
 
 ### 2026-11-07 — MAUDE narratives for Malfunction reports
 

@@ -189,6 +189,50 @@ MAUDE_EVENT_KEYS = {
     "maude_text":     ["mdr_report_key", "mdr_text_key"],
 }
 
+# ── Daily summary tables (scripts/warehouse/build_summaries.py) ───────────────
+# Each has a bucket column (summary_config.entity_bucket) and is partitioned by it: a lookup
+# filters on bucket, entity_type and entity_id and reads one partition.
+# Pre-computed facts per entity, rebuilt in full (CREATE OR REPLACE TABLE ... AS) once a day,
+# so the chatbot and the website read a few rows instead of scanning maude. An entity is a
+# device (GUDID records grouped by company and brand, reports via exact UDI links), a
+# product_code, or a manufacturer (manufacturer_name_norm). Listed in build order.
+SUMMARY_TABLES = {
+    "device_catalog": [
+        ("device_id", "STRING"), ("company_norm", "STRING"), ("brand_key", "STRING"),
+        ("name", "STRING"), ("company", "STRING"), ("product_codes", "ARRAY<STRING>"),
+        ("udi_dis", "ARRAY<STRING>"), ("models", "ARRAY<STRING>"), ("n_models", "INT64"),
+        ("n_udis", "INT64"), ("bucket", "INT64"),
+    ],
+    "entity_reports": [
+        ("entity_type", "STRING"), ("entity_id", "STRING"), ("source_record_id", "STRING"),
+        ("event_type", "STRING"), ("record_date", "DATE"), ("bucket", "INT64"),
+    ],
+    "entity_counts": [
+        ("entity_type", "STRING"), ("entity_id", "STRING"), ("year", "INT64"),
+        ("event_type", "STRING"), ("reports", "INT64"), ("bucket", "INT64"),
+    ],
+    "entity_problems": [
+        ("entity_type", "STRING"), ("entity_id", "STRING"), ("problem_type", "STRING"),
+        ("problem_term", "STRING"), ("reports", "INT64"), ("rank", "INT64"), ("bucket", "INT64"),
+    ],
+    "entity_recalls": [
+        ("entity_type", "STRING"), ("entity_id", "STRING"), ("matched_by", "STRING"),
+        ("recall_number", "STRING"), ("recall_class", "STRING"), ("record_date", "DATE"),
+        ("recall_status", "STRING"), ("product", "STRING"), ("firm", "STRING"),
+        ("reason_text", "STRING"), ("root_cause", "STRING"), ("action", "STRING"),
+        ("bucket", "INT64"),
+    ],
+    "entity_catalog": [
+        ("entity_type", "STRING"), ("entity_id", "STRING"), ("title", "STRING"),
+        ("subtitle", "STRING"), ("company_norm", "STRING"), ("product_codes", "ARRAY<STRING>"),
+        ("top_names", "ARRAY<STRING>"), ("reports", "INT64"), ("deaths", "INT64"),
+        ("injuries", "INT64"), ("malfunctions", "INT64"), ("bucket", "INT64"),
+    ],
+}
+ENTITY_TYPES = ("device", "product_code", "manufacturer")
+# The prod tables each summary reads (the build is skipped when none changed)
+SUMMARY_SOURCES = ("gudid", "maude", "maude_problems", "recall", "enforcement")
+
 # ── Table names ───────────────────────────────────────────────────────────────
 
 def raw_table(project: str, source: str) -> str:
@@ -205,6 +249,13 @@ def prod_table(project: str, source: str) -> str:
 
 def load_log_table(project: str) -> str:
     return f"{project}.{DATASETS['ops']}.load_log"
+
+
+def summary_table(project: str, name: str, dataset: str | None = None) -> str:
+    """A summary table in vigil_md_prod (or another dataset with the same tables, e.g. vigil_md_dev)."""
+    if name not in SUMMARY_TABLES:
+        raise ValueError(f"unknown summary table {name!r}")
+    return f"{project}.{dataset or DATASETS['prod']}.{name}"
 
 
 def maude_events_staging_table(project: str) -> str:

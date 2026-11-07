@@ -433,6 +433,34 @@ def test_event_step_args(load, full):
         assert args[args.index("--ingest-date") + 1] == "2026-11-03"
 
 
+@pytest.mark.parametrize("dag_id", ["vigil_md_load", "vigil_md_full_load"])
+def test_summaries_run_after_every_chain_even_if_one_failed(dagbag, dag_id):
+    t = tasks(dagbag.get_dag(dag_id))
+    s = t["build_summaries"]
+    leaves = {f"load.{chain_steps(src)[-1]}_{src}" for src in SOURCES}
+    assert s.upstream_task_ids == leaves
+    assert "alert_on_failure" in s.downstream_task_ids
+    assert s.pool == "vigil_warehouse"
+    assert str(s.trigger_rule).lower().endswith("all_done")
+
+
+def test_summary_args(load, full):
+    from vigil_checks import summary_args
+    assert summary_args("p") == ["scripts/warehouse/build_summaries.py", "--project", "p", "--if-changed"]
+    assert "--if-changed" not in summary_args("p", if_changed=False)
+    r = run_print_only(summary_args("vigil-md-1792696816"))
+    assert r.returncode == 0 and r.stdout.count("CREATE OR REPLACE TABLE") == 6, r.stderr[-300:]
+
+
+def test_daily_summaries_skip_unchanged_sources_and_full_load_always_builds(load, full, monkeypatch):
+    calls = []
+    for mod in (load, full):
+        monkeypatch.setattr(mod, "run_script", lambda *a: calls.append(a))
+    load.build_summaries()
+    full.build_summaries()
+    assert "--if-changed" in calls[0] and "--if-changed" not in calls[1]
+
+
 def test_trigger_load_date_works_without_logical_date():
     # A run started from the CLI has no logical date, so plain {{ ds }} is
     # undefined there; the template falls back to the run's run_after date.
