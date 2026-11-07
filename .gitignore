@@ -239,4 +239,10 @@ __marimo__/
 /*.zip
 /*.ndjson
 # Per-user Claude Code settings
-.claude/settings.local.json
+.claude/settings.local.jsongot
+
+# Model development local outputs
+Model-Development/**/*.csv
+Model-Development/**/mlflow.db
+mlruns/
+mlartifacts/
