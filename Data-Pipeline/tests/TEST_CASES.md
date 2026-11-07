@@ -1,6 +1,6 @@
 # Vigil-MD test cases
 
-684 collected test cases across 27 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
+743 collected test cases across 28 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
 
 Files 9–18 cover the RAW → STAGING → PROD warehouse (`docs/WAREHOUSE_PLAN.md`), added by `docs/TESTS_PLAN.md`.
 
@@ -37,11 +37,12 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_schemas.py` | Warehouse table definitions | 32 | pass |
 | `test_build_staging.py` | STAGING SQL (flatten, cast, dedup) | 30 | pass |
 | `test_merge_prod.py` | MERGE into PROD and `--rebuild` | 33 | pass |
-| `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 58 | pass |
+| `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 62 | pass |
 | `test_bias_slices.py` | Bias slice analysis of PROD (read-only SQL, statistics, outputs) | 37 | pass |
 | `test_gudid_release.py` | Newest GUDID release from the RSS feed | 8 | pass |
 | `dags/test_vigil_helpers.py` | Shared DAG helpers: live logs, kill on stop, alert names failed tasks | 23 | pass |
 | `test_build_maude_events.py` | MAUDE event tables: staging, problems, text (SQL, cost guard, filter) | 31 | pass |
+| `test_build_summaries.py` | Daily summary tables: SQL, partitioning, build order, rebuild only what changed, cost guard | 55 | pass |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 
@@ -331,6 +332,20 @@ The SQL is checked as text; `run()` uses a `FakeClient` that returns canned rows
 | `test_staging_stops_above_the_budget`, `test_staging_runs_with_maximum_bytes_billed`, `test_staging_fails_if_nothing_was_staged`, `test_empty_raw_partition_stages_nothing`, `test_default_caps_fit_a_full_export` | Cost guard (exit 2), `maximum_bytes_billed`, default caps above a full export's scan, empty and expired partitions |
 | `test_prod_step_skips_an_empty_staging_partition`, `test_problems_step_passes_the_batch_months`, `test_batch_without_dates_uses_the_sentinel`, `test_text_step_sends_the_filter_as_parameters`, `test_count_only_writes_nothing`, `test_count_only_is_only_for_the_text_step` | Parameters sent to BigQuery; `--count-only` writes nothing |
 | `test_print_only_makes_no_gcp_call` | `--print-only` for all three steps |
+
+## 23. `test_build_summaries.py`: daily summary tables (fake BigQuery client)
+
+| Test | What it checks |
+|---|---|
+| `test_every_table_selects_its_schema_columns` (6), `test_create_writes_only_its_summary_table_in_the_dataset` (6), `test_unknown_or_protected_targets_are_refused`, `test_no_reserved_word_is_used_as_a_name` (6) | Each table selects its `SUMMARY_TABLES` columns; only summary tables are written; no reserved word as a name (a CTE `rows` broke the first dev build) |
+| `test_build_order_respects_what_each_table_reads`, `test_sources_listed_match_the_sql`, `test_every_source_feeds_some_summary_table` | `NEEDS` / `SOURCES` match what each SELECT reads |
+| `test_tables_are_partitioned_by_entity_bucket` (6), `test_bucket_matches_bigquery`, `test_pricing_reads_only_the_select`, `test_drop_only_summary_tables`, `test_recreate_*` (2) | Partitioned by entity bucket (Python and BigQuery agree); pricing dry-runs the SELECT; `--recreate` drops only summary tables and needs `--yes-recreate` |
+| `test_device_id_matches_the_chatbot_search_index`, `test_brand_key_uses_the_search_index_normalization` | Same device id and name normalization as the chatbot's search index |
+| `test_reports_count_once_per_entity`, `test_device_reports_come_from_exact_udi_links`, `test_problem_terms_are_parameters_and_ranked`, `test_device_recalls_need_a_shared_product_code_and_the_name_in_the_text`, `test_catalog_totals_come_from_entity_counts` | Counting and matching rules |
+| `test_only_tables_whose_inputs_changed_are_rebuilt` (6), `test_missing_summary_tables_and_their_dependents_are_built` | Recall-only day → `entity_recalls`; MAUDE day → 4 tables; new GUDID → all |
+| `test_build_creates_every_table_in_order`, `test_if_changed_*` (3), `test_stops_before_passing_the_budget`, `test_duplicate_device_ids_stop_the_build`, `test_estimate_only_creates_nothing`, `test_print_only_makes_no_gcp_call` | `main()`: order, skips, budget stop (exit 2), duplicate-id stop (exit 3), no writes in estimate and print modes |
+
+Plus 4 DAG tests in `dags/test_warehouse_dags.py`: `build_summaries` runs after every chain with trigger rule `all_done` in the warehouse pool, feeds the alert, and uses `--if-changed` daily but not in the full load.
 
 ## Manual checks (real BigQuery, not in pytest)
 

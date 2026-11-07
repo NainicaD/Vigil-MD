@@ -11,7 +11,10 @@ Tasks:
                          pending is a quick no-op. MAUDE then builds its event
                          tables: events_staging → events_problems → events_text
                          (build_maude_events.py).
-  2. alert_on_failure  — triggered only if any task fails
+  2. build_summaries   — after every chain (also when one failed: the others' data is new):
+                         rebuild the daily summary tables if any source table changed
+                         (build_summaries.py --if-changed)
+  3. alert_on_failure  — triggered only if any task fails
 
 Manual trigger: set the ingest_date param (YYYY-MM-DD), or leave it empty to
 use the run's own date. The full load / backfill is vigil_md_full_load.py.
@@ -30,8 +33,8 @@ from airflow.task.trigger_rule import TriggerRule
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    CHECK_SCRIPTS, EVENT_STEPS, SOURCE_PRIORITY, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
-    DataCheckFailed, events_args, pool_for, steps_for, warn_only)
+    CHECK_SCRIPTS, EVENT_STEPS, SOURCE_PRIORITY, SUMMARY_TASK, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
+    DataCheckFailed, events_args, pool_for, steps_for, summary_args, warn_only)
 from vigil_helpers import alert_on_failure, run_script  # noqa: E402,F401  (shared, issue #14)
 
 log = logging.getLogger(__name__)
@@ -111,6 +114,12 @@ def run_load_step(step: str, source: str, **context):
     log.info("%s %s completed successfully (ingest_date %s)", step, source, ingest_date)
 
 
+def build_summaries(**context):
+    """Rebuild the daily summary tables when a source table changed."""
+    run_script(*summary_args(PROJECT))
+    log.info("summary tables up to date")
+
+
 # ── DAG ───────────────────────────────────────────────────────────────────────
 
 with DAG(
@@ -146,10 +155,18 @@ with DAG(
             for upstream, downstream in zip(chain, chain[1:]):
                 upstream >> downstream
 
+    summaries = PythonOperator(
+        task_id=SUMMARY_TASK,
+        python_callable=build_summaries,
+        trigger_rule=TriggerRule.ALL_DONE,      # runs even if one source's chain failed
+        pool=WAREHOUSE_POOL,
+    )
+
     alert = PythonOperator(
         task_id="alert_on_failure",
         python_callable=alert_on_failure,
         trigger_rule=TriggerRule.ONE_FAILED,
     )
 
-    load_group >> alert
+    load_group >> summaries
+    [load_group, summaries] >> alert

@@ -81,6 +81,15 @@ def steps_for(source: str, steps: list[str]) -> list[str]:
     return steps + (EVENT_STEPS if source == EVENT_SOURCE else [])
 
 
+SUMMARY_TASK = "build_summaries"
+SUMMARY_SCRIPT = "scripts/warehouse/build_summaries.py"
+
+
+def summary_args(project: str, if_changed: bool = True) -> list[str]:
+    """CLI args for the daily summary build (after every source's chain). Pure function."""
+    return [SUMMARY_SCRIPT, "--project", project] + (["--if-changed"] if if_changed else [])
+
+
 def events_args(step: str, project: str, ingest_date: str) -> list[str]:
     """CLI args for one MAUDE event step. Pure function."""
     return [EVENTS_SCRIPT, "--project", project, "--ingest-date", ingest_date,
