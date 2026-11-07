@@ -17,7 +17,7 @@ expand = build_labels.expand_macros
 
 
 def test_there_are_label_sql_files():
-    assert [p.name[:2] for p in LABEL_SQL] == ["02", "03", "04", "05", "06"]
+    assert [p.name[:2] for p in LABEL_SQL] == ["00", "01", "02", "03", "04", "05", "06"]
 
 
 @pytest.mark.parametrize("path", LABEL_SQL, ids=lambda p: p.name)

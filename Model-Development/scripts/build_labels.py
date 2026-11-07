@@ -41,64 +41,28 @@ SQL_DIR = ROOT / "sql" / "labels"
 LABELS_DIR = ROOT / "labels"
 MANIFEST = LABELS_DIR / "label_set_v1.manifest.json"
 ALIAS_CSV = LABELS_DIR / "alias_table_v1.csv"
-MODEL_DATASET = "vigil_md_model"
+MODEL_DATASET = bq_utils.MODEL_DATASET
 EXIT_OK, EXIT_BAD_SQL, EXIT_OVER_BUDGET = 0, 2, 3
 ALIAS_GATED_FROM = "02"          # file prefixes at or after this need the alias check
 
 log = logging.getLogger("build_labels")
-MACRO = re.compile(r"\{\{\s*(\w+)\((.*?)\)\s*\}\}")
-WRITE_FORBIDDEN = re.compile(r"\b(INSERT|UPDATE|DELETE|MERGE|DROP|TRUNCATE|ALTER|EXPORT)\b", re.I)
 
 
 # --- rendering ----------------------------------------------------------------------------------
+# The macro pass and the write guard live in bq_utils (N1). These names stay for callers and tests.
+assert_model_write_only = bq_utils.assert_model_write_only
+
+
 def expand_macros(sql: str) -> str:
-    """Replace {{ name(args) }} with the emitter's SQL. Unknown name or wrong arity raises.
-
-    shortcut: local copy of the macro pass planned for bq_utils.render (N1). Switch to
-    render(sql, project, macros=feat.SQL_MACROS) once that exists and delete this.
-    """
-    def one(m):
-        if m.group(1) not in feat.SQL_MACROS:
-            raise ValueError(f"unknown macro {m.group(1)!r}")
-        args, depth, cur = [], 0, ""
-        for ch in m.group(2):
-            depth += ch == "("
-            depth -= ch == ")"
-            if ch == "," and depth == 0:
-                args.append(cur.strip())
-                cur = ""
-            else:
-                cur += ch
-        if cur.strip():
-            args.append(cur.strip())
-        try:
-            return feat.SQL_MACROS[m.group(1)](*args)
-        except TypeError as e:
-            raise ValueError(f"macro {m.group(1)}: {e}") from e
-    return MACRO.sub(one, sql)
-
-
-def assert_model_write_only(sql: str) -> None:
-    """One CREATE OR REPLACE TABLE into vigil_md_model, reading only vigil_md_prod and vigil_md_model."""
-    code = re.sub(r"--[^\n]*", "", sql).strip()
-    m = re.match(r"CREATE OR REPLACE TABLE `([^`]+)`", code, re.I)
-    if not m or len(re.findall(r"\bCREATE\b", code, re.I)) != 1:
-        raise ValueError(f"label SQL must be exactly one CREATE OR REPLACE TABLE: {code[:60]!r}")
-    if m.group(1).split(".")[1] != MODEL_DATASET:
-        raise ValueError(f"writes outside {MODEL_DATASET}: {m.group(1)}")
-    hit = WRITE_FORBIDDEN.search(code)
-    if hit:
-        raise ValueError(f"forbidden statement in label SQL: {hit.group(0)}")
-    datasets = set(re.findall(r"`[^`.]+\.([^`.]+)\.[^`]+`", code))
-    if not datasets <= {bq_utils.PROD_DATASET, MODEL_DATASET}:
-        raise ValueError(f"label SQL reads outside prod/model: {sorted(datasets)}")
+    """{{ name(args) }} -> SQL, through same_device_features.SQL_MACROS. Unknown name or arity raises."""
+    return bq_utils.expand_macros(sql, feat.SQL_MACROS)
 
 
 def render_part(sql: str, project: str, params: dict[str, int]) -> str:
     sql = sql.replace("__MODEL_DATASET__", f"{project}.{MODEL_DATASET}")
     for name, value in params.items():
         sql = sql.replace(name, str(value))
-    final = bq_utils.render(expand_macros(sql), project)   # raises on any placeholder left over
+    final = bq_utils.render(sql, project, macros=feat.SQL_MACROS)   # raises on any placeholder left over
     assert_model_write_only(final)
     return final
 

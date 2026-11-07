@@ -361,6 +361,9 @@ def sql_suffix_lens() -> str:
     """The array used by `FROM ..., UNNEST({{ suffix_lens() }}) AS k` joins (E3)."""
     return f"[{', '.join(map(str, SUFFIX_LENS))}]"
 
+def sql_alias_min_dis() -> str:
+    """ALIAS_MIN_DIS as a SQL literal, for the HAVING of 01_alias_table.sql (E5)."""
+    return str(ALIAS_MIN_DIS)
 
 def sql_device_key(mfr: str, model: str, catalog: str) -> str:
     """Python device_key, but NULL instead of raising when neither identifier is usable."""
@@ -388,6 +391,7 @@ SQL_MACROS = {
     "match_kind": sql_match_kind,
     "is_distinctive": sql_is_distinctive,
     "suffix_lens": sql_suffix_lens,
+    "alias_min_dis": sql_alias_min_dis,
     "device_key": sql_device_key,
     "split": sql_split,
     "pair_id": sql_pair_id,
