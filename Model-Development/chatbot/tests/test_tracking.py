@@ -97,6 +97,17 @@ def test_model_registered_with_alias_and_files_logged(logged):
     assert {"files/meta.json", "files/model.joblib"} <= files
 
 
+def test_registered_model_has_a_text_signature_and_loads(logged):
+    import mlflow
+    meta, _, _ = logged
+    uri = f"models:/{tracking.REGISTERED_MODEL}/{meta['model_version']}"
+    info = mlflow.models.get_model_info(uri)
+    assert info.signature is not None
+    assert info.signature.inputs.to_dict()[0]["tensor-spec"]["dtype"] == "str"
+    model = mlflow.sklearn.load_model(uri)
+    assert model.predict_proba(["was the DreamStation recalled"]).shape == (1, 6)
+
+
 def test_experiment_artifacts_live_under_the_store(logged, mlflow_test_store):
     import mlflow
     exp = mlflow.get_experiment_by_name(tracking.EXPERIMENT)

@@ -129,9 +129,15 @@ def train_and_log(data_dir: Path, out_dir: Path, c_grid=C_GRID, alias: str | Non
                            "n_train": meta["n_train"], "n_val": meta["n_val"]})
         mlflow.log_metrics(flat_metrics(meta["val_metrics"], "val"))
         mlflow.log_dict(meta["thresholds"], "thresholds.json")
+        # Input: a 1-D array of question strings; output: one probability per label. A plain
+        # list would be turned into a table, which the text pipeline can't read.
+        from mlflow.models import infer_signature
+        example = np.array(["How many deaths does the pump have?"])
         info = mlflow.sklearn.log_model(pipe, name="model",
                                         registered_model_name=tracking.REGISTERED_MODEL,
-                                        input_example=["How many deaths does the pump have?"])
+                                        signature=infer_signature(example,
+                                                                  pipe.predict_proba(example)),
+                                        input_example=example)
         version = str(info.registered_model_version)
         meta.update({"mlflow_run_id": run.info.run_id,
                      "registered_model": tracking.REGISTERED_MODEL, "model_version": version})
