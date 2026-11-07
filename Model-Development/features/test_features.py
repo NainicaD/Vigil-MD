@@ -1,6 +1,7 @@
 from features import (
     normalize_key, identifier_match, raw_identifier_equal,
     build_alias_table, manufacturer_match,
+    build_di_counts, model_key_di_count, is_distinctive,
 )
 
 
@@ -69,6 +70,7 @@ def test_sontec_collision_is_flagged():  # E2 exception
 def test_raw_equal_ignores_placeholders():  # E6
     assert raw_identifier_equal(["NA", None], ["NA", None]) == 0
 
+
 def test_alias_learned_from_enough_devices():  # E5
     rows = [
         ("abbott medical", "st. jude medical", "DI1"),
@@ -102,3 +104,31 @@ def test_manufacturer_missing():
     assert manufacturer_match(None, "medtronic", set()) == (0, 0)
 
 
+def test_family_label_is_not_distinctive():  # E4
+    rows = [("Brosmed", "REV01", f"DI{i}") for i in range(25)]
+    counts = build_di_counts(rows)
+    assert model_key_di_count("brosmed", "REV01", counts) == 25
+    assert is_distinctive("brosmed", "REV01", counts) == 0
+
+
+def test_small_group_is_distinctive():  # E4
+    rows = [("Medline", "DYNJ85712", f"DI{i}") for i in range(3)]
+    counts = build_di_counts(rows)
+    assert is_distinctive("medline", "DYNJ85712", counts) == 1
+
+
+def test_formatting_variants_count_as_one_key():  # E2 + E4
+    rows = [("Steris", "CL2078-BLUE", "DI1"), ("Steris", "CL2078BLUE", "DI2")]
+    counts = build_di_counts(rows)
+    assert model_key_di_count("steris", "cl2078 blue", counts) == 2
+
+
+def test_same_di_counts_once():
+    rows = [("Steris", "CL2078", "DI1"), ("Steris", "CL2078", "DI1")]
+    assert build_di_counts(rows)[("steris", "CL2078")] == 1
+
+
+def test_unknown_model_is_not_distinctive():
+    assert model_key_di_count("steris", "NOPE99", {}) == 0
+    assert is_distinctive("steris", "NOPE99", {}) == 0
+    assert is_distinctive("steris", "NA", {}) == 0   # placeholder

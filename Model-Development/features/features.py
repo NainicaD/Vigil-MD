@@ -115,3 +115,40 @@ def manufacturer_match(maude_name, gudid_name, aliases):
     if m == g:
         return 1, 0
     return 0, int((m, g) in aliases)
+
+
+def build_di_counts(gudid_rows):
+    """Count different DIs per (labeler, model key) across all of GUDID (E4).
+
+    gudid_rows: list of (labeler_name, model_number, udi_di).
+    Returns a dict {(labeler, model_key): number of different DIs}.
+    """
+    devices_per_key = {}
+    for labeler, model_number, udi_di in gudid_rows:
+        lab = clean_name(labeler)
+        key = normalize_key(model_number)
+        if lab is None or key is None:
+            continue
+        if (lab, key) not in devices_per_key:
+            devices_per_key[(lab, key)] = set()
+        devices_per_key[(lab, key)].add(udi_di)
+
+    counts = {}
+    for pair, devices in devices_per_key.items():
+        counts[pair] = len(devices)
+    return counts
+
+
+def model_key_di_count(labeler, model_number, di_counts):
+    """How many GUDID DIs share this labeler + model key (0 if unknown or missing)."""
+    lab = clean_name(labeler)
+    key = normalize_key(model_number)
+    if lab is None or key is None:
+        return 0
+    return di_counts.get((lab, key), 0)
+
+
+def is_distinctive(labeler, model_number, di_counts, max_dis=20):
+    """1 if the model key is shared by at most max_dis DIs of this labeler (E4)."""
+    n = model_key_di_count(labeler, model_number, di_counts)
+    return int(1 <= n <= max_dis)
