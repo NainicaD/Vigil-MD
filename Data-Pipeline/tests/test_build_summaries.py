@@ -21,10 +21,26 @@ P, DS = "p", "vigil_md_prod"
 
 @pytest.mark.parametrize("name", list(schemas.SUMMARY_TABLES))
 def test_every_table_selects_its_schema_columns(name):
-    sql, _ = S.select_sql(name, P, DS)
-    final = sql.split("\nSELECT ", 1)[-1] if name != "entity_problems" else sql
+    sql, _ = S.create_sql(name, P, DS)
     for col, _ in schemas.SUMMARY_TABLES[name]:
-        assert re.search(rf"\b{col}\b", final), (name, col)
+        assert re.search(rf"\b{col}\b", sql), (name, col)
+
+
+@pytest.mark.parametrize("name", list(schemas.SUMMARY_TABLES))
+def test_tables_are_partitioned_by_entity_bucket(name):
+    sql, _ = S.create_sql(name, P, DS)
+    assert f"PARTITION BY RANGE_BUCKET(bucket, GENERATE_ARRAY(0, {cfg.BUCKETS}, 1))" in sql
+    expected = (cfg.bucket_sql("'device'", "device_id") if name == "device_catalog"
+                else cfg.bucket_sql("entity_type", "entity_id"))
+    assert f"SELECT *, {expected} AS bucket" in sql
+
+
+def test_bucket_matches_bigquery():
+    # values computed by BigQuery with bucket_sql() on 2026-11-07
+    keys = [("device", "dev:f0cdc15b4d63"), ("product_code", "LZG"), ("manufacturer", "respironics"),
+            ("manufacturer", "medtronic minimed"), ("product_code", "ZZZ")]
+    assert [cfg.entity_bucket(t, i) for t, i in keys] == [428, 627, 574, 407, 712]
+    assert all(0 <= cfg.entity_bucket("device", f"dev:{n}") < cfg.BUCKETS for n in range(200))
 
 
 @pytest.mark.parametrize("name", list(schemas.SUMMARY_TABLES))
@@ -159,7 +175,7 @@ class FakeClient:
     def __init__(self, modified=None, dry_gb=0.1, duplicates=0):
         self.modified = modified or {}
         self.dry_gb, self.duplicates = dry_gb, duplicates
-        self.created = []
+        self.created, self.dropped = [], []
 
     def get_table(self, table_id):
         from google.api_core.exceptions import NotFound
@@ -173,6 +189,9 @@ class FakeClient:
     def query(self, sql, job_config=None):
         if job_config is not None and job_config.dry_run:
             return types.SimpleNamespace(total_bytes_processed=int(self.dry_gb * 1e9))
+        if sql.startswith("DROP TABLE IF EXISTS"):
+            self.dropped.append(sql.rsplit(".", 1)[-1].rstrip("`"))
+            return types.SimpleNamespace(result=lambda: None)
         if sql.startswith("SELECT COUNT(*) - COUNT(DISTINCT device_id)"):
             return types.SimpleNamespace(result=lambda: iter([types.SimpleNamespace(duplicates=self.duplicates)]))
         name = re.search(r"TABLE `[^`]*\.(\w+)`", sql).group(1)
@@ -235,6 +254,31 @@ def test_stops_before_passing_the_budget(client):
 def test_duplicate_device_ids_stop_the_build(client):
     c = client(modified={s: T0 for s in schemas.SUMMARY_SOURCES}, duplicates=2)
     assert run() == S.EXIT_CHECK_FAILED and c.created == ["device_catalog"]
+
+
+def test_pricing_reads_only_the_select():
+    sql, _ = S.create_sql("entity_counts", P, DS)
+    priced = S.priced_sql(sql)
+    assert priced.startswith("SELECT *, MOD(") and "CREATE" not in priced and "PARTITION BY" not in priced.split("FROM (", 1)[0]
+
+
+def test_drop_only_summary_tables():
+    assert S.drop_sql("entity_reports", P, DS) == f"DROP TABLE IF EXISTS `{P}.{DS}.entity_reports`"
+    for name in ("maude", "recall", "gudid", "load_log"):
+        with pytest.raises(ValueError):
+            S.drop_sql(name, P, DS)
+
+
+def test_recreate_needs_confirmation(client, capsys):
+    c = client(modified={s: T0 for s in schemas.SUMMARY_SOURCES})
+    assert run("--recreate") == S.EXIT_OVER_BUDGET and c.created == [] and c.dropped == []
+    assert "--yes-recreate" in capsys.readouterr().out
+
+
+def test_recreate_drops_each_summary_table_before_building_it(client):
+    c = client(modified={s: T0 for s in schemas.SUMMARY_SOURCES})
+    assert run("--recreate", "--yes-recreate") == 0
+    assert c.dropped == S.ORDER and c.created == S.ORDER
 
 
 def test_estimate_only_creates_nothing(client, capsys):

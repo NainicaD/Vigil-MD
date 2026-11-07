@@ -285,8 +285,14 @@ GROUP BY p.problem_term ORDER BY reports DESC LIMIT 10;
 Pre-computed facts per **entity**, so the chatbot and the website read a few rows instead of
 scanning `maude` for every question (3.5-4.7 GB per question without them). Built by
 [`scripts/warehouse/build_summaries.py`](scripts/warehouse/build_summaries.py) in
-`vigil_md_prod`, each table replaced in one `CREATE OR REPLACE TABLE ... AS SELECT`, clustered
-by entity. Column lists: `schemas.SUMMARY_TABLES`.
+`vigil_md_prod`, each table replaced in one `CREATE OR REPLACE TABLE ... AS SELECT`. Column lists:
+`schemas.SUMMARY_TABLES`.
+
+**Lookups:** each table has a `bucket` column (0-999, from SHA-1 of `entity_type|entity_id`:
+`summary_config.entity_bucket()`) and is partitioned by it, clustered by entity. Filter on
+`bucket`, `entity_type` and `entity_id`: BigQuery then reads one partition. Clustering alone is
+not enough, because BigQuery checks `maximum_bytes_billed` against the whole table for a
+clustered-only filter (an `entity_reports` lookup was refused at 200 MB: "2.98 GB required").
 
 An entity is a **device** (GUDID records grouped by company and brand name; its reports are the
 MAUDE rows with one of its UDIs, i.e. exact UDI links only), a **product_code**, or a
@@ -317,6 +323,8 @@ python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --prin
 python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --estimate-only
 python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --if-changed
 python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --dataset vigil_md_dev
+# after a layout change (partitioning, clustering): drops and rebuilds the six summary tables only
+python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --recreate --yes-recreate
 ```
 
 ### Querying

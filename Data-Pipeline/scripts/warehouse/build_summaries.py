@@ -30,6 +30,10 @@ metadata, free). Recalls change almost daily, MAUDE about weekly: a recall-only 
 rebuilds entity_recalls (about 0.6 GB on PROD), a MAUDE day about 11 GB, a new GUDID
 release everything (about 12 GB).
 
+--recreate --yes-recreate drops each summary table before building it. Needed only when a
+table's layout (partitioning, clustering) changes: BigQuery cannot replace a table with a
+different partitioning. It drops nothing but the six summary tables.
+
 Exit codes: 0 built or skipped, 2 over budget or bad input, 3 a check failed (duplicate ids).
 
 Usage (from Data-Pipeline/):
@@ -287,15 +291,36 @@ CLUSTER = {
 
 
 def create_sql(name: str, project: str, dataset: str) -> tuple[str, dict]:
-    """CREATE OR REPLACE TABLE <dataset>.<name> AS <select>. Only summary tables."""
+    """CREATE OR REPLACE TABLE <dataset>.<name> AS <select> + bucket, partitioned by bucket and
+    clustered by entity. Only summary tables."""
     if name not in schemas.SUMMARY_TABLES:
         raise ValueError(f"not a summary table: {name}")
     target = schemas.summary_table(project, name, dataset)
     schemas.assert_not_protected(target)
     select, params = select_sql(name, project, dataset)
-    return (f"CREATE OR REPLACE TABLE `{target}`\nCLUSTER BY {CLUSTER[name]}\n"
+    bucket = (cfg.bucket_sql("'device'", "device_id") if name == "device_catalog"
+              else cfg.bucket_sql("entity_type", "entity_id"))
+    return (f"CREATE OR REPLACE TABLE `{target}`\n"
+            f"PARTITION BY RANGE_BUCKET(bucket, GENERATE_ARRAY(0, {cfg.BUCKETS}, 1))\n"
+            f"CLUSTER BY {CLUSTER[name]}\n"
             f"OPTIONS (description = 'Daily summary table, built by "
-            f"scripts/warehouse/build_summaries.py')\nAS\n{select}"), params
+            f"scripts/warehouse/build_summaries.py')\nAS\n"
+            f"SELECT *, {bucket} AS bucket\nFROM (\n{select}\n)"), params
+
+
+def priced_sql(create: str) -> str:
+    """The SELECT of a CREATE ... AS statement: what the build reads, dry-run for pricing.
+    (A dry run of the CREATE fails when the existing table's layout differs.)"""
+    return create.split("\nAS\n", 1)[1]
+
+
+def drop_sql(name: str, project: str, dataset: str) -> str:
+    """DROP TABLE IF EXISTS for one summary table only."""
+    if name not in schemas.SUMMARY_TABLES:
+        raise ValueError(f"refusing to drop {name}: not a summary table")
+    target = schemas.summary_table(project, name, dataset)
+    schemas.assert_not_protected(target)
+    return f"DROP TABLE IF EXISTS `{target}`"
 
 
 def duplicate_id_sql(project: str, dataset: str) -> str:
@@ -346,7 +371,14 @@ def main(argv=None) -> int:
     ap.add_argument("--if-changed", action="store_true",
                     help="skip when no source table changed since the last build")
     ap.add_argument("--max-gb", type=float, default=cfg.MAX_GB)
+    ap.add_argument("--recreate", action="store_true",
+                    help="drop each summary table before building it (layout change)")
+    ap.add_argument("--yes-recreate", action="store_true", help="confirm --recreate")
     a = ap.parse_args(argv)
+    if a.recreate and not (a.yes_recreate or a.print_only or a.estimate_only):
+        print("REFUSING: --recreate drops the six summary tables before rebuilding them. "
+              "Run again with --yes-recreate to confirm.")
+        return EXIT_OVER_BUDGET
 
     if a.print_only:
         for n in ORDER:
@@ -374,7 +406,7 @@ def main(argv=None) -> int:
         if not ready:
             print(f"  {n:16}   n/a      (priced once {', '.join(NEEDS[n])} exist)")
             continue
-        gb = client.query(sql, job_config=bigquery.QueryJobConfig(
+        gb = client.query(priced_sql(sql), job_config=bigquery.QueryJobConfig(
             dry_run=True, query_parameters=_params(params))).total_bytes_processed / 1e9
         if a.estimate_only:
             print(f"  {n:16} {gb:7.3f} GB")
@@ -383,6 +415,9 @@ def main(argv=None) -> int:
             log.error("STOP before %s: %.2f GB so far + %.2f GB > --max-gb %.1f. "
                       "Tables built so far are kept.", n, spent, gb, a.max_gb)
             return EXIT_OVER_BUDGET
+        if a.recreate:
+            client.query(drop_sql(n, a.project, a.dataset)).result()
+            log.info("dropped %s (layout change)", n)
         job = client.query(sql, job_config=bigquery.QueryJobConfig(
             query_parameters=_params(params),
             maximum_bytes_billed=max(10 * 1024 * 1024, int((a.max_gb - spent) * 1e9))))

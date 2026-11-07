@@ -1,6 +1,6 @@
 # Vigil-MD test cases
 
-732 collected test cases across 28 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
+743 collected test cases across 28 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
 
 Files 9–18 cover the RAW → STAGING → PROD warehouse (`docs/WAREHOUSE_PLAN.md`), added by `docs/TESTS_PLAN.md`.
 
@@ -42,7 +42,7 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_gudid_release.py` | Newest GUDID release from the RSS feed | 8 | pass |
 | `dags/test_vigil_helpers.py` | Shared DAG helpers: live logs, kill on stop, alert names failed tasks | 23 | pass |
 | `test_build_maude_events.py` | MAUDE event tables: staging, problems, text (SQL, cost guard, filter) | 31 | pass |
-| `test_build_summaries.py` | Daily summary tables: SQL, build order, rebuild only what changed, cost guard | 44 | pass |
+| `test_build_summaries.py` | Daily summary tables: SQL, partitioning, build order, rebuild only what changed, cost guard | 55 | pass |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 
@@ -339,6 +339,7 @@ The SQL is checked as text; `run()` uses a `FakeClient` that returns canned rows
 |---|---|
 | `test_every_table_selects_its_schema_columns` (6), `test_create_writes_only_its_summary_table_in_the_dataset` (6), `test_unknown_or_protected_targets_are_refused`, `test_no_reserved_word_is_used_as_a_name` (6) | Each table selects its `SUMMARY_TABLES` columns; only summary tables are written; no reserved word as a name (a CTE `rows` broke the first dev build) |
 | `test_build_order_respects_what_each_table_reads`, `test_sources_listed_match_the_sql`, `test_every_source_feeds_some_summary_table` | `NEEDS` / `SOURCES` match what each SELECT reads |
+| `test_tables_are_partitioned_by_entity_bucket` (6), `test_bucket_matches_bigquery`, `test_pricing_reads_only_the_select`, `test_drop_only_summary_tables`, `test_recreate_*` (2) | Partitioned by entity bucket (Python and BigQuery agree); pricing dry-runs the SELECT; `--recreate` drops only summary tables and needs `--yes-recreate` |
 | `test_device_id_matches_the_chatbot_search_index`, `test_brand_key_uses_the_search_index_normalization` | Same device id and name normalization as the chatbot's search index |
 | `test_reports_count_once_per_entity`, `test_device_reports_come_from_exact_udi_links`, `test_problem_terms_are_parameters_and_ranked`, `test_device_recalls_need_a_shared_product_code_and_the_name_in_the_text`, `test_catalog_totals_come_from_entity_counts` | Counting and matching rules |
 | `test_only_tables_whose_inputs_changed_are_rebuilt` (6), `test_missing_summary_tables_and_their_dependents_are_built` | Recall-only day → `entity_recalls`; MAUDE day → 4 tables; new GUDID → all |
