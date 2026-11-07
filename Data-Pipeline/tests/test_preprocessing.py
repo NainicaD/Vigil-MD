@@ -175,14 +175,15 @@ class TestMaudeProblems:
 
 class TestMaudeText:
 
-    def test_default_filter_keeps_event_descriptions_of_death_and_injury(self):
+    def test_default_filter_keeps_event_descriptions_of_death_injury_malfunction(self):
         texts = [{"mdr_text_key": "a", "text_type_code": DESC, "text": "It broke."},
                  {"mdr_text_key": "b", "text_type_code": MFR, "text": "We checked."}]
         recs = [report("1", "Injury", mdr_text=texts),
                 report("2", "Malfunction", mdr_text=texts),
-                report("3", "Death", received="20150101", mdr_text=texts)]    # before 2016
+                report("3", "Other", mdr_text=texts),                         # not in the filter
+                report("4", "Death", received="20150101", mdr_text=texts)]    # before 2016
         df = maude_text(recs)
-        assert df[["mdr_report_key", "mdr_text_key"]].values.tolist() == [["1", "a"]]
+        assert df[["mdr_report_key", "mdr_text_key"]].values.tolist() == [["1", "a"], ["2", "a"]]
 
     def test_empty_text_dropped_and_duplicate_keys_keep_the_longest(self):
         texts = [{"mdr_text_key": "a", "text_type_code": DESC, "text": "short"},
