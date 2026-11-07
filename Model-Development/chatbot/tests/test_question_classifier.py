@@ -97,6 +97,80 @@ def test_refusal_gives_no_advice_and_points_to_clinician():
     assert "doctor" in gr.REFUSAL and "can't give medical advice" in gr.REFUSAL
 
 
+# ── fixed replies: emergency line, scope, help ────────────────────────────────
+
+FROZEN_RULES = "0dd7a4dd862a"      # the held-out numbers in README.md are for these rules
+
+
+def test_advice_rules_stay_frozen():
+    # The replies below must not change which questions are refused.
+    assert gr.rules_fingerprint() == FROZEN_RULES
+
+
+def test_refusal_has_an_emergency_line():
+    assert "If this is an emergency, call 911" in gr.REFUSAL
+
+
+@pytest.mark.parametrize("q", [
+    "write me a poem about the ocean", "what is the capital of france", "tell me a joke",
+    "write python code to sort a list"])
+def test_unrelated_topic_gets_the_scope_reply(q):
+    d = gr.route([OUT_OF_SCOPE], q)
+    assert d["reply_kind"] == "scope" and d["reply"] == gr.SCOPE_REPLY
+    assert d["refusal"] == gr.SCOPE_REPLY and d["run_queries"] == [] and d["out_of_scope"]
+
+
+@pytest.mark.parametrize("q", [
+    "I feel dizzy and weak",                      # health word, no rule
+    "is Astral 150 trustworthy",                  # judgement word, model number
+    "would it be crazy to keep my MiniMed 780G",  # model number
+    "my cgm fell off again, now what",            # device word
+    "what stocks should i buy",                   # an advice rule fires: safer reply wins
+])
+def test_out_of_scope_with_health_or_device_context_gets_the_medical_refusal(q):
+    d = gr.route([OUT_OF_SCOPE], q)
+    assert d["reply_kind"] == "medical_refusal" and d["reply"] == gr.REFUSAL
+
+
+def test_out_of_scope_with_a_factual_label_gets_the_medical_refusal():
+    d = gr.route([OUT_OF_SCOPE, "counts"], "how many reports, and tell me a joke")
+    assert d["reply_kind"] == "medical_refusal" and d["run_queries"] == ["counts"]
+
+
+@pytest.mark.parametrize("q", [
+    "what can you do", "Hi, what can you do?", "HELP", "help!", "who are you",
+    "how do I use this tool please", "What can I ask you?", "how does this work"])
+def test_help_requests_get_the_help_reply_and_no_query(q):
+    d = gr.route(["problems", OUT_OF_SCOPE], q)
+    assert d["reply_kind"] == "help" and d["reply"] == gr.HELP_REPLY
+    assert d["run_queries"] == [] and not d["out_of_scope"] and d["refusal"] is None
+
+
+@pytest.mark.parametrize("q", [
+    "help, my pump is beeping what should i do", "help me decide between two pumps",
+    "what can you do about my pump alarm", "can you help me with my insulin dose"])
+def test_help_needs_the_whole_question(q):
+    assert not gr.is_help(q)
+
+
+def test_an_advice_rule_always_beats_help(monkeypatch):
+    # No real help phrase triggers an advice rule; force the overlap to test the guard.
+    monkeypatch.setattr(gr, "is_help", lambda q: True)
+    d = gr.route([], "should I stop using my pump")
+    assert d["reply_kind"] == "medical_refusal" and d["out_of_scope"]
+
+
+def test_no_advice_phrasing_is_taken_for_help():
+    advice = [t for _, t in TEMPLATES[OUT_OF_SCOPE] if t not in UNRELATED] + ADVICE
+    assert not [q for q in advice if gr.is_help(q)]
+
+
+@pytest.mark.parametrize("q", FACTUAL)
+def test_factual_questions_get_no_fixed_reply(q):
+    d = gr.route(["counts"], q)
+    assert d["reply_kind"] is None and d["reply"] is None and d["run_queries"] == ["counts"]
+
+
 # ── generator ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture(scope="module")
@@ -221,6 +295,11 @@ def test_classify_refuses_advice_even_if_model_misses(model_dir):
         out = clf.classify(q)
         assert out["out_of_scope"] and out["run_queries"] == [], q
         assert out["refusal"] == gr.REFUSAL
+
+
+def test_classify_answers_help_without_queries(model_dir):
+    out = QuestionClassifier.load(model_dir).classify("what can you do?")
+    assert out["reply_kind"] == "help" and out["run_queries"] == [] and out["unclear"] is False
 
 
 def test_classify_routes_factual_questions(model_dir):

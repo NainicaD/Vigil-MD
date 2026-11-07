@@ -10,8 +10,10 @@ With the default policy (facts_with_refusal) the answer starts with the refusal 
 then answers only the factual part. QuestionClassifier.load(dir, policy="strict") runs no
 query at all for out_of_scope questions.
 
-"unclear" is True when no label passes its threshold and no guardrail rule fires: the
-chatbot should ask the user to rephrase instead of guessing.
+"unclear" is True when no label passes its threshold, no guardrail rule fires and the
+question is not a help request: the chatbot should ask the user to rephrase instead of
+guessing. "reply_kind" / "reply" give the fixed text to show (help, medical refusal or
+scope reply; see guardrails.py).
 """
 from __future__ import annotations
 
@@ -44,4 +46,4 @@ class QuestionClassifier:
         labels = [lbl for lbl in LABELS if s[lbl] >= self.thresholds[lbl]]
         decision = route(labels, question, self.policy)
         return {**decision, "scores": s,
-                "unclear": not decision["labels"]}
+                "unclear": not decision["labels"] and decision["reply_kind"] is None}

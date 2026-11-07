@@ -14,6 +14,17 @@ safe. A model alone cannot guarantee that, so out_of_scope is decided in layers:
 
 FROZEN: rules_fingerprint() is recorded with every model and evaluation. The held-out split
 was scored after the rules were frozen; changing a pattern makes those numbers stale.
+
+Fixed replies (never model-written), chosen in route():
+  help             "what can you do", "help", "who are you": what the bot answers, no query.
+                   Only whole-question matches, and never when an advice rule fires.
+  medical_refusal  out_of_scope with any sign of health or device context (an advice rule,
+                   a factual label, a health/device word, or a word with a digit such as a
+                   model number): REFUSAL.
+  scope            out_of_scope with none of those signs (e.g. "write me a poem"): SCOPE_REPLY.
+                   When in doubt it is medical_refusal, so safety never depends on this split.
+These replies change only the text the user sees, not which questions are refused; the
+advice patterns and their fingerprint are unchanged.
 """
 from __future__ import annotations
 
@@ -24,10 +35,25 @@ from .labels import OUT_OF_SCOPE
 
 REFUSAL = (
     "I can't give medical advice or judge whether a device is safe for you. "
+    "If this is an emergency, call 911 or your local emergency number. "
     "Please talk to your doctor or another qualified health professional about your "
     "situation. If you think a device has harmed someone, you can report it to the FDA "
     "through MedWatch. I can share what FDA reports and recalls say about a device, for "
     "example how many reports it has or whether it has been recalled."
+)
+
+SCOPE_REPLY = (
+    "I can only answer questions about FDA reports and recalls for medical devices, for "
+    "example how many reports a device has, what problems are reported, or whether it has "
+    "been recalled. I can't help with other topics or give medical advice."
+)
+
+HELP_REPLY = (
+    "I answer questions about FDA reports and recalls for medical devices: how many reports "
+    "a device has (deaths, injuries, malfunctions), what problems are reported, whether it "
+    "was recalled and why, what happened in the reports, and who makes a device or what a "
+    "UDI or product code is. For example: \"Was the DreamStation recalled, and why?\" "
+    "I can't give medical advice or judge whether a device is safe."
 )
 
 # Each pattern is matched against the lower-cased question.
@@ -79,6 +105,32 @@ ADVICE_PATTERNS: tuple[tuple[str, str], ...] = (
 )
 _COMPILED = tuple((name, re.compile(pat)) for name, pat in ADVICE_PATTERNS)
 
+# Whole-question help requests, after greetings, "please"/"thanks" and punctuation are removed.
+_HELP = re.compile(
+    r"(?:help|what can you do|what do you do|what can i ask(?: you)?|"
+    r"what (?:can|do) you (?:answer|know)|who are you|what are you|"
+    r"how do i use (?:this|you|this (?:bot|chatbot|tool)|the (?:bot|chatbot|tool))|"
+    r"how does this (?:work|bot work|chatbot work|tool work))")
+_GREETING = re.compile(r"^(?:hi|hey|hello)\b[\s,!.]*")
+_POLITE = re.compile(r"[\s,]*\b(?:please|thanks|thank you)\b[\s!.]*$")
+
+# Health or device context: an out_of_scope question with any of these gets REFUSAL, not
+# SCOPE_REPLY. Broad on purpose (a false match only means the safer reply).
+_HEALTH = re.compile(
+    r"\b(?:devices?|pumps?|implants?|implanted|monitors?|sensors?|valves?|stents?|catheters?|"
+    r"pacemakers?|defibrillators?|icds?|cpaps?|ventilators?|insulin|glucose|cgms?|iuds?|hip|"
+    r"knee|breast|robot|hearing|dialysis|oximeters?|wheelchairs?|recalls?|recalled|fda|"
+    r"maude|udi|doctors?|surgeons?|surgery|hospitals?|nurses?|clinic|er|emergency|patients?|"
+    r"health|medical|medicine|medication|drugs?|dose|symptoms?|pain|rash|fever|infection|"
+    r"bleeding|swelling|swollen|dizzy|headaches?|chest|heart|blood|breath\w*|sick|ill|"
+    r"hurt\w*|injur\w*|died|death|dying|treatment|therapy|diabetes|diabetic|alarm\w*|"
+    r"beep\w*|battery|batteries|safe\w*|unsafe|risk\w*|danger\w*|harm\w*|trust\w*|"
+    r"reliab\w*|worr\w*|scared|afraid|normal|use|using|switch\w*|keep\w*|worth|"
+    r"decide|opinion)\b|\bi (?:feel|felt)\b"
+    # a model number or code ("780G", "Astral 150", "t:slim X2") usually names a device;
+    # until the device lookup exists, a word with a digit counts as device context
+    r"|\b\w*\d\w*\b")
+
 POLICIES = ("strict", "facts_with_refusal")
 DEFAULT_POLICY = "facts_with_refusal"
 
@@ -87,6 +139,18 @@ def rules_fingerprint() -> str:
     """Short hash of the patterns (see FROZEN above)."""
     text = "\n".join(f"{n}={p}" for n, p in ADVICE_PATTERNS)
     return hashlib.sha256(text.encode()).hexdigest()[:12]
+
+
+def is_help(question: str) -> bool:
+    """True if the whole question is a request for help with the bot itself."""
+    q = _GREETING.sub("", question.lower().strip())
+    q = _POLITE.sub("", q).strip(" ?!.,")
+    return bool(_HELP.fullmatch(q))
+
+
+def mentions_health(question: str) -> bool:
+    """True if the question has any health or device word (see _HEALTH)."""
+    return bool(_HEALTH.search(question.lower()))
 
 
 def rule_hits(question: str) -> list[str]:
@@ -98,15 +162,22 @@ def rule_hits(question: str) -> list[str]:
 def route(labels: list[str], question: str, policy: str = DEFAULT_POLICY) -> dict:
     """Combine model labels with the rule backstop and decide what the chatbot does.
 
-    Returns {"labels", "rule_hits", "out_of_scope", "run_queries", "refusal"}:
+    Returns {"labels", "rule_hits", "out_of_scope", "run_queries", "reply_kind", "reply",
+    "refusal"}:
+      help                a help request (no advice rule fires) → HELP_REPLY, run no query
       strict              out_of_scope → refuse, run no query
       facts_with_refusal  (default) out_of_scope → refuse the advice part, still run the factual
-                          labels' queries (the answer must start with REFUSAL)
+                          labels' queries (the answer must start with the reply)
+    reply_kind: "help", "medical_refusal" (REFUSAL), "scope" (SCOPE_REPLY) or None; "reply" is
+    its fixed text. "refusal" is the reply when out_of_scope, else None.
     No label at all (low confidence) → run nothing, ask the user to rephrase.
     """
     if policy not in POLICIES:
         raise ValueError(f"policy must be one of {POLICIES}")
     hits = rule_hits(question)
+    if not hits and is_help(question):
+        return {"labels": sorted(set(labels)), "rule_hits": [], "out_of_scope": False,
+                "run_queries": [], "reply_kind": "help", "reply": HELP_REPLY, "refusal": None}
     final = sorted(set(labels) | ({OUT_OF_SCOPE} if hits else set()))
     oos = OUT_OF_SCOPE in final
     factual = [lbl for lbl in final if lbl != OUT_OF_SCOPE]
@@ -114,5 +185,10 @@ def route(labels: list[str], question: str, policy: str = DEFAULT_POLICY) -> dic
         run = []
     else:
         run = factual
-    return {"labels": final, "rule_hits": hits, "out_of_scope": oos,
-            "run_queries": run, "refusal": REFUSAL if oos else None}
+    kind = reply = None
+    if oos:
+        medical = bool(hits) or bool(factual) or mentions_health(question)
+        kind = "medical_refusal" if medical else "scope"
+        reply = REFUSAL if medical else SCOPE_REPLY
+    return {"labels": final, "rule_hits": hits, "out_of_scope": oos, "run_queries": run,
+            "reply_kind": kind, "reply": reply, "refusal": reply}

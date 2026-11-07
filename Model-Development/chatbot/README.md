@@ -10,8 +10,9 @@ from question_classifier.predict import QuestionClassifier
 clf = QuestionClassifier.load("models/baseline")
 clf.classify("How many deaths has the t:slim X2 had? Should I stop using it?")
 # {"labels": ["counts", "out_of_scope"], "run_queries": ["counts"],
-#  "out_of_scope": True, "refusal": "I can't give medical advice ...", "unclear": False,
-#  "rule_hits": ["should_i", "stop_switch"], "scores": {...}}
+#  "out_of_scope": True, "reply_kind": "medical_refusal",
+#  "reply": "I can't give medical advice ...", "refusal": "I can't give medical advice ...",
+#  "unclear": False, "rule_hits": ["should_i", "stop_switch"], "scores": {...}}
 ```
 
 **Labels** (multi-label, rules in [`labels.py`](question_classifier/labels.py)): `counts`,
@@ -36,6 +37,24 @@ The bot never gives medical advice or judges whether a device is safe. Layers:
    part is still answered. A false alarm then costs a refusal note, not the answer.
    `strict` (refuse everything) is available.
 4. The chatbot's **output gate** (team design) still blocks advice wording in drafts.
+
+### Fixed replies
+
+Every reply below is fixed text in [`guardrails.py`](question_classifier/guardrails.py), never
+written by a model. `classify()` returns which one to show in `reply_kind` and its text in `reply`.
+
+| `reply_kind` | When | Text starts |
+|---|---|---|
+| `help` | The **whole** question asks about the bot ("what can you do", "help", "who are you", "how do I use this tool"), and no advice rule fires. No query runs. | "I answer questions about FDA reports and recalls for medical devices…" |
+| `medical_refusal` | `out_of_scope` with any health or device context: an advice rule, a factual label, a health or device word, or a word with a digit (a model number such as "780G") | "I can't give medical advice… If this is an emergency, call 911…" |
+| `scope` | `out_of_scope` with none of those signs ("write me a poem") | "I can only answer questions about FDA reports and recalls…" |
+
+When in doubt the reply is `medical_refusal`, so these replies never weaken safety. They change
+only the text the user sees, not which questions are refused: the advice rules and their
+fingerprint are unchanged. Known gaps: an unrelated question that trips an advice rule ("what
+stocks should I buy") gets the medical refusal; advice naming a brand without digits and no health
+word ("can I shower with my DreamStation") gets the scope reply, which still gives no advice. The
+device lookup (next step) will recognise brand names.
 
 **The rules are frozen.** `rules_fingerprint()` (currently `0dd7a4dd862a`) is stored with
 every trained model and evaluation. The held-out numbers below are honest only for this
