@@ -8,6 +8,11 @@ What this does per source:
 
 Output: data/interim/{source}_flat.parquet
 
+MAUDE event tables (same rules as scripts/warehouse/build_maude_events.py):
+  maude_problems.parquet  one row per (report, problem_type, problem_term)
+  maude_text.parquet      one row per narrative text, filtered by
+                          scripts/warehouse/maude_events_config.py
+
 Usage:
     python scripts/preprocessing/flatten_to_parquet.py
 """
@@ -20,6 +25,7 @@ import pandas as pd
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.logger import get_logger
+from scripts.warehouse.maude_events_config import TEXT_FILTER
 log = get_logger("flatten")
 
 SAMPLES = Path("data/raw/samples")
@@ -199,6 +205,94 @@ def flatten_gudid(records: list) -> pd.DataFrame:
     return df
 
 
+# ── MAUDE event tables ────────────────────────────────────────────────────────
+
+CONTROL_CHARS = re.compile(r"[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]")
+
+
+def _terms(values) -> list:
+    """Distinct, trimmed, non-empty strings, sorted."""
+    return sorted({v.strip() for v in (values or []) if isinstance(v, str) and v.strip()})
+
+
+def maude_problems(records: list) -> pd.DataFrame:
+    """One row per (report, problem_type, problem_term). Device terms come from
+    product_problems, patient terms from patient[].patient_problems."""
+    rows = []
+    for r in records:
+        key = clean(r.get("mdr_report_key"))
+        if not key:
+            continue
+        patient_terms = [t for p in (r.get("patient") or []) for t in (p.get("patient_problems") or [])]
+        for problem_type, terms in (("device",  _terms(r.get("product_problems"))),
+                                    ("patient", _terms(patient_terms))):
+            for term in terms:
+                rows.append({
+                    "mdr_report_key": key,
+                    "problem_type":   problem_type,
+                    "problem_term":   term,
+                    "event_type":     clean(r.get("event_type")),
+                    "date_received":  normalize_date(r.get("date_received")),
+                })
+    df = pd.DataFrame(rows, columns=["mdr_report_key", "problem_type", "problem_term",
+                                     "event_type", "date_received"])
+    log.info("maude_problems: %d rows from %d reports", len(df), len(records))
+    return df
+
+
+def clean_text(value):
+    """Text without control characters (tab and newline kept), trimmed; None if empty.
+    Characters that are not valid UTF-8 (for example a lone surrogate from a JSON escape
+    like \\ud83d, which Parquet cannot store) become '?'."""
+    if not isinstance(value, str):
+        return None
+    value = value.encode("utf-8", errors="replace").decode("utf-8")
+    return CONTROL_CHARS.sub("", value).strip() or None
+
+
+def maude_text(records: list, filt: dict = TEXT_FILTER) -> pd.DataFrame:
+    """One row per narrative text that passes the filter; empty texts dropped,
+    one row per (report, mdr_text_key), the longest text kept."""
+    best = {}
+    for r in records:
+        key = clean(r.get("mdr_report_key"))
+        received = normalize_date(r.get("date_received"))
+        event_type = clean(r.get("event_type"))
+        if not key or not received:
+            continue
+        if not filt["from_year"] <= int(received[:4]) <= filt["to_year"]:
+            continue
+        if filt.get("event_types") is not None and event_type not in filt["event_types"]:
+            continue
+        for t in r.get("mdr_text") or []:
+            text = clean_text(t.get("text"))
+            text_type = clean_text(t.get("text_type_code"))
+            if text is None:
+                continue
+            if filt.get("text_types") is not None and text_type not in filt["text_types"]:
+                continue
+            row = {
+                "mdr_report_key":          key,
+                "mdr_text_key":            clean_text(t.get("mdr_text_key")),
+                "text_type_code":          text_type,
+                "patient_sequence_number": clean_text(t.get("patient_sequence_number")),
+                "event_type":              event_type,
+                "date_received":           received,
+                "date_report":             normalize_date(r.get("date_report")),
+                "text":                    text,
+            }
+            k = (key, row["mdr_text_key"])
+            if k not in best or len(text) > len(best[k]["text"]):
+                best[k] = row
+    df = pd.DataFrame(list(best.values()),
+                      columns=["mdr_report_key", "mdr_text_key", "text_type_code",
+                               "patient_sequence_number", "event_type", "date_received",
+                               "date_report", "text"])
+    log.info("maude_text: %d texts from %d reports (filter %s)",
+             len(df), df["mdr_report_key"].nunique(), filt)
+    return df
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 FLATTENERS = {
@@ -223,6 +317,13 @@ def main():
         out = INTERIM / f"{source}_flat.parquet"
         df.to_parquet(out, index=False)
         log.info("Saved → %s", out)
+
+        if source == "maude":
+            for name, events_df in (("maude_problems", maude_problems(records)),
+                                    ("maude_text",     maude_text(records))):
+                out = INTERIM / f"{name}.parquet"
+                events_df.astype("string").to_parquet(out, index=False)
+                log.info("Saved → %s", out)
 
     # Quick validation
     print("\n=== Flattening summary ===")

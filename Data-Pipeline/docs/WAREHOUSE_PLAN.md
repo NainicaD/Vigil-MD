@@ -133,6 +133,8 @@ Pending entry:
 | `vigil_md_prod.{enforcement,recall,maude}` | `_part_date` DATE = `COALESCE(record_date, DATE '1900-01-01')` | merge key | flat columns, `record_hash`, `first_loaded_at`, `last_updated_at` |
 | `vigil_md_prod.gudid` | none | `udi_di` | same as above |
 | `vigil_md_ops.load_log` | none | `source` | `source`, `source_file`, `zip_sha256`, `content_sha256`, `ingest_date`, `row_count` INT64, `mode` STRING, `loaded_at` TIMESTAMP |
+| `vigil_md_staging.maude_events_stg` (added 2026-11-07) | `_ingest_date`, expires after 14 days | `mdr_report_key` | `schemas.MAUDE_EVENTS_STAGING_COLUMNS` |
+| `vigil_md_prod.maude_problems`, `vigil_md_prod.maude_text` (added 2026-11-07) | `_part_date` = `COALESCE(date_received, DATE '1900-01-01')` (month) | `mdr_report_key` | `schemas.MAUDE_PROBLEMS_COLUMNS`, `schemas.MAUDE_TEXT_COLUMNS` |
 
 `{source}` is one of `enforcement`, `recall`, `maude`, `gudid`.
 
@@ -535,6 +537,9 @@ docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
 | Prod looks wrong for a source | Trigger `vigil_md_full_load` with `{"sources": ["<source>"], "rebuild_prod": true}`. This replaces every prod row of that source from all staging history, in one transaction. |
 | GCS is missing raw files | Trigger `vigil_md_full_load` with `"refetch": true` for that source. This downloads the full history again. |
 | The MERGE raises "duplicate merge keys" | Nothing was written (rolled back). Usually `record_date` changed for a key; run the date-stability check and set `PRUNE_BY_DATE` to False for that source. |
+| An `events_*_maude` task failed | PROD `maude` is already merged. Read the error, fix, clear the failed task. Each step replaces its own rows, so re-running is safe. Exit 2 = the dry run was above `--max-gb`. |
+| `events_staging` refuses: ingest date 14+ days old | Its staging partition would expire at once. Build staging for a recent ingest date instead. |
+| Change the `maude_text` filter | Edit `scripts/warehouse/maude_events_config.py`, then run `build_maude_events.py --step text` for each ingest date still in `maude_events_stg` (14 days). Older reports need `--step staging` again (one RAW scan). |
 | A check failed, but the cause is known and STAGING is right (false alarm) | Read the check output first. Then merge by hand with the same script and transaction as `merge_*` (duplicate keys roll back), after `--print-only`: `docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker python scripts/warehouse/merge_prod.py --project vigil-md-1792696816 --source <source> --ingest-date <date>`. The DAG run stays failed. Example: MAUDE, 2026-11-04 (`docs/issue.md` #15). |
 
 ### Open issues to keep in mind (`docs/issue.md`)

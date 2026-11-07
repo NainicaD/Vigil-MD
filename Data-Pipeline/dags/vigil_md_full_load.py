@@ -14,7 +14,9 @@ Tasks:
   1. guard_no_acquisition_run — fail if vigil_md_acquisition or vigil_md_load is running
   2. refetch                  — fetch_sources.py --mode full (only if refetch)
   3. load.*                   — per source: unzip --scope all → load_raw --scope all
-                                --mode full → staging → merge
+                                --mode full → staging → validate → check → merge;
+                                MAUDE then: events_staging → events_problems →
+                                events_text (build_maude_events.py)
   4. alert_on_failure         — triggered only if any task fails
 
 Every task that writes GCS state or BigQuery uses the 1-slot vigil_warehouse
@@ -33,8 +35,8 @@ from airflow.sdk.exceptions import AirflowSkipException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    CHECK_SCRIPTS, SOURCE_PRIORITY, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
-    DataCheckFailed, pool_for, warn_only)
+    CHECK_SCRIPTS, EVENT_STEPS, SOURCE_PRIORITY, VALIDATE_EXTRA_ARGS, WEIGHT_RULE,
+    DataCheckFailed, events_args, pool_for, steps_for, warn_only)
 from vigil_helpers import alert_on_failure, run_script  # noqa: E402,F401  (shared, issue #14)
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.task.trigger_rule import TriggerRule
@@ -63,6 +65,8 @@ default_args = {
 def full_load_args(step: str, source: str, ingest_date: str,
                    rebuild: bool = False) -> list[str]:
     """CLI args for one full-load script. Pure function."""
+    if step in EVENT_STEPS:
+        return events_args(step, PROJECT, ingest_date)
     if step == "unzip":
         return ["scripts/warehouse/unzip_to_ndjson.py", "--bucket", BUCKET,
                 "--source", source, "--scope", "all", "--ingest-date", ingest_date]
@@ -198,7 +202,7 @@ with DAG(
                     priority_weight=SOURCE_PRIORITY[source],
                     weight_rule=WEIGHT_RULE,
                 )
-                for step in LOAD_STEPS
+                for step in steps_for(source, LOAD_STEPS)
             ]
             for upstream, downstream in zip(chain, chain[1:]):
                 upstream >> downstream

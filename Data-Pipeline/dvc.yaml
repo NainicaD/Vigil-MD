@@ -5,6 +5,7 @@ stages:
     cmd: python scripts/preprocessing/flatten_to_parquet.py
     deps:
       - scripts/preprocessing/flatten_to_parquet.py
+      - scripts/warehouse/maude_events_config.py
       - data/raw/samples/enforcement_sample.json
       - data/raw/samples/recall_sample.json
       - data/raw/samples/maude_sample.json
@@ -14,6 +15,8 @@ stages:
       - data/interim/recall_flat.parquet
       - data/interim/maude_flat.parquet
       - data/interim/gudid_flat.parquet
+      - data/interim/maude_problems.parquet
+      - data/interim/maude_text.parquet
 
   exact_linking:
     cmd: python scripts/matching/exact_linking.py

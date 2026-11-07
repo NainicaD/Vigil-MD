@@ -31,7 +31,9 @@ def describe(spec: dict) -> str:
     lines = [
         spec["table_id"],
         f"  partition: {part_txt}"
-        + ("  [partition filter required]" if spec["require_partition_filter"] else ""),
+        + ("  [partition filter required]" if spec["require_partition_filter"] else "")
+        + (f"  [partitions expire after {spec['partition_expiration_days']} days]"
+           if spec.get("partition_expiration_days") else ""),
         f"  cluster:   {', '.join(spec['cluster'])}",
         "  columns:",
     ]
@@ -53,6 +55,8 @@ def build_table(spec: dict):
         field, unit = spec["partition"]
         table.time_partitioning = bigquery.TimePartitioning(
             type_=getattr(bigquery.TimePartitioningType, unit), field=field)
+        if spec.get("partition_expiration_days"):
+            table.time_partitioning.expiration_ms = spec["partition_expiration_days"] * 86_400_000
         table.require_partition_filter = spec["require_partition_filter"]
     table.clustering_fields = spec["cluster"]
     return table

@@ -141,6 +141,54 @@ LOAD_LOG_COLUMNS = [
     ("loaded_at",      "TIMESTAMP", "REQUIRED"),
 ]
 
+# ── MAUDE event tables (problems and narrative text, for the chatbot) ─────────
+# Built by scripts/warehouse/build_maude_events.py after the MAUDE merge.
+# One RAW scan per ingest date fills the report-level staging table; the two
+# prod tables are filled from it. mdr_report_key = maude.source_record_id.
+MAUDE_EVENTS_STAGING_COLUMNS = [
+    ("mdr_report_key",   "STRING",    "REQUIRED"),
+    ("event_type",       "STRING",    "NULLABLE"),
+    ("date_received",    "DATE",      "NULLABLE"),
+    ("date_of_event",    "DATE",      "NULLABLE"),
+    ("date_report",      "DATE",      "NULLABLE"),
+    ("product_problems", "STRING",    "REPEATED"),   # distinct, sorted
+    ("patient_problems", "STRING",    "REPEATED"),   # distinct over patient[], sorted
+    ("mdr_text",         "JSON",      "NULLABLE"),   # the openFDA mdr_text array, as is
+    ("record_hash",      "STRING",    "REQUIRED"),
+    ("_ingest_date",     "DATE",      "REQUIRED"),
+    ("_loaded_at",       "TIMESTAMP", "REQUIRED"),
+]
+MAUDE_EVENTS_STAGING_EXPIRY_DAYS = 14   # full text is large; prod keeps what is needed
+
+MAUDE_PROBLEMS_COLUMNS = [
+    ("mdr_report_key",  "STRING",    "REQUIRED"),
+    ("problem_type",    "STRING",    "REQUIRED"),   # 'device' | 'patient'
+    ("problem_term",    "STRING",    "REQUIRED"),
+    ("event_type",      "STRING",    "NULLABLE"),
+    ("date_received",   "DATE",      "NULLABLE"),
+    ("_part_date",      "DATE",      "REQUIRED"),
+    ("last_updated_at", "TIMESTAMP", "REQUIRED"),
+]
+
+MAUDE_TEXT_COLUMNS = [
+    ("mdr_report_key",          "STRING",    "REQUIRED"),
+    ("mdr_text_key",            "STRING",    "NULLABLE"),
+    ("text_type_code",          "STRING",    "NULLABLE"),
+    ("patient_sequence_number", "STRING",    "NULLABLE"),
+    ("event_type",              "STRING",    "NULLABLE"),
+    ("date_received",           "DATE",      "NULLABLE"),
+    ("date_report",             "DATE",      "NULLABLE"),
+    ("text",                    "STRING",    "REQUIRED"),
+    ("_part_date",              "DATE",      "REQUIRED"),
+    ("last_updated_at",         "TIMESTAMP", "REQUIRED"),
+]
+
+# Rows that must be unique in each prod table (checked after every write)
+MAUDE_EVENT_KEYS = {
+    "maude_problems": ["mdr_report_key", "problem_type", "problem_term"],
+    "maude_text":     ["mdr_report_key", "mdr_text_key"],
+}
+
 # ── Table names ───────────────────────────────────────────────────────────────
 
 def raw_table(project: str, source: str) -> str:
@@ -157,6 +205,17 @@ def prod_table(project: str, source: str) -> str:
 
 def load_log_table(project: str) -> str:
     return f"{project}.{DATASETS['ops']}.load_log"
+
+
+def maude_events_staging_table(project: str) -> str:
+    return f"{project}.{DATASETS['staging']}.maude_events_stg"
+
+
+def maude_event_prod_table(project: str, name: str) -> str:
+    """name: 'maude_problems' or 'maude_text'."""
+    if name not in MAUDE_EVENT_KEYS:
+        raise ValueError(f"unknown MAUDE event table {name!r}")
+    return f"{project}.{DATASETS['prod']}.{name}"
 
 
 # ── Table specs ───────────────────────────────────────────────────────────────
@@ -204,6 +263,23 @@ def table_specs(project: str) -> list[dict]:
         "cluster":   ["source"],
         "require_partition_filter": False,
     })
+    specs.append({
+        "table_id":  maude_events_staging_table(project),
+        "columns":   MAUDE_EVENTS_STAGING_COLUMNS,
+        "partition": ("_ingest_date", "DAY"),
+        "cluster":   ["mdr_report_key"],
+        "require_partition_filter": True,
+        "partition_expiration_days": MAUDE_EVENTS_STAGING_EXPIRY_DAYS,
+    })
+    for name, columns in (("maude_problems", MAUDE_PROBLEMS_COLUMNS),
+                          ("maude_text", MAUDE_TEXT_COLUMNS)):
+        specs.append({
+            "table_id":  maude_event_prod_table(project, name),
+            "columns":   columns,
+            "partition": ("_part_date", "MONTH"),   # same as prod maude
+            "cluster":   ["mdr_report_key"],
+            "require_partition_filter": False,
+        })
     for spec in specs:
         assert_not_protected(spec["table_id"])
     return specs

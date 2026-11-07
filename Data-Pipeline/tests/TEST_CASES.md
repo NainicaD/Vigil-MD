@@ -1,6 +1,6 @@
 # Vigil-MD test cases
 
-605 collected test cases across 26 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
+684 collected test cases across 27 files. All GCP calls are mocked (`fake_gcp` and the in-memory `FakeBucket` in `conftest.py`), except `test_raw_data_integration.py`, which talks to real GCS. That file is marked `integration` and deselected by default (see `pytest.ini`). An autouse fixture (`no_logstash` in `conftest.py`) keeps test logs out of Logstash.
 
 Files 9–18 cover the RAW → STAGING → PROD warehouse (`docs/WAREHOUSE_PLAN.md`), added by `docs/TESTS_PLAN.md`.
 
@@ -23,10 +23,10 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_storage_upload.py` | JSON → NDJSON → GCS | 17 | pass |
 | `test_warehouse_load.py` | Parquet → GCS → BigQuery (input and CLI) | 8 | pass |
 | `test_warehouse_load_mocked.py` | Parquet → GCS → BigQuery (mocked GCP calls) | 15 | pass |
-| `test_data_contract.py` | BigQuery contract on `data/interim/*.parquet` | 50 | skipped unless `data/interim` is pulled (`dvc pull`) |
+| `test_data_contract.py` | BigQuery contract on `data/interim/*.parquet` (incl. `maude_problems`, `maude_text`) | 71 | skipped unless `data/interim` is pulled (`dvc pull`) |
 | `dags/test_acquisition_dag.py` | Airflow `pull_samples` DAG | 15 | pass |
 | `test_data_quality.py` | Data quality on `data/interim/*.parquet` | 19 | not run (pandas not installed in test venvs) |
-| `test_preprocessing.py` | Normalization helpers | 25 | not run (pandas not installed in test venvs) |
+| `test_preprocessing.py` | Normalization helpers, MAUDE problem and text rows | 52 | not run (pandas not installed in test venvs) |
 | `test_raw_data_integration.py` | Raw files in the `vigil-md-raw-nd` GCS bucket | 21 | deselected by default (integration); run by the `validate_gcs` task |
 | `test_fakes.py` | The shared test fakes and the Logstash guard | 13 | pass |
 | `test_convert.py` | zip → `{"payload": record}` NDJSON (openFDA JSON, GUDID XML) | 17 | pass |
@@ -34,13 +34,14 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_fetch_incremental.py` | `fetch_sources.py` incremental mode | 29 | pass |
 | `test_unzip_to_ndjson.py` | Unzip step and `--scope all` file list | 20 | pass |
 | `test_load_raw_to_bq.py` | Idempotent RAW load into BigQuery (mocked) | 23 | pass |
-| `test_schemas.py` | Warehouse table definitions | 24 | pass |
+| `test_schemas.py` | Warehouse table definitions | 32 | pass |
 | `test_build_staging.py` | STAGING SQL (flatten, cast, dedup) | 30 | pass |
 | `test_merge_prod.py` | MERGE into PROD and `--rebuild` | 33 | pass |
-| `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 49 | pass |
+| `dags/test_warehouse_dags.py` | `vigil_md_acquisition` → `vigil_md_load` trigger, `vigil_md_load`, `vigil_md_full_load` | 58 | pass |
 | `test_bias_slices.py` | Bias slice analysis of PROD (read-only SQL, statistics, outputs) | 37 | pass |
 | `test_gudid_release.py` | Newest GUDID release from the RSS feed | 8 | pass |
 | `dags/test_vigil_helpers.py` | Shared DAG helpers: live logs, kill on stop, alert names failed tasks | 23 | pass |
+| `test_build_maude_events.py` | MAUDE event tables: staging, problems, text (SQL, cost guard, filter) | 31 | pass |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 
@@ -237,11 +238,12 @@ The fakes model google-cloud-storage 3.14. A fake that did not hid a real bug (`
 
 | Test | What it checks |
 |---|---|
-| `test_thirteen_tables` | 4 raw, 4 staging, 4 prod, 1 load_log |
-| `test_cluster_and_partition_fields_are_columns` (13), `test_merge_keys_are_staging_and_prod_columns` (4) | Every cluster, partition and merge key field exists; staging/prod cluster on the merge key |
+| `test_sixteen_tables` | 4 raw, 5 staging, 6 prod, 1 load_log (incl. the 3 MAUDE event tables) |
+| `test_cluster_and_partition_fields_are_columns` (16), `test_merge_keys_are_staging_and_prod_columns` (4) | Every cluster, partition and merge key field exists; staging/prod cluster on the merge key |
 | `test_raw_and_staging_require_a_partition_filter`, `test_prod_partitioning`, `test_gudid_merge_key_is_public_device_record_key` | Partitioning rules; GUDID key |
 | `test_protected_tables_are_refused` (2) | `vigil_md_processed.*` and `*_sample` are refused |
 | `test_create_tables_print_only_makes_no_gcp_call` | `create_tables.py --print-only` |
+| `test_maude_events_staging_expires_and_needs_a_partition_filter`, `test_maude_event_prod_tables` (2), `test_only_the_events_staging_table_expires`, `test_unknown_maude_event_table_is_refused` | 14-day expiry on `maude_events_stg` only; prod event tables partitioned like prod `maude` |
 
 ## 16. `test_build_staging.py`: STAGING SQL (fake_gcp)
 
@@ -316,6 +318,19 @@ The SQL is checked as text; `run()` uses a `FakeClient` that returns canned rows
 | `test_run_script_kills_the_script_when_the_task_stops`, `test_run_script_kills_the_script_on_any_error` | A stopped or failing task never leaves the script running |
 | `test_failed_task_ids_*` (2), `test_build_failure_message_*` (2), `test_alert_logs_the_failed_tasks_without_email_settings` | The alert lists only `failed` tasks; a lookup error gives "unknown"; subject and body name the tasks |
 | `test_dags_use_the_shared_helpers` (3) | Each DAG uses the shared `run_script` and `alert_on_failure` (no copies) |
+
+## 22. `test_build_maude_events.py`: MAUDE event tables (fake_gcp)
+
+| Test | What it checks |
+|---|---|
+| `test_events_sql_file_is_valid`, `test_validator_rejects_bad_sql` (3) | The SQL file selects every staging column and filters `_ingest_date` |
+| `test_staging_reads_one_raw_partition_and_replaces_one_staging_partition`, `test_staging_insert_columns_match_schemas`, `test_staging_is_one_row_per_report`, `test_record_hash_covers_business_columns_only`, `test_problem_arrays_are_distinct_and_skip_blank_terms` | Staging: one RAW partition, one row per report, transaction order |
+| `test_prod_steps_replace_the_batch_reports_in_one_transaction` (2), `test_problems_insert_both_problem_types`, `test_text_insert_columns_match_schemas` | Prod: delete the batch's reports (pruned to their months + sentinel), insert, duplicate-key rollback |
+| `test_text_filter_and_cleaning`, `test_text_filter_all_drops_the_condition`, `test_default_text_filter`, `test_parse_filter_overrides` | Text filter, cleaning, CLI overrides |
+| `test_staging_expiry_guard`, `test_staging_refuses_an_expired_ingest_date` | No staging for an ingest date 14+ days old |
+| `test_staging_stops_above_the_budget`, `test_staging_runs_with_maximum_bytes_billed`, `test_staging_fails_if_nothing_was_staged`, `test_empty_raw_partition_stages_nothing`, `test_default_caps_fit_a_full_export` | Cost guard (exit 2), `maximum_bytes_billed`, default caps above a full export's scan, empty and expired partitions |
+| `test_prod_step_skips_an_empty_staging_partition`, `test_problems_step_passes_the_batch_months`, `test_batch_without_dates_uses_the_sentinel`, `test_text_step_sends_the_filter_as_parameters`, `test_count_only_writes_nothing`, `test_count_only_is_only_for_the_text_step` | Parameters sent to BigQuery; `--count-only` writes nothing |
+| `test_print_only_makes_no_gcp_call` | `--print-only` for all three steps |
 
 ## Manual checks (real BigQuery, not in pytest)
 
