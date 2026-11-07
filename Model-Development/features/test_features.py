@@ -2,8 +2,8 @@ from features import (
     normalize_key, identifier_match, raw_identifier_equal,
     build_alias_table, manufacturer_match,
     build_di_counts, model_key_di_count, is_distinctive,
+    build_labeler_keys, suffix_conflict,
 )
-
 
 def test_formatting_differences_match():  # E2
     assert normalize_key("IP-200") == normalize_key("IP200") == "IP200"
@@ -132,3 +132,39 @@ def test_unknown_model_is_not_distinctive():
     assert model_key_di_count("steris", "NOPE99", {}) == 0
     assert is_distinctive("steris", "NOPE99", {}) == 0
     assert is_distinctive("steris", "NA", {}) == 0   # placeholder
+
+def make_keys(rows):
+    """Helper: build labeler keys from (labeler, model, di) rows."""
+    return build_labeler_keys(build_di_counts(rows))
+
+
+def test_conflict_when_exact_sibling_exists():  # E3a
+    keys = make_keys([("Globus", "GP200", "DI1"), ("Globus", "GP200S", "DI2")])
+    # MAUDE says GP200, candidate GP200S, but GP200 exists exactly
+    assert suffix_conflict(["GP200", None], ["GP200S", None], "Globus", keys) == (1, 0)
+
+
+def test_conflict_doc_example_reverse():  # E3 example: MAUDE GP200S, candidate GP200
+    keys = make_keys([("Globus", "GP200", "DI1"), ("Globus", "GP200S", "DI2")])
+    assert suffix_conflict(["GP200S", None], ["GP200", None], "Globus", keys) == (1, 0)
+
+
+def test_prefix_only_when_no_exact_record():  # E3b
+    keys = make_keys([("Globus", "GP200S", "DI1"), ("Globus", "GP200T", "DI2")])
+    assert suffix_conflict(["GP200", None], ["GP200S", None], "Globus", keys) == (0, 1)
+
+
+def test_globus_real_example():  # E3, from Q07
+    keys = make_keys([("Globus", "394.126C", "DI1"), ("Globus", "394.126CS", "DI2")])
+    assert suffix_conflict(["394.126C", None], ["394.126CS", None], "Globus", keys) == (1, 0)
+
+
+def test_unrelated_and_exact_are_not_suffix_variants():
+    keys = make_keys([("Globus", "GP200", "DI1")])
+    assert suffix_conflict(["GP200", None], ["XR500", None], "Globus", keys) == (0, 0)
+    assert suffix_conflict(["GP200", None], ["GP200", None], "Globus", keys) == (0, 0)
+
+
+def test_suffix_longer_than_3_is_ignored():
+    keys = make_keys([("Globus", "GP200", "DI1")])
+    assert suffix_conflict(["GP200", None], ["GP200ABCD", None], "Globus", keys) == (0, 0)

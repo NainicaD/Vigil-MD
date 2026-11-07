@@ -152,3 +152,48 @@ def is_distinctive(labeler, model_number, di_counts, max_dis=20):
     """1 if the model key is shared by at most max_dis DIs of this labeler (E4)."""
     n = model_key_di_count(labeler, model_number, di_counts)
     return int(1 <= n <= max_dis)
+
+
+def build_labeler_keys(di_counts):
+    """Every model key each labeler has in GUDID: {labeler: set of keys}."""
+    labeler_keys = {}
+    for lab, key in di_counts:
+        if lab not in labeler_keys:
+            labeler_keys[lab] = set()
+        labeler_keys[lab].add(key)
+    return labeler_keys
+
+
+def is_suffix_variant(a, b, max_extra=3):
+    """True if one key is the other plus 1 to max_extra characters (GP200 vs GP200S)."""
+    if len(a) <= len(b):
+        shorter, longer = a, b
+    else:
+        shorter, longer = b, a
+    extra = len(longer) - len(shorter)
+    return 1 <= extra <= max_extra and longer.startswith(shorter)
+
+
+def suffix_conflict(maude_ids, gudid_ids, gudid_labeler, labeler_keys):
+    """Two flags (0 or 1) for suffix variants (E3):
+      conflicting_sibling - candidate is a suffix variant of the MAUDE key AND the labeler
+                            has a record equal to the MAUDE key exactly (E3a: NON_MATCH)
+      prefix_only         - suffix variant, but no exact record exists (E3b: INSUFFICIENT_EVIDENCE)
+    """
+    maude_keys = {normalize_key(v) for v in maude_ids}
+    maude_keys.discard(None)
+    gudid_keys = {normalize_key(v) for v in gudid_ids}
+    gudid_keys.discard(None)
+    known_keys = labeler_keys.get(clean_name(gudid_labeler), set())
+
+    conflict = False
+    prefix = False
+    for mk in maude_keys:
+        for gk in gudid_keys:
+            if is_suffix_variant(mk, gk):
+                if mk in known_keys:
+                    conflict = True
+                else:
+                    prefix = True
+
+    return int(conflict), int(prefix and not conflict)
