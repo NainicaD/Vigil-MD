@@ -28,4 +28,5 @@ NARRATIVE_EVENT_ORDER = ("Death", "Injury", "Malfunction")
 
 # The device key types the query layer accepts. The device lookup turns a user's words
 # into one of these; the query layer never guesses.
-KEY_TYPES = ("product_code", "brand", "manufacturer", "udi_di")
+KEY_TYPES = ("product_code", "brand", "manufacturer", "udi_di", "udi_dis")
+LIST_KEY_TYPES = ("udi_dis",)   # the key is a list (a device's UDIs, from device_search)

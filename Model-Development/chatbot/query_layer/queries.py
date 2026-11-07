@@ -6,7 +6,9 @@ from users. Each query is a single read-only SELECT (assert_read_only).
 
 The device key: product_code (FDA product code, e.g. LZG), brand (the brand name exactly as
 in the data, case-insensitive), manufacturer (the normalized name, as manufacturer_name_norm),
-udi_di (the device identifier). The device lookup decides the key; nothing here guesses.
+udi_di (one device identifier), udi_dis (a list: all UDIs of a device found by device_search;
+MAUDE rows with one of them are that device's exactly linked reports). device_search decides
+the key; nothing here guesses.
 
 Column meanings (vigil_md_prod): maude has one row per device per report, so reports are
 counted with source_record_id once; record_date is the date FDA received the report.
@@ -28,6 +30,7 @@ MAUDE_FILTER = {
     "brand":        "LOWER(m.device_name_raw) = LOWER(@key)",
     "manufacturer": "m.manufacturer_name_norm = LOWER(@key)",
     "udi_di":       "m.udi_di = @key",
+    "udi_dis":      "m.udi_di IN UNNEST(@key)",
 }
 # recall.device_name_raw is the product description, so a brand is matched inside it.
 # There is no UDI in the recall data: a udi_di must first be turned into a brand or code.
@@ -41,6 +44,7 @@ GUDID_FILTER = {
     "brand":        "LOWER(g.device_name_raw) = LOWER(@key)",
     "manufacturer": "g.manufacturer_name_norm = LOWER(@key)",
     "udi_di":       "g.udi_di = @key",
+    "udi_dis":      "g.udi_di IN UNNEST(@key)",
 }
 
 
@@ -70,14 +74,20 @@ def assert_read_only(sql: str) -> None:
         raise ValueError(f"write keyword not allowed: {hit.group(0)}")
 
 
-def _check_key(key_type: str, key: str, allowed: dict) -> None:
+def _check_key(key_type: str, key, allowed: dict) -> None:
     if key_type not in allowed:
         raise ValueError(f"key_type {key_type!r} not supported here; use one of {sorted(allowed)}")
-    if not isinstance(key, str) or not key.strip():
+    if key_type in config.LIST_KEY_TYPES:
+        if not isinstance(key, (list, tuple)) or not key or \
+                not all(isinstance(k, str) and k.strip() for k in key):
+            raise ValueError(f"{key_type} needs a non-empty list of strings")
+    elif not isinstance(key, str) or not key.strip():
         raise ValueError("key must be a non-empty string")
 
 
-def _key(key: str) -> dict:
+def _key(key) -> dict:
+    if isinstance(key, (list, tuple)):
+        return {"key": ("ARRAY<STRING>", [k.strip() for k in key])}
     return {"key": ("STRING", key.strip())}
 
 

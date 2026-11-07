@@ -1,0 +1,6 @@
+{
+  "_note": "Names users type for a company → words that appear in the data's company names, only where the two differ (Philips devices are filed under Respironics; Abbott bought St. Jude Medical and Thoratec). The matching team's company grouping can replace this list later.",
+  "philips": ["respironics"],
+  "abbott": ["st jude", "thoratec"],
+  "johnson and johnson": ["ethicon", "depuy", "biosense"]
+}

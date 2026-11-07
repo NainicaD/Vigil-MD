@@ -47,23 +47,29 @@ def summarize_problems(rows: list[dict]) -> dict:
     return out
 
 
-def device_summary(backend: BigQueryBackend, key_type: str, key: str,
-                   budget: Budget | None = None) -> dict:
+def device_summary(backend: BigQueryBackend, key_type: str, key, budget: Budget | None = None,
+                   recall_key: tuple[str, str] | None = None) -> dict:
     """Counts, top problems and recalls for one device key, in one budget-checked step.
-    A udi_di has no recall link: recalls are skipped with a note (resolve it to a brand)."""
+    Recalls have no UDI: for udi_di / udi_dis keys pass recall_key (e.g. ("brand",
+    "dreamstation"), as device_search's query_key gives); without it recalls are skipped
+    with a note."""
     budget = budget or Budget()
     qs = [queries.counts(backend.table, key_type, key),
           queries.problems(backend.table, key_type, key)]
-    with_recalls = key_type in queries.RECALL_FILTER
+    if key_type in queries.RECALL_FILTER:
+        recall_key = (key_type, key)
+    with_recalls = recall_key is not None
     if with_recalls:
-        qs.append(queries.recalls(backend.table, key_type, key))
+        qs.append(queries.recalls(backend.table, *recall_key))
     results, records = backend.run(qs, budget)
     recall_rows = results[2] if with_recalls else []
     return {
-        "key": {"type": key_type, "value": key},
+        "key": {"type": key_type, "value": key if key_type not in config.LIST_KEY_TYPES
+                else f"{len(key)} UDIs"},
         "counts": summarize_counts(results[0]),
         "problems": summarize_problems(results[1]),
         "recalls": {
+            "matched_by": list(recall_key) if with_recalls else None,
             "total": recall_rows[0]["total_recalls"] if recall_rows else 0,
             "shown": [{k: v for k, v in r.items() if k != "total_recalls"} for r in recall_rows],
             "note": None if with_recalls else

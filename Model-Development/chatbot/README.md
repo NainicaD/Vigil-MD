@@ -238,3 +238,49 @@ pytest -m integration -q                               # 7 tests on vigil_md_dev
 The script writes only to a `vigil_md_dev*` dataset and labels each table with the extract
 version. To change what is copied, edit `dev_extract.json`, bump `version`, and rebuild.
 `pytest` alone skips the integration tests (marker `integration`), as does CI.
+
+## Device search
+
+[`device_search/`](device_search/) finds devices from what people type. It is **shared by the
+website's search box and the chatbot**, so both find the same device. Search runs on a SQLite
+file (`data/search/<dataset>.sqlite`, not in git), built from BigQuery; searching costs nothing.
+
+```python
+from device_search import DeviceIndex
+index = DeviceIndex.open("vigil_md_dev")
+index.search("dreamstaton")                                   # ranked devices, companies, codes
+r = index.resolve("How many deaths were reported for the dreamstaton?")
+r.status       # resolved | several ("X vs Y") | ambiguous (bot asks which) | none (bot asks)
+key = index.query_key(r.matches[0])                           # → query layer
+device_summary(backend, key["key_type"], key["key"], budget, recall_key=key["recall_key"])
+```
+
+| Entry | What | Query layer key |
+|---|---|---|
+| device | GUDID records grouped by company and brand name (e.g. "DreamStation", Respironics), with all its UDIs and model numbers | `udi_dis` (its UDIs); recalls by its name (`recall_key`) |
+| company | a manufacturer name as in MAUDE | `manufacturer` |
+| product code | an FDA product code and its most reported brand names | `product_code` |
+
+- **Matching:** words in names and model numbers, typos allowed (similarity, 4-letter prefixes,
+  plurals); a company name counts slightly less, so "medtronic" ranks companies first and
+  "philips dreamstation" finds the device. Equal scores rank by report count.
+- **Owner names:** [`aliases.json`](device_search/aliases.json) maps names users type to names
+  in the data (Philips → Respironics). The matching team's company grouping can replace it.
+- **In a question:** a UDI (8-14 digits) wins, then a product code in capitals, then the
+  question's device words (question and judgement words removed). One clear match is
+  taken; otherwise the bot shows the top matches and asks.
+- **Report counts are exact UDI links only** (MAUDE `udi_di` = a GUDID DI). Many reports have
+  no UDI: DreamStation has 26,408 linked reports in `vigil_md_dev`, while product code BZD has
+  about 205,000. Answers say "reports linked by UDI". The matching team's predicted links will
+  add the rest.
+
+```bash
+# from Model-Development/chatbot/
+python -m device_search.build_index --estimate-only    # dry run: about 0.07 GB on vigil_md_dev
+python -m device_search.build_index                    # data/search/vigil_md_dev.sqlite (1.5 MB)
+pytest -m integration -q                               # includes question → device → reports
+```
+
+On `vigil_md_dev`: 838 devices, 220 companies, 5 product codes, 8,155 UDIs; a search takes
+2 to 55 ms. A PROD index (5.3M GUDID records) reads 3.9 GB to build (dry run, 2026-11-07):
+`--dataset vigil_md_prod --max-gb 5`. Run it daily with the summary tables, not per search.

@@ -106,6 +106,25 @@ def test_backend_refuses_a_write_statement_before_calling_bigquery():
     assert client.calls == []
 
 
+def test_udi_list_key_is_an_array_parameter():
+    q = queries.counts(T, "udi_dis", ["1", " 2 "])
+    assert "m.udi_di IN UNNEST(@key)" in q.sql and q.params["key"] == ("ARRAY<STRING>", ["1", "2"])
+    with pytest.raises(ValueError):
+        queries.counts(T, "udi_dis", [])
+    with pytest.raises(ValueError):
+        queries.counts(T, "udi_dis", "00000000000101")        # a list is required
+
+
+def test_device_summary_uses_the_recall_key_for_a_udi_list():
+    client = FakeClient(rows={"recalls": [{"recall_number": "Z-9", "total_recalls": 1}]})
+    out = summary.device_summary(backend(client), "udi_dis", ["1", "2"], Budget(),
+                                 recall_key=("brand", "dreamstation"))
+    (_, cfg), = [c for c in client.real_runs() if c[0] == "recalls"]
+    assert {p.name: p.value for p in cfg.query_parameters if p.name == "key"} == {"key": "dreamstation"}
+    assert out["recalls"]["matched_by"] == ["brand", "dreamstation"] and out["recalls"]["total"] == 1
+    assert out["key"]["value"] == "2 UDIs"
+
+
 def test_unknown_key_type_and_empty_key_are_refused():
     with pytest.raises(ValueError):
         queries.counts(T, "model_number", "780G")

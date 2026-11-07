@@ -43,6 +43,8 @@ def main(argv=None) -> int:
     ap.add_argument("--dataset", default=config.DATASET)
     ap.add_argument("--months", type=int, default=3)
     a = ap.parse_args(argv)
+    if a.key_type in config.LIST_KEY_TYPES:
+        a.key = [k.strip() for k in a.key.split(",") if k.strip()]   # --key A,B,C
     backend = BigQueryBackend(dataset=a.dataset)
     qs = plan(backend, a.key_type, a.key, a.months)
     est = dict(zip((q.name for q in qs), backend.estimate(qs)))
