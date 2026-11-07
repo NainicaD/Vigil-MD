@@ -369,6 +369,11 @@ def sql_suffix_lens() -> str:
     """The array used by `FROM ..., UNNEST({{ suffix_lens() }}) AS k` joins (E3)."""
     return f"[{', '.join(map(str, SUFFIX_LENS))}]"
 
+def sql_has_kit_word(col: str) -> str:
+    """The device name contains a kit or system word (E9). Same test as _is_kit in Python."""
+    return f"REGEXP_CONTAINS(UPPER(IFNULL({col}, '')), r'{KIT_WORD_RE}')"
+
+
 def sql_alias_min_dis() -> str:
     """ALIAS_MIN_DIS as a SQL literal, for the HAVING of 01_alias_table.sql (E5)."""
     return str(ALIAS_MIN_DIS)
@@ -399,6 +404,7 @@ SQL_MACROS = {
     "match_kind": sql_match_kind,
     "is_distinctive": sql_is_distinctive,
     "suffix_lens": sql_suffix_lens,
+    "has_kit_word": sql_has_kit_word,
     "alias_min_dis": sql_alias_min_dis,
     "device_key": sql_device_key,
     "split": sql_split,
