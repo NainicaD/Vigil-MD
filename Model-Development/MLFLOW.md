@@ -31,9 +31,13 @@ pip install mlflow==3.18.0
 
 ```bash
 cd ~/Vigil-MD
-mlflow ui --backend-store-uri sqlite:///Model-Development/mlflow/mlflow.db
-# open http://localhost:5000
+mlflow ui --backend-store-uri sqlite:///Model-Development/mlflow/mlflow.db --port 5050
+# open http://127.0.0.1:5050   (Ctrl+C stops it)
 ```
+
+Port 5050, not MLflow's default 5000: on macOS the AirPlay Receiver listens on port 5000, so
+`http://localhost:5000` shows an empty page (HTTP 403) instead of MLflow. Run the command from the
+repo root: the store path is relative, and from another folder MLflow opens a new, empty store.
 
 ## Naming
 

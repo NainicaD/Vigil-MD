@@ -123,8 +123,9 @@ pytest -q                                       # logs to a temporary MLflow sto
 Follows the shared conventions in [`../MLFLOW.md`](../MLFLOW.md); the code is in
 [`tracking.py`](query_router/tracking.py).
 
-- **Store:** `Model-Development/mlflow/` on your machine (not in git). View it with
-  `mlflow ui --backend-store-uri sqlite:///Model-Development/mlflow/mlflow.db` from the repo root.
+- **Store:** `Model-Development/mlflow/` on your machine (not in git). View it from the repo root
+  with `mlflow ui --backend-store-uri sqlite:///Model-Development/mlflow/mlflow.db --port 5050`,
+  then open http://127.0.0.1:5050 (port 5000 is taken by AirPlay on macOS).
 - **`train`:** one parent run `tfidf_lr-grid` in experiment `chatbot/query-router`, with
   one nested run per C. The parent run has the required tags (`git_commit`, `git_dirty`,
   `data_version`, `author`, `workstream`) plus `rules_fingerprint`, the chosen C, the `val_*`
