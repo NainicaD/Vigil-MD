@@ -175,6 +175,21 @@ def assert_model_write_only(sql: str) -> None:
     if not datasets <= {PROD_DATASET, MODEL_DATASET}:
         raise ValueError(f"reads outside {PROD_DATASET}/{MODEL_DATASET}: {sorted(datasets)}")
 
+def assert_select_prod_model(sql: str) -> None:
+    """Raise unless the SQL is a single SELECT that reads only vigil_md_prod and vigil_md_model.
+    For queries that need the model tables (device_split, alias_table) but write nothing. A separate
+    guard: assert_read_only stays prod-only for the profiling queries."""
+    code = _without_comments(sql).strip()
+    head = code.split(None, 1)[0].upper() if code else ""
+    if head not in ("SELECT", "WITH", "("):
+        raise ValueError(f"not a SELECT: {code[:60]!r}")
+    hit = READ_ONLY_FORBIDDEN.search(code)
+    if hit:
+        raise ValueError(f"write statement in a read query: {hit.group(0)}")
+    datasets = set(re.findall(r"`[^`.]+\.([^`.]+)\.[^`]+`", code))
+    if not datasets or not datasets <= {PROD_DATASET, MODEL_DATASET}:
+        raise ValueError(f"must read only {PROD_DATASET}/{MODEL_DATASET}, found {sorted(datasets)}")
+
 
 def estimate_bytes(client, sql: str) -> int:
     """Bytes the query would scan (BigQuery dry run: free, nothing executed)."""
