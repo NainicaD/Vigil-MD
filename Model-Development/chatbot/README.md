@@ -206,3 +206,35 @@ The cost hardly depends on the device: BigQuery reads whole columns, and `proble
 (per device, built once a day in the data pipeline) are needed before real use; until then,
 development runs against the small `vigil_md_dev` extract. The narrative texts themselves are
 cheap (under 1 MB): `maude_text` is pruned by month and report key.
+
+### Development dataset (`vigil_md_dev`)
+
+A small copy of `vigil_md_prod` with the same table names and layout, for development and the
+integration tests. Built by [`scripts/build_dev_extract.py`](scripts/build_dev_extract.py) from
+[`data/dev_extract.json`](data/dev_extract.json): product codes LZG (insulin pump), BZD (CPAP,
+Class I recall), OZD (heart pump, death-heavy), FTR (breast implant, injury-heavy), PKU (app, no
+recalls), MAUDE reports from 2023-01-01.
+
+| Table | Rows (v1, 2026-11-07) |
+|---|---|
+| `maude` | 459,482 |
+| `maude_problems` | 1,148,678 |
+| `maude_text` | 515,147 |
+| `recall` / `enforcement` | 273 / 139 |
+| `gudid` | 8,155 |
+
+492 MB in total. Building it read 12.8 GB from PROD once. A device summary on it costs about
+0.07 GB (PROD: 3.5 GB).
+
+```bash
+# from Model-Development/chatbot/
+python scripts/build_dev_extract.py --print-only       # the SQL
+python scripts/build_dev_extract.py --estimate-only    # dry runs (free)
+python scripts/build_dev_extract.py --yes              # rebuild (replaces each table)
+VIGIL_BQ_DATASET=vigil_md_dev python -m query_layer.estimate --key-type product_code --key LZG
+pytest -m integration -q                               # 7 tests on vigil_md_dev, about 0.2 GB
+```
+
+The script writes only to a `vigil_md_dev*` dataset and labels each table with the extract
+version. To change what is copied, edit `dev_extract.json`, bump `version`, and rebuild.
+`pytest` alone skips the integration tests (marker `integration`), as does CI.
