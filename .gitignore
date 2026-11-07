@@ -246,3 +246,4 @@ __marimo__/
 Model-Development/**/*.csv
 mlruns/
 mlartifacts/
+Model-Development/**/mlflow.db
