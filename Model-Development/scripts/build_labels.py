@@ -7,7 +7,7 @@ same_device_features.py. Writes labels/label_set_v1.manifest.json after a real r
 Every part is dry-run before its job. Parts whose inputs are built earlier in the same run cannot be
 dry-run until those tables exist, so they are estimated just before they run (still before any bytes
 are billed for that part). A part over --max-gb stops the run with exit 3; maximum_bytes_billed is
-set on every real job. Exit 0 ok, 2 broken SQL or config, 3 over budget.
+set on every real job. Exit 0 ok, 2 broken SQL or config, 3 over budget, 4 golden fixture differs.
 
 Train-only alias invariant: steps 02 and later refuse to run unless vigil_md_model.alias_table hashes
 to the value in the manifest (written by --export-alias, which also writes labels/alias_table_v1.csv).
@@ -18,6 +18,7 @@ Usage (WSL; only whoever owns the write access runs it):
   ... --estimate-only
   ... --only 02 03 --snapshot-date 2026-11-06
   ... --export-alias                      # after 01_alias_table, before 02
+  ... --fixture                           # Python / BigQuery parity check (H4), no tables read
 """
 from __future__ import annotations
 
@@ -34,6 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bq_utils  # noqa: E402
+import golden_fixture  # noqa: E402
 import same_device_features as feat  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -234,7 +236,7 @@ def write_manifest(client, project, params, max_gb, snapshot_date, path: Path, w
         "project": project,
         "query_sha256": {p.name: sha256_hex(p.read_bytes()) for p in all_files},
         "constants": feat.constants(),
-        "constants_sha256": sha256_hex(json.dumps(feat.constants(), sort_keys=True).encode()),
+        "constants_sha256": feat.constants_sha256(),
         "caps_and_ratios": {k.strip("_").lower(): v for k, v in params.items()} | {"max_gb": max_gb},
     })
     if with_counts:
@@ -258,6 +260,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--print-only", action="store_true", help="print the SQL; no GCP call")
     ap.add_argument("--export-alias", action="store_true",
                     help="write labels/alias_table_v1.csv from BigQuery and record its hash in the manifest")
+    ap.add_argument("--fixture", action="store_true",
+                    help="run the golden fixture on BigQuery and compare with the expected values "
+                         "(reads no table; exit 4 on any difference)")
     ap.add_argument("--snapshot-date", help="prod snapshot date for the manifest, e.g. 2026-11-06")
     ap.add_argument("--max-per-device", type=int, default=200, help="positives kept per device")
     ap.add_argument("--neg-per-anchor", type=int, default=2, help="negatives kept per anchor")
@@ -267,7 +272,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    params = {"__MAX_PER_DEVICE__": args.max_per_device, "__NEG_PER_ANCHOR__": args.neg_per_anchor,
+    if args.fixture:
+        if args.print_only:
+            print(golden_fixture.fixture_sql(golden_fixture.load()[1]))
+            return EXIT_OK
+        from google.cloud import bigquery
+        return golden_fixture.check_bigquery(bigquery.Client(project=args.project))
+
+    params ={"__MAX_PER_DEVICE__": args.max_per_device, "__NEG_PER_ANCHOR__": args.neg_per_anchor,
               "__CAND_POOL__": args.cand_pool, "__EASY_ANCHOR_PCT__": args.easy_anchor_pct,
               "__EASY_POOL__": args.easy_pool}
     if min(params.values()) < 1 or args.easy_anchor_pct > 100:

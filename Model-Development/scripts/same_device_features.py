@@ -17,6 +17,7 @@ Column namespaces for any table or CSV built from this module:
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from enum import StrEnum
@@ -73,6 +74,11 @@ def constants() -> dict[str, Any]:
             "KIT_WORD_RE": KIT_WORD_RE, "FEATURE_COLUMNS": list(FEATURE_COLUMNS)}
 
 
+def constants_sha256() -> str:
+    """Hash of constants(). The label manifest and the golden fixture both store it to detect rule drift."""
+    return hashlib.sha256(json.dumps(constants(), sort_keys=True).encode()).hexdigest()
+
+
 def is_banned_feature_name(name: str) -> bool:
     """True when `name` contains a banned token between underscores."""
     padded = f"_{name}_"
@@ -120,7 +126,9 @@ class MatchContext:
 # --- Python rules (section 4 of the definition) ----------------------------------------------------
 # re.ASCII everywhere: BigQuery RE2 \s is ASCII-only, Python's is Unicode-wide. Without it a
 # non-breaking space would be stripped in Python and kept in SQL.
-_STRIP = re.compile(STRIP_CHARS_RE, re.ASCII)
+# RE2's \s is [ \t\n\f\r] with NO vertical tab (Python's ASCII \s adds \v). Spell it out so both engines
+# strip the same characters; the golden fixture (case c19) found this. The shared constant stays `\s`.
+_STRIP = re.compile(STRIP_CHARS_RE.replace(r"\s", r" \t\n\f\r"), re.ASCII)
 _PLACEHOLDER = re.compile(PLACEHOLDER_RE, re.ASCII)
 _KIT = re.compile(KIT_WORD_RE, re.ASCII)
 _WORD = re.compile(r"[A-Z0-9]+", re.ASCII)

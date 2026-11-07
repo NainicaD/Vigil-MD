@@ -26,7 +26,7 @@ raw_cand AS (
   FROM `__MODEL_DATASET__.gudid_keyed` AS c, UNNEST({{ suffix_lens() }}) AS k
   JOIN anchors AS a
     ON a.anchor_g_mfr = c.g_mfr
-   AND a.anchor_g_model = SUBSTR(c.g_model, 1, LENGTH(c.g_model) - k)
+   AND a.anchor_g_model = SAFE.SUBSTR(c.g_model, 1, LENGTH(c.g_model) - k)  -- SAFE: key shorter than k gives NULL, no match
    AND a.anchor_split = c.meta_split
   UNION ALL
   -- candidate key = anchor key minus k characters
@@ -37,7 +37,7 @@ raw_cand AS (
   FROM anchors AS a, UNNEST({{ suffix_lens() }}) AS k
   JOIN `__MODEL_DATASET__.gudid_keyed` AS c
     ON c.g_mfr = a.anchor_g_mfr
-   AND c.g_model = SUBSTR(a.anchor_g_model, 1, LENGTH(a.anchor_g_model) - k)
+   AND c.g_model = SAFE.SUBSTR(a.anchor_g_model, 1, LENGTH(a.anchor_g_model) - k)
    AND c.meta_split = a.anchor_split
 ),
 classified AS (

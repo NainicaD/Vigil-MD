@@ -1,9 +1,9 @@
 {
   "alias_table_sha256": "d5fd4ba984a05f6eeeb5b27205f9c1d07322702a3e36971a10e66b56b9125ee8",
-  "built_at": "2026-11-07 18:27 UTC",
+  "built_at": "2026-11-07 19:54 UTC",
   "caps_and_ratios": {
     "cand_pool": 50,
-    "easy_anchor_pct": 10,
+    "easy_anchor_pct": 25,
     "easy_pool": 20000,
     "max_gb": 25.0,
     "max_per_device": 200,
@@ -51,10 +51,30 @@
     "00_device_split.sql": "a046ed18c773bb0d21f4b60c25b18b8d18772598c90ecf84c8bdd7fb7e783bd6",
     "01_alias_table.sql": "3d305904130f6cb023e5613ff510692ec66fd2d2f2554027676b30ccab19276f",
     "02_positives.sql": "839512ff3a2f54934bc19d0f73affac75e1b907e0d90b461960777d1e3ff8c1a",
-    "03_negatives_suffix.sql": "cea5cf07cc7e571aed5fab674978099af8f0580b0011f0ffa04d0581d7b3a3d8",
+    "03_negatives_suffix.sql": "297b2a1ab9275c9984c69fa7d9ec3d92a5e247eeff3d7dc4dc77066cf4366023",
     "04_negatives_same_labeler.sql": "22c7ec6b5e589498fc3da9a5db0001c73a4fa938deeac658e7ac78b57a55f50d",
     "05_label_set.sql": "9765f156a7298ef2d8a8a1805725d1c0c223160d5093941c10b6d8183d43fb94",
     "06_label_stats.sql": "2831e38ec70592a8d11fb506b8d9a2c50b4425ceecc493843866a1f5d05e4c8e"
   },
-  "snapshot_date": "2026-11-06"
+  "row_counts": {
+    "test|MATCH|catalog_eq_catalog": 1546,
+    "test|MATCH|contains": 288,
+    "test|MATCH|maude_catalog_eq_gudid_model": 19564,
+    "test|MATCH|maude_model_eq_gudid_catalog": 1543,
+    "test|MATCH|maude_model_missing_or_placeholder": 2976,
+    "test|MATCH|prefix_related": 844,
+    "test|MATCH|same_model_key": 25675,
+    "test|NON_MATCH|conflict": 66725,
+    "test|NON_MATCH|prefix_related": 5279,
+    "train|MATCH|catalog_eq_catalog": 7625,
+    "train|MATCH|contains": 1357,
+    "train|MATCH|maude_catalog_eq_gudid_model": 76727,
+    "train|MATCH|maude_model_eq_gudid_catalog": 5592,
+    "train|MATCH|maude_model_missing_or_placeholder": 11631,
+    "train|MATCH|prefix_related": 2791,
+    "train|MATCH|same_model_key": 103532,
+    "train|NON_MATCH|conflict": 275695,
+    "train|NON_MATCH|prefix_related": 17918
+  },
+  "snapshot_date": "2026-11-07"
 }
