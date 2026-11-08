@@ -29,9 +29,13 @@ suffix_pairs AS (
   WHERE LENGTH(l.g_model) > d
 ),
 has_sibling AS (
-  SELECT g_mfr, short_key AS g_model FROM suffix_pairs
-  UNION DISTINCT
-  SELECT g_mfr, long_key FROM suffix_pairs
+  -- each key with the sibling keys it has; the row's own catalog key is not a conflicting sibling
+  SELECT g_mfr, g_model, ARRAY_AGG(other) AS others FROM (
+    SELECT g_mfr, short_key AS g_model, long_key AS other FROM suffix_pairs
+    UNION DISTINCT
+    SELECT g_mfr, long_key, short_key FROM suffix_pairs
+  )
+  GROUP BY g_mfr, g_model
 ),
 extended_stems AS (
   -- (labeler, X) where the labeler has a key X plus 1-3 characters, whether or not X itself exists (E3b)
@@ -97,7 +101,8 @@ frame AS (
         THEN 'E3b_prefix_only'
       WHEN NOT {{ is_placeholder(p.m_model) }} AND mg.n_dis IS NOT NULL AND NOT {{ is_distinctive(mg.n_dis) }}
         THEN 'E4_non_distinctive'
-      WHEN NOT {{ is_placeholder(p.m_model) }} AND mg.n_dis IS NOT NULL AND hs.g_model IS NOT NULL
+      WHEN NOT {{ is_placeholder(p.m_model) }} AND mg.n_dis IS NOT NULL
+           AND EXISTS (SELECT 1 FROM UNNEST(hs.others) AS o WHERE o IS DISTINCT FROM p.m_cat)
         THEN 'E3_suffix_sibling'
       WHEN NOT {{ is_placeholder(p.m_cat) }} AND mg.n_dis IS NULL AND cx.n_dis IS NOT NULL
         THEN 'E7_cross_field'

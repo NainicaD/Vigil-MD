@@ -124,7 +124,11 @@ SELECT
   gt.n_dis_for_model AS cand_n_dis_for_model,
   {{ is_distinctive(gt.n_dis_for_model) }} AS cand_is_distinctive,
   {{ match_kind(m, g) }} AS cand_match_kind,
-  hs.sib_key IS NOT NULL AS cand_has_suffix_sibling,
+  -- FALSE when a MAUDE key equals a candidate key: same rule as has_conflicting_identifier in Python
+  (hs.sib_key IS NOT NULL
+   AND NOT (IFNULL(NOT {{ is_placeholder(r.m_model) }} AND r.m_model IN (gt.g_model, gt.g_cat), FALSE)
+            OR IFNULL(NOT {{ is_placeholder(r.m_cat) }} AND r.m_cat IN (gt.g_model, gt.g_cat), FALSE)))
+    AS cand_has_suffix_sibling,
   ({{ raw_equal(r.m_model_raw, gt.g_model_raw) }} OR {{ raw_equal(r.m_model_raw, gt.g_catalog_raw) }}
    OR {{ raw_equal(r.m_catalog_raw, gt.g_model_raw) }} OR {{ raw_equal(r.m_catalog_raw, gt.g_catalog_raw) }})
     AS cand_raw_identifier_equal

@@ -66,6 +66,11 @@ def test_conflicting_identifier_both_directions():
     assert not f.has_conflicting_identifier(side("GP200S"), side("GP200"), frozenset())
 
 
+def test_exact_key_match_is_not_a_conflict():
+    # pair de53171f: model 914ESP agrees, catalog 914ESPA is only a suffix away
+    assert not f.has_conflicting_identifier(side("914ESP"), side("914ESP", "914ESPA"), frozenset({"914ESP"}))
+
+
 def test_distinctive_threshold():
     assert f.is_distinctive(20) and not f.is_distinctive(21) and not f.is_distinctive(None)
 

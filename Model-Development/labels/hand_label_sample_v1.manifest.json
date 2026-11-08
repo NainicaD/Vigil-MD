@@ -1,5 +1,5 @@
 {
-  "run_at": "2026-11-07T20:01:16+00:00",
+  "run_at": "2026-11-08T17:10:29+00:00",
   "project": "vigil-md-1792696816",
   "batch": 1,
   "salt": "v1",
@@ -12,14 +12,14 @@
   },
   "constants_sha256": "ad06d0321284d7a358187be44053ba4d8ab26a7e9f571f0aeedd05b1cf0912fc",
   "query_sha256": {
-    "01_cells.sql": "979c18a60bfbb7f1f223d6c2a28cf96cec8270accb464526c41cd79dab24964e",
-    "02_draw.sql": "59a09d05e01fed9705992a3a3e94ebf20d04519dfc271d627204f46b50316245",
-    "03_candidates.sql": "8f955623d0609dccfd37733ffee32f759d71fd0893875af3757225893e16b598"
+    "01_cells.sql": "8f2aa8fcec2e61a57a9bd34237d4e6526792408fdb4fce06cef308e730635ad6",
+    "02_draw.sql": "0e2f4d8cd05b92e8fe7aa7a6919d628b0039e8254e2e2abb6bafc5de51eaad24",
+    "03_candidates.sql": "393519df6c99b368470ad1d6d256318335ce8d97dbb709ee7f04a0a39e90c250"
   },
   "bytes_processed": {
     "01_cells": 2509982454,
-    "02_draw": 0,
-    "03_candidates": 0
+    "02_draw": 3295722830,
+    "03_candidates": 954219425
   },
   "frame_rows": 2096739,
   "maude_rows_drawn": 150,
@@ -37,10 +37,10 @@
   },
   "cells": {
     "E3_suffix_sibling|hard": {
-      "frame_rows": 24270,
+      "frame_rows": 24264,
       "quota": 8,
       "drawn": 8,
-      "weight": 3033.75
+      "weight": 3033.0
     },
     "E3b_prefix_only|hard": {
       "frame_rows": 3221,
@@ -73,10 +73,10 @@
       "weight": 66429.428571
     },
     "E9_kit_wording|hard": {
-      "frame_rows": 237144,
+      "frame_rows": 237146,
       "quota": 7,
       "drawn": 7,
-      "weight": 33877.714286
+      "weight": 33878.0
     },
     "cand_0|11_100|easy": {
       "frame_rows": 154178,
@@ -97,16 +97,16 @@
       "weight": 13518.56
     },
     "cand_1|11_100|easy": {
-      "frame_rows": 30388,
+      "frame_rows": 30389,
       "quota": 4,
       "drawn": 4,
-      "weight": 7597.0
+      "weight": 7597.25
     },
     "cand_1|smaller|easy": {
-      "frame_rows": 24781,
+      "frame_rows": 24784,
       "quota": 4,
       "drawn": 4,
-      "weight": 6195.25
+      "weight": 6196.0
     },
     "cand_1|top_10|easy": {
       "frame_rows": 17268,

@@ -206,7 +206,10 @@ def has_conflicting_identifier(maude: DeviceSide, gudid: DeviceSide,
                                sibling_keys: frozenset[str]) -> bool:
     """GUDID has a record equal to the MAUDE key, and this candidate is only a 1-3 character suffix away (E3a)."""
     g_keys = {k for k in map(usable_key, (gudid.model_raw, gudid.catalog_raw)) if k}
-    for mk in filter(None, map(usable_key, (maude.model_raw, maude.catalog_raw))):
+    m_keys = [k for k in map(usable_key, (maude.model_raw, maude.catalog_raw)) if k]
+    if g_keys.intersection(m_keys):  # an identifier agrees exactly: not a conflict (e.g. 914ESP vs catalog 914ESPA)
+        return False
+    for mk in m_keys:
         if mk not in sibling_keys:
             continue
         for gk in g_keys:
