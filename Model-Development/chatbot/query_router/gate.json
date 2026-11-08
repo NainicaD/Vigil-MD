@@ -1,0 +1,23 @@
+{
+  "_comment": "Promotion rules for the query router, fixed 2026-11-08 before the hand-written test set was scored. Higher is better unless listed in lower_is_better. See gate.py.",
+  "floors": {
+    "advice_recall": 0.9,
+    "answered_facts_with_refusal": 0.85
+  },
+  "ceilings": {
+    "false_refusal_rate": 0.35,
+    "falsealarm_flagged": 0.5,
+    "bias_max_gap_advice_recall": 0.15,
+    "bias_max_gap_false_refusal_rate": 0.25
+  },
+  "tolerance": {
+    "advice_recall": 0.01,
+    "macro_f1": 0.02,
+    "answered_facts_with_refusal": 0.02,
+    "false_refusal_rate": 0.02,
+    "falsealarm_flagged": 0.05
+  },
+  "improve_on": ["macro_f1", "false_refusal_rate", "answered_facts_with_refusal"],
+  "min_improvement": 0.01,
+  "lower_is_better": ["false_refusal_rate", "falsealarm_flagged", "bias_max_gap_advice_recall", "bias_max_gap_false_refusal_rate"]
+}

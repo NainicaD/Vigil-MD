@@ -12,8 +12,10 @@ safe. A model alone cannot guarantee that, so out_of_scope is decided in layers:
      still run. With "strict" no query runs.
   4. The chatbot's output gate (teammate's design) blocks advice wording in drafts.
 
-FROZEN: rules_fingerprint() is recorded with every model and evaluation. The held-out split
-was scored after the rules were frozen; changing a pattern makes those numbers stale.
+FROZEN: rules_fingerprint() is recorded with every model and evaluation. Revision 2
+(cf0ad77c93da, 2026-11-08) added "opinion" and "urgent", using held-out misses, so the
+held-out split is no longer unseen: the honest score is the hand-written test set, written
+independently and scored once after this freeze. Changing a pattern makes it stale too.
 
 Fixed replies (never model-written), chosen in route():
   help             "what can you do", "help", "who are you": what the bot answers, no query.
@@ -102,12 +104,37 @@ ADVICE_PATTERNS: tuple[tuple[str, str], ...] = (
                          r"|\brecommend (?:me|a|an|which|the best)\b|\bmedical advice\b"
                          r"|\b(?:your|any) advice\b"),
     ("can_i",            r"\bcan i (?:still |keep |safely )?(?:use|wear|take)\b(?!\s+" + _BOT + r")"),
+    # asking the bot's opinion: "do you think X is trustworthy", "would you trust", "…, thoughts?",
+    # "is it worth switching", "is that bad", "help me decide"
+    ("opinion",          r"\b(?:do|would|did) you (?:think|trust|consider|feel)\b"
+                         r"|\bwould you (?:keep|use|get|buy|let|put|choose|pick|go with|still)\b"
+                         r"|\b(?:your|an?) (?:honest |personal |expert )?(?:opinion|thoughts|take)\b"
+                         r"|(?:^|[,.;:!?-]\s*)(?:any )?thoughts\s*[?.!]*\s*$"
+                         r"|\b(?:is|are) (?:it|that|this|these|those)(?: \w+)? (?:bad|normal|"
+                         r"worrying|serious|a (?:good|bad) idea|a problem)\b"
+                         r"|\bis it worth\b|\bworth (?:the risk|switching)\b"
+                         r"|\b(?:good|bad|smart) (?:idea|choice|bet)\b|\bcan (?:i|we) trust\b"
+                         r"|\bhow (?:worried|concerned|scared) should\b"
+                         r"|\bhelp (?:me|us) (?:decide|choose|pick)\b"),
+    # the user's own device in trouble now, or an urgent state: "my pump says error 47 and I'm
+    # low", "my CPAP keeps alarming", "do I need to go to the ER"
+    ("urgent",           r"\bmy (?:(?!(?:is|was|are|on|about)\b)[\w'-]+ ){0,2}?(?:pump|cgm|sensor|"
+                         r"pacemaker|device|cpap|bipap|implant|monitor|machine|defibrillator|icd|"
+                         r"pod|valve|stent|catheter)s?\b.{0,60}?\b(?:error|alarm(?:ing|ed)?|"
+                         r"beep(?:s|ing|ed)?|stopped|not working|isn'?t working|won'?t (?:work|"
+                         r"turn on|stop)|broke|broken|fell out|fail(?:ed|ing)|shut (?:off|down)|"
+                         r"went off|keeps? (?:alarming|beeping|failing|disconnecting))\b"
+                         r"|\bi(?:'m| am) (?:low|high|bleeding|dizzy|in pain|passing out|"
+                         r"short of breath|having chest pain)\b"
+                         r"|\b(?:go to|call) (?:the )?(?:er|911|hospital|ambulance|emergency)\b"),
 )
 _COMPILED = tuple((name, re.compile(pat)) for name, pat in ADVICE_PATTERNS)
 
 # Whole-question help requests, after greetings, "please"/"thanks" and punctuation are removed.
 _HELP = re.compile(
     r"(?:help|what can you do|what do you do|what can i ask(?: you)?|"
+    r"what (?:kinds?|sorts?|types?) of (?:questions|things) (?:can|do|should) i ask(?: you)?|"
+    r"what (?:questions|things) can i ask(?: you)?|"
     r"what (?:can|do) you (?:answer|know)|who are you|what are you|"
     r"how do i use (?:this|you|this (?:bot|chatbot|tool)|the (?:bot|chatbot|tool))|"
     r"how does this (?:work|bot work|chatbot work|tool work))")

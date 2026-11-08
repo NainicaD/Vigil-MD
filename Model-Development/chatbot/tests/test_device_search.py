@@ -227,3 +227,35 @@ def test_index_file_is_read_only(index):
 def test_missing_index_says_how_to_build_it(tmp_path):
     with pytest.raises(FileNotFoundError, match="build_index"):
         DeviceIndex.open(tmp_path / "none.sqlite")
+
+
+# ── names with stopwords, exact names, chatty words (found in the vigil_md_dev e2e run) ──
+
+def test_name_parts_keep_stopwords_inside_names():
+    assert device_words("how many malfunction reports does the V-Go have") == ["v", "go"]
+    assert device_words("deaths for the DreamStation Go?") == ["dreamstation", "go"]
+    assert device_words("what can go wrong with the DreamStation") == ["dreamstation"]
+    assert device_words("Should I stop using it?") == []
+
+
+def test_a_typed_whole_name_wins_a_tie(index):
+    # "Natrelle Breast Implants" scores the same for every title containing those words; the
+    # entry whose whole name was typed is taken.
+    r = index.resolve("What problems are reported for Natrelle Breast Implants?")
+    assert r.status == "resolved" and r.matches[0].title == "Natrelle Breast Implants"
+    assert index.resolve("How many reports for breast implants?").status == "ambiguous"
+
+
+def test_dreamstation_go_is_not_the_dreamstation(index):
+    r = index.resolve("How many deaths for the DreamStation Go, and was it recalled?")
+    assert [h.title for h in r.matches] == ["DreamStation Go"]
+
+
+def test_chatty_words_do_not_block_a_clear_name(index):
+    r = index.resolve("Was the DreamStation recalled? Should I stop using mine?")
+    assert r.status == "resolved" and r.matches[0].title == "DreamStation"
+
+
+def test_a_model_number_is_never_dropped(index):
+    # Not in the index: must not fall back to the company (MEDTRONIC MINIMED).
+    assert index.resolve("Any recalls for the MiniMed 780G?").status != "resolved"

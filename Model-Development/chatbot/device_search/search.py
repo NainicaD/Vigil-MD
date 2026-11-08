@@ -84,11 +84,27 @@ def score_entry(query_words: list[str], title_words: list[str], other_words: lis
     return total / len(query_words)
 
 
+def name_parts(question: str) -> set[str]:
+    """Words that belong to a name even if they are stopwords or single letters: parts of a
+    hyphenated name ("V-Go", "Accu-Chek") and a capitalised word right after a device word
+    ("DreamStation Go"). Pure function."""
+    keep = {w for m in re.finditer(r"\w+(?:-\w+)+", question) for w in words(m.group())}
+    tokens = question.split()
+    for prev, tok in zip(tokens, tokens[1:]):
+        prev_words = words(prev)
+        if (tok[:1].isupper() and prev_words and prev_words[-1] not in STOPWORDS
+                and not prev.endswith((".", "?", "!"))):
+            keep.update(words(tok))
+    return keep
+
+
 def device_words(question: str) -> list[str]:
     """The question's words that could name a device: stopwords, 4-digit years and single
-    letters removed. Pure function."""
+    letters removed, unless they are part of a name (name_parts). Pure function."""
+    keep = name_parts(question)
     return [w for w in words(question)
-            if w not in STOPWORDS and len(w) > 1 and not re.fullmatch(r"(19|20)\d\d", w)]
+            if w in keep or (w not in STOPWORDS and len(w) > 1
+                             and not re.fullmatch(r"(19|20)\d\d", w))]
 
 
 class DeviceIndex:
@@ -148,10 +164,32 @@ class DeviceIndex:
         return hits[:limit]
 
     def _resolve_phrase(self, phrase: str) -> Resolution:
+        res = self._resolve_exact(phrase)
+        if res.status == "resolved" or len(phrase.split()) < 2:
+            return res
+        # Chatty words ("…stop using mine", "…most often") lower every score: retry with
+        # only the words that match an entry confidently ("mine" is only a typo-level match
+        # for "MiniMe"); keep the retry only if it resolves. A word with a digit is a model
+        # number and is never dropped: "MiniMed 780G" must not become the MiniMed company.
+        kept = [w for w in phrase.split() if re.search(r"\d", w)
+                or any(h.score >= RESOLVE_SCORE for h in self.search(w, limit=1))]
+        if kept and len(kept) < len(phrase.split()):
+            retry = self._resolve_exact(" ".join(kept))
+            if retry.status == "resolved":
+                return retry
+        return res
+
+    def _resolve_exact(self, phrase: str) -> Resolution:
         hits = self.search(phrase, limit=5)
         if not hits or hits[0].score < RESOLVE_SCORE:
             return Resolution("none" if not hits else "ambiguous", hits[:3], phrase)
         top, rest = hits[0], [h for h in hits[1:] if round(h.score, 2) == round(hits[0].score, 2)]
+        # Equal scores: the one entry whose whole name was typed wins ("Natrelle INSPIRA Breast
+        # Implants" over "Natrelle Inspira SoftTouch Breast Implants").
+        typed = set(words(phrase))
+        whole = [h for h in [top] + rest if set(words(h.title)) <= typed]
+        if rest and len(whole) == 1:
+            return Resolution("resolved", whole, phrase)
         # manufacturer entries are spellings of company names (one firm can have several,
         # until the matching team groups them); devices count as one family per company
         same_family = all(h.kind == top.kind and (top.kind == "manufacturer"
