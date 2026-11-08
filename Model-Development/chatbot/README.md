@@ -283,6 +283,44 @@ python -m device_search.build_index --dataset vigil_md_prod --estimate-only   # 
 On `vigil_md_dev`: 838 devices, 220 manufacturers, 5 product codes, 8,155 UDIs; a search
 takes 2 to 55 ms. Rebuild the index after the summary tables change (daily on PROD).
 
+## Answers: chatbot v1 (fixed-text templates, no LLM)
+
+[`answer/`](answer/) is the whole chatbot turn: a question in, an answer with sources out. It
+follows the handoff below, and the "small model drafts" box of the design is replaced by
+fill-in-the-blank templates, so no model writes text and nothing can be invented.
+
+```python
+from answer import pipeline
+bot = pipeline.Chatbot.open("vigil_md_dev") # router model, search index, BigQuery
+out = bot.answer("Was the DreamStation recalled, and why?")
+out["text"]       # the answer (Markdown)
+out["status"]     # answered | refused | help | scope | unclear | need_device | not_found |
+                  # ambiguous | budget | error
+out["sections"], out["sources"], out["entities"], out["budget_gb"]
+out["template_fingerprint"], out["rules_fingerprint"]   # which wording and rules produced it
+bot.answer("Any deaths?", entity=("device", "dev:f0cdc15b4d63"))   # skip the search
+```
+
+```bash
+VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, and why?"
+```
+
+- **Order:** the fixed reply (medical refusal first when the question also asked for facts), then
+  per entity a headline and the sections asked for, always as identity → counts → problems →
+  recalls → narratives, then the disclaimer, the UDI note (devices) and the sources.
+- **Templates** ([`templates.py`](answer/templates.py)): every sentence in one file. A test
+  rejects judgement or advice words (safe, dangerous, better, recommend, should, …). Report text
+  and recall reasons are quoted from the FDA as they are. Changing a template changes
+  `templates_fingerprint()`.
+- **Edge cases**, each a fixed reply: no device words (asks which device), device not found,
+  several close matches (lists them), comparisons (one block per device, at most 3, no ranking),
+  found but no reports, over the cost cap, BigQuery unreachable (no traceback shown).
+- **Tests** ([`tests/test_answer.py`](tests/test_answer.py)) use a fake router, a fake index and
+  the query layer's fake BigQuery client: no network, no cost.
+- **Known gap:** the answer has only what the router labels. If the router misses a label
+  ("How many deaths…? Should I stop using it?" labelled only `out_of_scope`), only the refusal
+  is shown. The router's next model fixes that, not the templates.
+
 ## Handoff: building the answer (step 7)
 
 The pieces for one chatbot turn, in order. Everything returns plain dicts.
