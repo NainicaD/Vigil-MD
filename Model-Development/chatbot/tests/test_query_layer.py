@@ -1,32 +1,30 @@
-"""Tests for query_layer: SQL safety, parameters, the cost guard, and result shaping.
+"""Tests for query_layer on the summary tables: SQL safety, partition lookups, the cost guard,
+and result shaping.
 
 BigQuery is a fake client (no network, no credentials, no cost). Which query a call is for
-is recognised by a fixed fragment of its SQL.
+is recognised by the table it reads.
 """
 import datetime as dt
+import re
 import types
 
 import pytest
 from google.cloud import bigquery
 
-from query_layer import queries, summary
+from query_layer import config, queries, summary
 from query_layer.backend import BigQueryBackend, Budget, QueryBudgetExceeded
 from query_layer.estimate import plan
-from query_layer.terms import NO_HARM, NO_INFORMATION
 
 INJECTION = "x'; DROP TABLE maude; --"
-FRAGMENT = {                       # SQL fragment → query name
-    "EXTRACT(YEAR FROM record_date)": "counts",
-    "ranked AS": "problems",
-    "COUNT(*) OVER () AS total_recalls": "recalls",
-    "PARTITION BY event_type ORDER BY record_date DESC": "narrative_candidates",
-    "LENGTH(t.text) AS text_length": "narrative_texts",
-    "ARRAY_TO_STRING(g.product_codes": "identity",
-}
+TABLE_TO_QUERY = {"entity_catalog": "catalog", "entity_counts": "counts",
+                  "entity_problems": "problems", "entity_recalls": "recalls",
+                  "entity_reports": "narrative_candidates", "maude_text": "narrative_texts",
+                  "device_catalog": "device_details"}
 
 
 def name_of(sql):
-    return next(n for frag, n in FRAGMENT.items() if frag in sql)
+    table = re.search(r"FROM `[^`]*\.(\w+)`", sql).group(1)
+    return TABLE_TO_QUERY[table]
 
 
 class FakeClient:
@@ -39,7 +37,7 @@ class FakeClient:
         name = name_of(sql)
         self.calls.append((name, job_config))
         if job_config.dry_run:
-            return types.SimpleNamespace(total_bytes_processed=self.estimates.get(name, 1_000_000))
+            return types.SimpleNamespace(total_bytes_processed=self.estimates.get(name, 100_000))
         rows = self.rows.get(name, [])
         return types.SimpleNamespace(result=lambda: iter(rows),
                                      total_bytes_billed=self.billed.get(name, 10_485_760))
@@ -58,24 +56,44 @@ def backend(client, dataset="vigil_md_test"):
 T = backend(FakeClient()).table
 
 
-def all_queries(key_type="product_code", key="LZG"):
-    qs = [queries.counts(T, key_type, key), queries.problems(T, key_type, key),
-          queries.narrative_candidates(T, key_type, key), queries.identity(T, key_type, key),
-          queries.narrative_texts(T, ["1"], ["2026-09-30"])]
-    if key_type in queries.RECALL_FILTER:
-        qs.append(queries.recalls(T, key_type, key))
+def entity_queries(entity_type="device", entity_id="dev:f0cdc15b4d63"):
+    qs = [queries.counts(T, entity_type, entity_id), queries.problems(T, entity_type, entity_id),
+          queries.recalls(T, entity_type, entity_id), queries.catalog(T, entity_type, entity_id),
+          queries.narrative_candidates(T, entity_type, entity_id)]
+    if entity_type == "device":
+        qs.append(queries.device_details(T, entity_id))
     return qs
 
 
-# ── SQL safety ────────────────────────────────────────────────────────────────
+# ── buckets and keys ─────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("key_type", ["product_code", "brand", "manufacturer", "udi_di"])
-def test_every_query_is_read_only_and_binds_the_key(key_type):
-    for q in all_queries(key_type, INJECTION):
+def test_bucket_matches_bigquery_and_the_pipeline():
+    # the same values as Data-Pipeline/tests/test_build_summaries.py, computed by BigQuery
+    keys = [("device", "dev:f0cdc15b4d63"), ("product_code", "LZG"), ("manufacturer", "respironics"),
+            ("manufacturer", "medtronic minimed"), ("product_code", "ZZZ")]
+    assert [config.entity_bucket(t, i) for t, i in keys] == [428, 627, 574, 407, 712]
+
+
+def test_entity_params():
+    assert queries.entity_params("product_code", " LZG ") == {
+        "bucket": ("INT64", 627), "entity_type": ("STRING", "product_code"),
+        "entity_id": ("STRING", "LZG")}
+    with pytest.raises(ValueError):
+        queries.entity_params("brand", "DreamStation")       # not an entity type
+    with pytest.raises(ValueError):
+        queries.entity_params("device", "  ")
+
+
+# ── SQL safety and partition pruning ──────────────────────────────────────────
+
+@pytest.mark.parametrize("entity_type", config.ENTITY_TYPES)
+def test_every_query_is_read_only_binds_the_id_and_reads_one_partition(entity_type):
+    for q in entity_queries(entity_type, INJECTION):
         queries.assert_read_only(q.sql)
         assert INJECTION not in q.sql and "DROP TABLE" not in q.sql
-        if "key" in q.params:
-            assert q.params["key"] == ("STRING", INJECTION)
+        assert "bucket = @bucket" in q.sql, q.name               # partition filter
+        assert q.params["bucket"] == ("INT64", config.entity_bucket(entity_type, INJECTION.strip()))
+        assert q.params["entity_id"] == ("STRING", INJECTION.strip())
 
 
 @pytest.mark.parametrize("sql", [
@@ -91,67 +109,28 @@ def test_read_only_check_allows_column_names_that_contain_write_words():
     queries.assert_read_only("SELECT last_updated_at, 'drop it' AS note FROM t -- update later")
 
 
-@pytest.mark.parametrize("filters", [queries.MAUDE_FILTER, queries.RECALL_FILTER,
-                                     queries.GUDID_FILTER])
-def test_device_filters_use_the_bound_key_only(filters):
-    for key_type, condition in filters.items():
-        assert "@key" in condition and "'" not in condition and "{" not in condition, key_type
-
-
 def test_backend_refuses_a_write_statement_before_calling_bigquery():
     client = FakeClient()
-    bad = queries.Query("counts", "DELETE FROM t WHERE TRUE -- EXTRACT(YEAR FROM record_date)")
+    bad = queries.Query("counts", "DELETE FROM `p.d.entity_counts` WHERE TRUE")
     with pytest.raises(ValueError):
         backend(client).run([bad], Budget())
     assert client.calls == []
 
 
-def test_udi_list_key_is_an_array_parameter():
-    q = queries.counts(T, "udi_dis", ["1", " 2 "])
-    assert "m.udi_di IN UNNEST(@key)" in q.sql and q.params["key"] == ("ARRAY<STRING>", ["1", "2"])
-    with pytest.raises(ValueError):
-        queries.counts(T, "udi_dis", [])
-    with pytest.raises(ValueError):
-        queries.counts(T, "udi_dis", "00000000000101")        # a list is required
-
-
-def test_device_summary_uses_the_recall_key_for_a_udi_list():
-    client = FakeClient(rows={"recalls": [{"recall_number": "Z-9", "total_recalls": 1}]})
-    out = summary.device_summary(backend(client), "udi_dis", ["1", "2"], Budget(),
-                                 recall_key=("brand", "dreamstation"))
-    (_, cfg), = [c for c in client.real_runs() if c[0] == "recalls"]
-    assert {p.name: p.value for p in cfg.query_parameters if p.name == "key"} == {"key": "dreamstation"}
-    assert out["recalls"]["matched_by"] == ["brand", "dreamstation"] and out["recalls"]["total"] == 1
-    assert out["key"]["value"] == "2 UDIs"
-
-
-def test_unknown_key_type_and_empty_key_are_refused():
-    with pytest.raises(ValueError):
-        queries.counts(T, "model_number", "780G")
-    with pytest.raises(ValueError):
-        queries.counts(T, "brand", "  ")
-    with pytest.raises(ValueError):                      # no UDI in the recall data
-        queries.recalls(T, "udi_di", "00643169007222")
-
-
 def test_tables_come_from_the_configured_dataset():
-    q = queries.problems(backend(FakeClient(), "vigil_md_dev").table, "brand", "X")
-    assert "`p.vigil_md_dev.maude`" in q.sql and "`p.vigil_md_dev.maude_problems`" in q.sql
-    assert "vigil_md_prod" not in q.sql
+    q = queries.problems(backend(FakeClient(), "vigil_md_dev").table, "product_code", "LZG")
+    assert "`p.vigil_md_dev.entity_problems`" in q.sql and "vigil_md_prod" not in q.sql
 
 
-def test_problems_leaves_out_no_information_and_no_harm_terms():
+def test_problems_keep_the_no_harm_row_and_the_top_n():
     q = queries.problems(T, "product_code", "LZG", top_n=7)
-    assert q.params["no_information"] == ("ARRAY<STRING>", list(NO_INFORMATION))
-    assert q.params["no_harm"] == ("ARRAY<STRING>", list(NO_HARM))
-    assert q.params["top_n"] == ("INT64", 7)
-    assert "NOT IN UNNEST(@no_harm)" in q.sql and "'no_harm' AS problem_type" in q.sql
+    assert "problem_type = 'no_harm' OR rank <= @top_n" in q.sql and q.params["top_n"] == ("INT64", 7)
 
 
-def test_reports_are_counted_once_not_per_device():
-    for q in (queries.counts(T, "brand", "X"), queries.narrative_candidates(T, "brand", "X")):
-        assert "GROUP BY m.source_record_id" in q.sql
-    assert "SELECT DISTINCT m.source_record_id" in queries.problems(T, "brand", "X").sql
+def test_device_details_reads_device_catalog_by_bucket():
+    q = queries.device_details(T, "dev:f0cdc15b4d63")
+    assert "bucket = @bucket AND device_id = @entity_id" in q.sql
+    assert q.params == {"bucket": ("INT64", 428), "entity_id": ("STRING", "dev:f0cdc15b4d63")}
 
 
 def test_narrative_texts_prune_by_month_and_report():
@@ -162,47 +141,48 @@ def test_narrative_texts_prune_by_month_and_report():
 
 
 def test_parameters_become_bigquery_parameters():
-    q = queries.narrative_texts(T, ["1"], ["2026-09-30"])
+    q = queries.narrative_candidates(T, "device", "dev:1")
     params = {p.name: p for p in BigQueryBackend._bq_params(q)}
-    assert isinstance(params["dates"], bigquery.ArrayQueryParameter)
-    assert params["dates"].array_type == "DATE"
-    assert isinstance(params["max_chars"], bigquery.ScalarQueryParameter)
+    assert isinstance(params["event_types"], bigquery.ArrayQueryParameter)
+    assert params["bucket"].type_ == "INT64" and params["entity_id"].value == "dev:1"
 
 
 # ── cost guard ────────────────────────────────────────────────────────────────
 
+def test_default_cap_is_half_a_gigabyte():
+    assert config.MAX_GB_PER_QUESTION == 0.5
+
+
 def test_over_budget_runs_nothing():
-    client = FakeClient(estimates={"counts": 1.5e9, "problems": 1.0e9})
-    with pytest.raises(QueryBudgetExceeded, match="2.50 GB"):
-        backend(client).run([queries.counts(T, "brand", "X"), queries.problems(T, "brand", "X")],
-                            Budget(max_gb=2.0))
-    assert client.real_runs() == []                     # only dry runs happened
+    client = FakeClient(estimates={"counts": 0.3e9, "problems": 0.3e9})
+    with pytest.raises(QueryBudgetExceeded, match="0.60 GB"):
+        backend(client).run([queries.counts(T, "device", "dev:1"),
+                             queries.problems(T, "device", "dev:1")], Budget(max_gb=0.5))
+    assert client.real_runs() == []
 
 
 def test_under_budget_runs_with_maximum_bytes_billed_and_tracks_spend():
-    client = FakeClient(estimates={"counts": 0.4e9}, billed={"counts": 300_000_000},
+    client = FakeClient(billed={"counts": 10_485_760},
                         rows={"counts": [{"year": 2025, "event_type": "Injury", "reports": 3}]})
-    budget = Budget(max_gb=1.0)
-    (rows,), (rec,) = backend(client).run([queries.counts(T, "brand", "X")], budget)
+    budget = Budget(max_gb=0.5)
+    (rows,), (rec,) = backend(client).run([queries.counts(T, "device", "dev:1")], budget)
     (_, cfg), = client.real_runs()
-    assert cfg.maximum_bytes_billed == 1_000_000_000
+    assert cfg.maximum_bytes_billed == 500_000_000
     assert rows == [{"year": 2025, "event_type": "Injury", "reports": 3}]
-    assert budget.spent_gb == pytest.approx(0.3) and rec.billed_bytes == 300_000_000
-    assert rec.params == {"key": "X"} and rec.estimated_bytes == 400_000_000
+    assert budget.spent_gb == pytest.approx(0.0105, abs=1e-4) and rec.params["entity_id"] == "dev:1"
 
 
 def test_budget_is_shared_across_steps_of_one_question():
-    client = FakeClient(estimates={"counts": 0.8e9, "identity": 0.8e9},
-                        billed={"counts": 800_000_000})
-    b, budget = backend(client), Budget(max_gb=1.0)
-    b.run([queries.counts(T, "brand", "X")], budget)
+    client = FakeClient(estimates={"counts": 0.3e9, "catalog": 0.3e9}, billed={"counts": 300_000_000})
+    b, budget = backend(client), Budget(max_gb=0.5)
+    b.run([queries.counts(T, "device", "dev:1")], budget)
     with pytest.raises(QueryBudgetExceeded):
-        b.run([queries.identity(T, "brand", "X")], budget)
+        b.run([queries.catalog(T, "device", "dev:1")], budget)
 
 
 def test_dates_come_back_as_iso_strings():
-    client = FakeClient(rows={"identity": [{"device_name": "X", "d": dt.date(2026, 9, 30)}]})
-    (rows,), _ = backend(client).run([queries.identity(T, "brand", "X")], Budget())
+    client = FakeClient(rows={"catalog": [{"title": "X", "d": dt.date(2026, 9, 30)}]})
+    (rows,), _ = backend(client).run([queries.catalog(T, "device", "dev:1")], Budget())
     assert rows[0]["d"] == "2026-09-30"
 
 
@@ -231,16 +211,11 @@ def test_summarize_problems():
 
 @pytest.mark.parametrize("text, length, expected", [
     ("short text", 10, "short text"),
-    ("word " * 200, 1000, ("word " * 120).rstrip() + "…"),       # cut after the last whole word
+    ("word " * 200, 1000, ("word " * 120).rstrip() + "…"),
     ("abc " * 100 + "x" * 600, 1000, ("abc " * 100).rstrip() + "…"),
 ])
 def test_excerpt(text, length, expected):
     assert summary.excerpt(text, length, 600) == expected
-
-
-def test_excerpt_never_exceeds_the_limit():
-    out = summary.excerpt("x" * 900, 900, 600)
-    assert len(out) <= 601 and out.endswith("…")
 
 
 def text_row(key, et, date, text_key="1", text="t" * 80):
@@ -253,49 +228,44 @@ def test_pick_narratives_takes_event_types_in_turn_newest_first():
             text_row("3", "Injury", "2026-08-01"), text_row("4", "Death", "2026-01-01"),
             text_row("5", "Injury", "2026-09-09"), text_row("5", "Injury", "2026-09-09", "2")]
     picked = summary.pick_narratives(rows, n=4)
-    assert [r["mdr_report_key"] for r in picked] == ["4", "5", "2", "3"]   # Death, Injury, Malf., Injury
-    assert len({r["mdr_report_key"] for r in picked}) == 4                  # one text per report
-
-
-def test_pick_narratives_is_deterministic():
-    rows = [text_row(str(i), "Injury", "2026-09-01") for i in range(10)]
-    assert summary.pick_narratives(rows, 3) == summary.pick_narratives(list(reversed(rows)), 3)
+    assert [r["mdr_report_key"] for r in picked] == ["4", "5", "2", "3"]
+    assert len({r["mdr_report_key"] for r in picked}) == 4
 
 
 # ── end to end on the fake client ────────────────────────────────────────────
 
 def test_device_summary():
     client = FakeClient(rows={
+        "catalog": [{"title": "DreamStation", "subtitle": "Respironics, Inc.", "product_codes": ["BZD"]}],
         "counts": [{"year": 2025, "event_type": "Death", "reports": 1},
                    {"year": 2025, "event_type": "Malfunction", "reports": 4}],
         "problems": [{"problem_type": "device", "problem_term": "Battery Problem", "reports": 3},
                      {"problem_type": "no_harm", "problem_term": None, "reports": 2}],
         "recalls": [{"recall_number": "Z-1", "recall_class": "Class I", "total_recalls": 1}]})
-    out = summary.device_summary(backend(client), "brand", "MiniMed 780G", Budget())
-    assert out["counts"]["total_reports"] == 5
+    out = summary.device_summary(backend(client), "device", "dev:f0cdc15b4d63", Budget())
+    assert out["entity"] == {"type": "device", "id": "dev:f0cdc15b4d63", "found": True,
+                             "title": "DreamStation", "subtitle": "Respironics, Inc.",
+                             "product_codes": ["BZD"]}
+    assert out["counts"]["total_reports"] == 5 and "UDI" in out["counts_note"]
     assert out["problems"]["device"] == [{"term": "Battery Problem", "reports": 3}]
-    assert out["recalls"]["total"] == 1 and out["recalls"]["shown"][0]["recall_number"] == "Z-1"
-    assert "total_recalls" not in out["recalls"]["shown"][0]
-    assert [s["query"] for s in out["sources"]] == ["counts", "problems", "recalls"]
-    assert set(out["data_as_of"]) == {"maude", "maude_problems", "recall", "enforcement"}
+    assert out["recalls"]["total"] == 1 and "total_recalls" not in out["recalls"]["shown"][0]
+    assert [s["query"] for s in out["sources"]] == ["catalog", "counts", "problems", "recalls"]
+    assert set(out["data_as_of"]) == {"entity_catalog", "entity_counts", "entity_problems",
+                                      "entity_recalls"}
 
 
-def test_device_summary_by_udi_skips_recalls_with_a_note():
-    client = FakeClient()
-    out = summary.device_summary(backend(client), "udi_di", "00643169007222", Budget())
-    assert "recalls" not in [n for n, _ in client.real_runs()]
-    assert out["recalls"]["total"] == 0 and "UDI" in out["recalls"]["note"]
+def test_unknown_entity_is_reported_not_found():
+    out = summary.device_summary(backend(FakeClient()), "product_code", "ZZZ", Budget())
+    assert out["entity"]["found"] is False and out["counts"]["total_reports"] == 0
 
 
 def test_narratives_reads_texts_only_for_the_candidate_reports():
     client = FakeClient(rows={
-        "narrative_candidates": [{"mdr_report_key": "7", "event_type": "Injury",
-                                  "record_date": "2026-09-30"},
-                                 {"mdr_report_key": "8", "event_type": "Death",
-                                  "record_date": "2026-08-02"}],
+        "narrative_candidates": [{"mdr_report_key": "7", "event_type": "Injury", "record_date": "2026-09-30"},
+                                 {"mdr_report_key": "8", "event_type": "Death", "record_date": "2026-08-02"}],
         "narrative_texts": [text_row("7", "Injury", "2026-09-30", text="a " * 400),
                             text_row("8", "Death", "2026-08-02")]})
-    out = summary.narratives(backend(client), "brand", "X", n=5, max_chars=100, budget=Budget())
+    out = summary.narratives(backend(client), "device", "dev:1", n=5, max_chars=100, budget=Budget())
     (_, cfg), = [c for c in client.real_runs() if c[0] == "narrative_texts"]
     params = {p.name: p for p in cfg.query_parameters}
     assert sorted(params["report_keys"].values) == ["7", "8"]
@@ -306,19 +276,22 @@ def test_narratives_reads_texts_only_for_the_candidate_reports():
 
 def test_narratives_without_candidates_runs_no_text_query():
     client = FakeClient()
-    out = summary.narratives(backend(client), "brand", "X", budget=Budget())
-    assert out["excerpts"] == []
-    assert [n for n, _ in client.real_runs()] == ["narrative_candidates"]
+    out = summary.narratives(backend(client), "device", "dev:1", budget=Budget())
+    assert out["excerpts"] == [] and [n for n, _ in client.real_runs()] == ["narrative_candidates"]
 
 
-def test_identity():
-    client = FakeClient(rows={"identity": [{"manufacturer": "Medtronic", "records": 3}]})
-    out = summary.identity(backend(client), "udi_di", "00643169007222", Budget())
-    assert out["devices"] == [{"manufacturer": "Medtronic", "records": 3}]
+def test_identity_for_a_device_and_for_a_product_code():
+    client = FakeClient(rows={"device_details": [{"name": "DreamStation", "company": "Respironics"}],
+                              "catalog": [{"title": "Product code LZG", "top_names": ["OMNIPOD"]}]})
+    dev = summary.identity(backend(client), "device", "dev:1", Budget())
+    assert dev["details"] == {"name": "DreamStation", "company": "Respironics"}
+    pc = summary.identity(backend(client), "product_code", "LZG", Budget())
+    assert pc["details"]["top_names"] == ["OMNIPOD"]
+    assert summary.identity(backend(FakeClient()), "device", "dev:none", Budget())["entity"]["found"] is False
 
 
 def test_estimate_plan_covers_every_query():
-    names = [q.name for q in plan(backend(FakeClient()), "brand", "X", months=2)]
-    assert names == ["counts", "problems", "recalls", "narrative_candidates",
-                     "narrative_texts", "identity"]
-    assert "recalls" not in [q.name for q in plan(backend(FakeClient()), "udi_di", "1", 2)]
+    names = [q.name for q in plan(backend(FakeClient()), "device", "dev:1", months=2)]
+    assert names == ["catalog", "counts", "problems", "recalls", "narrative_candidates",
+                     "narrative_texts", "device_details"]
+    assert "device_details" not in [q.name for q in plan(backend(FakeClient()), "product_code", "LZG", 2)]

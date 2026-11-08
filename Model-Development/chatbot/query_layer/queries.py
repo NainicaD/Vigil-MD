@@ -1,17 +1,19 @@
-"""Fixed, parameterized SQL for the chatbot. Pure functions: no GCP calls here.
+"""Fixed, parameterized SQL for the chatbot, on the daily summary tables. Pure functions.
 
-Every value that comes from a user (the device key) is a bound query parameter (@key);
-it is never pasted into the SQL text. Table names come from settings (config.DATASET), not
-from users. Each query is a single read-only SELECT (assert_read_only).
+Every lookup filters on bucket, entity_type and entity_id, so BigQuery reads one partition
+(the tables are partitioned by bucket; config.entity_bucket). The entity type and id are
+bound query parameters, never pasted into the SQL text; table names come from settings.
+Each query is a single read-only SELECT (assert_read_only).
 
-The device key: product_code (FDA product code, e.g. LZG), brand (the brand name exactly as
-in the data, case-insensitive), manufacturer (the normalized name, as manufacturer_name_norm),
-udi_di (one device identifier), udi_dis (a list: all UDIs of a device found by device_search;
-MAUDE rows with one of them are that device's exactly linked reports). device_search decides
-the key; nothing here guesses.
-
-Column meanings (vigil_md_prod): maude has one row per device per report, so reports are
-counted with source_record_id once; record_date is the date FDA received the report.
+The summary tables (built daily by Data-Pipeline/scripts/warehouse/build_summaries.py):
+  entity_counts    entity × year × event type → reports
+  entity_problems  entity × top problem terms (no-information terms already left out),
+                   plus one 'no_harm' row
+  entity_recalls   entity × recall, with class, reason, root cause, action
+  entity_catalog   entity: title, company, product codes, top brand names, totals
+  entity_reports   entity × report (for narratives)
+  device_catalog   device: name, company, product codes, model numbers, UDIs
+Device reports are exact UDI links (MAUDE udi_di = one of the device's GUDID DIs).
 """
 from __future__ import annotations
 
@@ -20,32 +22,9 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from . import config
-from .terms import NO_HARM, NO_INFORMATION
 
 Table = Callable[[str], str]          # table name → `project.dataset.name`
-
-# How each key type selects rows. Only these fixed strings are used; @key is bound.
-MAUDE_FILTER = {
-    "product_code": "m.product_code = UPPER(@key)",
-    "brand":        "LOWER(m.device_name_raw) = LOWER(@key)",
-    "manufacturer": "m.manufacturer_name_norm = LOWER(@key)",
-    "udi_di":       "m.udi_di = @key",
-    "udi_dis":      "m.udi_di IN UNNEST(@key)",
-}
-# recall.device_name_raw is the product description, so a brand is matched inside it.
-# There is no UDI in the recall data: a udi_di must first be turned into a brand or code.
-RECALL_FILTER = {
-    "product_code": "r.product_code = UPPER(@key)",
-    "brand":        "STRPOS(LOWER(r.device_name_raw), LOWER(@key)) > 0",
-    "manufacturer": "r.manufacturer_name_norm = LOWER(@key)",
-}
-GUDID_FILTER = {
-    "product_code": "UPPER(@key) IN UNNEST(g.product_codes)",
-    "brand":        "LOWER(g.device_name_raw) = LOWER(@key)",
-    "manufacturer": "g.manufacturer_name_norm = LOWER(@key)",
-    "udi_di":       "g.udi_di = @key",
-    "udi_dis":      "g.udi_di IN UNNEST(@key)",
-}
+ENTITY_FILTER = "bucket = @bucket AND entity_type = @entity_type AND entity_id = @entity_id"
 
 
 @dataclass(frozen=True)
@@ -74,121 +53,95 @@ def assert_read_only(sql: str) -> None:
         raise ValueError(f"write keyword not allowed: {hit.group(0)}")
 
 
-def _check_key(key_type: str, key, allowed: dict) -> None:
-    if key_type not in allowed:
-        raise ValueError(f"key_type {key_type!r} not supported here; use one of {sorted(allowed)}")
-    if key_type in config.LIST_KEY_TYPES:
-        if not isinstance(key, (list, tuple)) or not key or \
-                not all(isinstance(k, str) and k.strip() for k in key):
-            raise ValueError(f"{key_type} needs a non-empty list of strings")
-    elif not isinstance(key, str) or not key.strip():
-        raise ValueError("key must be a non-empty string")
+def entity_params(entity_type: str, entity_id: str) -> dict:
+    """The bound parameters that select one entity's partition and rows."""
+    if entity_type not in config.ENTITY_TYPES:
+        raise ValueError(f"entity_type must be one of {config.ENTITY_TYPES}, got {entity_type!r}")
+    if not isinstance(entity_id, str) or not entity_id.strip():
+        raise ValueError("entity_id must be a non-empty string")
+    entity_id = entity_id.strip()
+    return {"bucket": ("INT64", config.entity_bucket(entity_type, entity_id)),
+            "entity_type": ("STRING", entity_type), "entity_id": ("STRING", entity_id)}
 
 
-def _key(key) -> dict:
-    if isinstance(key, (list, tuple)):
-        return {"key": ("ARRAY<STRING>", [k.strip() for k in key])}
-    return {"key": ("STRING", key.strip())}
-
-
-def counts(tbl: Table, key_type: str, key: str) -> Query:
-    """Reports per year and event type (each report counted once)."""
-    _check_key(key_type, key, MAUDE_FILTER)
+def counts(tbl: Table, entity_type: str, entity_id: str) -> Query:
+    """Reports per year and event type."""
     sql = f"""\
-SELECT EXTRACT(YEAR FROM record_date) AS year,
-       IFNULL(event_type, '(none)') AS event_type,
-       COUNT(*) AS reports
-FROM (
-  SELECT m.source_record_id, ANY_VALUE(m.event_type) AS event_type,
-         MIN(m.record_date) AS record_date
-  FROM {tbl('maude')} AS m
-  WHERE {MAUDE_FILTER[key_type]}
-  GROUP BY m.source_record_id
-)
-GROUP BY year, event_type
+SELECT year, event_type, reports
+FROM {tbl('entity_counts')}
+WHERE {ENTITY_FILTER}
 ORDER BY year, event_type"""
-    return Query("counts", sql, _key(key), ("maude",))
+    return Query("counts", sql, entity_params(entity_type, entity_id), ("entity_counts",))
 
 
-def problems(tbl: Table, key_type: str, key: str, top_n: int = config.TOP_PROBLEMS) -> Query:
-    """Top device and patient problem terms (no-information and no-harm terms left out),
-    plus one row problem_type='no_harm' with the reports that say no patient harm."""
-    _check_key(key_type, key, MAUDE_FILTER)
+def problems(tbl: Table, entity_type: str, entity_id: str, top_n: int = config.TOP_PROBLEMS) -> Query:
+    """Top device and patient problem terms, plus the 'no_harm' row."""
     sql = f"""\
-WITH reports AS (
-  SELECT DISTINCT m.source_record_id AS k
-  FROM {tbl('maude')} AS m
-  WHERE {MAUDE_FILTER[key_type]}
-),
-ranked AS (
-  SELECT p.problem_type, p.problem_term, COUNT(DISTINCT p.mdr_report_key) AS reports
-  FROM {tbl('maude_problems')} AS p
-  JOIN reports ON reports.k = p.mdr_report_key
-  WHERE p.problem_term NOT IN UNNEST(@no_information)
-    AND p.problem_term NOT IN UNNEST(@no_harm)
-  GROUP BY p.problem_type, p.problem_term
-)
-(SELECT problem_type, problem_term, reports
- FROM ranked
- WHERE TRUE
- QUALIFY ROW_NUMBER() OVER (PARTITION BY problem_type ORDER BY reports DESC, problem_term) <= @top_n)
-UNION ALL
-(SELECT 'no_harm' AS problem_type, CAST(NULL AS STRING) AS problem_term,
-        COUNT(DISTINCT p.mdr_report_key) AS reports
- FROM {tbl('maude_problems')} AS p
- JOIN reports ON reports.k = p.mdr_report_key
- WHERE p.problem_type = 'patient' AND p.problem_term IN UNNEST(@no_harm))"""
-    params = {**_key(key), "top_n": ("INT64", int(top_n)),
-              "no_information": ("ARRAY<STRING>", list(NO_INFORMATION)),
-              "no_harm": ("ARRAY<STRING>", list(NO_HARM))}
-    return Query("problems", sql, params, ("maude", "maude_problems"))
+SELECT problem_type, problem_term, reports
+FROM {tbl('entity_problems')}
+WHERE {ENTITY_FILTER} AND (problem_type = 'no_harm' OR rank <= @top_n)
+ORDER BY problem_type, rank"""
+    return Query("problems", sql, {**entity_params(entity_type, entity_id),
+                                   "top_n": ("INT64", int(top_n))}, ("entity_problems",))
 
 
-def recalls(tbl: Table, key_type: str, key: str, limit: int = config.MAX_RECALLS) -> Query:
+def recalls(tbl: Table, entity_type: str, entity_id: str, limit: int = config.MAX_RECALLS) -> Query:
     """Recalls, newest first, with the FDA class; total_recalls on every row."""
-    _check_key(key_type, key, RECALL_FILTER)
     sql = f"""\
-SELECT r.source_record_id AS recall_number, e.recall_class, r.record_date,
-       r.recall_status, r.device_name_raw AS product, r.manufacturer_name_raw AS firm,
-       r.reason_text, r.root_cause, r.action,
+SELECT recall_number, recall_class, record_date, recall_status, product, firm,
+       reason_text, root_cause, action, matched_by,
        COUNT(*) OVER () AS total_recalls
-FROM {tbl('recall')} AS r
-LEFT JOIN {tbl('enforcement')} AS e ON e.source_record_id = r.source_record_id
-WHERE {RECALL_FILTER[key_type]}
-ORDER BY r.record_date DESC, r.source_record_id
+FROM {tbl('entity_recalls')}
+WHERE {ENTITY_FILTER}
+ORDER BY record_date DESC, recall_number
 LIMIT @limit"""
-    return Query("recalls", sql, {**_key(key), "limit": ("INT64", int(limit))},
-                 ("recall", "enforcement"))
+    return Query("recalls", sql, {**entity_params(entity_type, entity_id),
+                                  "limit": ("INT64", int(limit))}, ("entity_recalls",))
 
 
-def narrative_candidates(tbl: Table, key_type: str, key: str,
+def catalog(tbl: Table, entity_type: str, entity_id: str) -> Query:
+    """The entity's title, company, product codes, top names and totals."""
+    sql = f"""\
+SELECT entity_type, entity_id, title, subtitle, company_norm, product_codes, top_names,
+       reports, deaths, injuries, malfunctions
+FROM {tbl('entity_catalog')}
+WHERE {ENTITY_FILTER}"""
+    return Query("catalog", sql, entity_params(entity_type, entity_id), ("entity_catalog",))
+
+
+def device_details(tbl: Table, device_id: str) -> Query:
+    """Who makes a device and its model numbers (GUDID)."""
+    p = entity_params("device", device_id)
+    sql = f"""\
+SELECT device_id, name, company, product_codes, models, n_models, n_udis
+FROM {tbl('device_catalog')}
+WHERE bucket = @bucket AND device_id = @entity_id"""
+    return Query("device_details", sql, {"bucket": p["bucket"], "entity_id": p["entity_id"]},
+                 ("device_catalog",))
+
+
+def narrative_candidates(tbl: Table, entity_type: str, entity_id: str,
                          per_event_type: int = config.NARRATIVE_CANDIDATES,
                          event_types=config.NARRATIVE_EVENT_ORDER) -> Query:
     """Step 1 of narratives: the newest reports per event type (keys and dates only)."""
-    _check_key(key_type, key, MAUDE_FILTER)
     sql = f"""\
 SELECT source_record_id AS mdr_report_key, event_type, record_date
-FROM (
-  SELECT m.source_record_id, ANY_VALUE(m.event_type) AS event_type,
-         MIN(m.record_date) AS record_date
-  FROM {tbl('maude')} AS m
-  WHERE {MAUDE_FILTER[key_type]} AND m.event_type IN UNNEST(@event_types)
-  GROUP BY m.source_record_id
-)
-WHERE TRUE
+FROM {tbl('entity_reports')}
+WHERE {ENTITY_FILTER} AND event_type IN UNNEST(@event_types)
 QUALIFY ROW_NUMBER() OVER (
   PARTITION BY event_type ORDER BY record_date DESC, source_record_id DESC) <= @per_event_type"""
-    params = {**_key(key), "event_types": ("ARRAY<STRING>", list(event_types)),
+    params = {**entity_params(entity_type, entity_id),
+              "event_types": ("ARRAY<STRING>", list(event_types)),
               "per_event_type": ("INT64", int(per_event_type))}
-    return Query("narrative_candidates", sql, params, ("maude",))
+    return Query("narrative_candidates", sql, params, ("entity_reports",))
 
 
 def narrative_texts(tbl: Table, report_keys: list[str], dates: list[str],
                     max_chars: int = config.NARRATIVE_MAX_CHARS,
                     min_chars: int = config.NARRATIVE_MIN_CHARS) -> Query:
     """Step 2 of narratives: the texts of the chosen reports. maude_text is partitioned by
-    month of date_received (_part_date), so filtering on the reports' dates reads only those
-    months; the dry-run estimate reflects that (clustering alone would not)."""
+    month of date_received (_part_date) and clustered by report, so filtering on the reports'
+    dates and keys reads only those blocks (the dry run reflects it)."""
     sql = f"""\
 SELECT t.mdr_report_key, t.mdr_text_key, t.event_type, t.date_received,
        LENGTH(t.text) AS text_length,
@@ -201,19 +154,3 @@ WHERE t._part_date IN UNNEST(@dates)
               "dates": ("ARRAY<DATE>", list(dates)),
               "max_chars": ("INT64", int(max_chars)), "min_chars": ("INT64", int(min_chars))}
     return Query("narrative_texts", sql, params, ("maude_text",))
-
-
-def identity(tbl: Table, key_type: str, key: str, limit: int = 20) -> Query:
-    """Who makes the device: GUDID records grouped by manufacturer, name, model, codes."""
-    _check_key(key_type, key, GUDID_FILTER)
-    sql = f"""\
-SELECT g.manufacturer_name_raw AS manufacturer, g.device_name_raw AS device_name,
-       g.model_number_raw AS model_number,
-       ARRAY_TO_STRING(g.product_codes, ',') AS product_codes,
-       COUNT(*) AS records, MIN(g.udi_di) AS example_udi_di
-FROM {tbl('gudid')} AS g
-WHERE {GUDID_FILTER[key_type]}
-GROUP BY manufacturer, device_name, model_number, product_codes
-ORDER BY records DESC, device_name
-LIMIT @limit"""
-    return Query("identity", sql, {**_key(key), "limit": ("INT64", int(limit))}, ("gudid",))

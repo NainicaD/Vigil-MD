@@ -161,51 +161,47 @@ Follows the shared conventions in [`../MLFLOW.md`](../MLFLOW.md); the code is in
 
 ## Query layer
 
-[`query_layer/`](query_layer/) fetches the facts for an answer with fixed, parameterized
-BigQuery SQL. The router decides what to fetch; the device lookup (to build) decides which device.
+[`query_layer/`](query_layer/) fetches the facts for an answer with fixed, parameterized SQL on
+the **daily summary tables** (built by `Data-Pipeline/scripts/warehouse/build_summaries.py`;
+see that README's "Daily summary tables"). A question costs MBs, not GBs.
 
 ```python
 from query_layer import BigQueryBackend, Budget, device_summary, narratives, identity
 backend = BigQueryBackend()                 # dataset: VIGIL_BQ_DATASET (default vigil_md_prod)
-budget = Budget()                           # one per user question
-device_summary(backend, "product_code", "LZG", budget)     # always: counts, top problems, recalls
-narratives(backend, "brand", "MiniMed 780G", budget=budget) # when asked: a few report excerpts
-identity(backend, "udi_di", "00643169007222", budget)      # when asked: who makes it (GUDID)
+budget = Budget()                           # one per user question (cap 0.5 GB)
+device_summary(backend, "device", "dev:f0cdc15b4d63", budget)   # always: entity, counts, problems, recalls
+narratives(backend, "product_code", "OZD", budget=budget)       # when asked: a few report excerpts
+identity(backend, "device", "dev:f0cdc15b4d63", budget)         # when asked: who makes it
 ```
 
-| Function | Returns | Tables |
-|---|---|---|
-| `device_summary` | Reports by event type and year (each report once); top 10 device and patient problem terms, without "no information" terms, plus the count of reports saying no patient harm; recalls newest first with FDA class, reason, root cause, action | `maude`, `maude_problems`, `recall`, `enforcement` |
-| `narratives` | Up to 5 excerpts (about 600 characters, cut at a word), one per event type in turn (Death, Injury, Malfunction), newest first; texts under 50 characters skipped | `maude`, then `maude_text` for those reports only |
-| `identity` | Manufacturer, device name, model, product codes | `gudid` |
+An **entity** is `(entity_type, entity_id)`, the same in the summary tables and the search index:
 
-- **Device keys:** `product_code`, `brand`, `manufacturer` (normalized name), `udi_di`. Recalls have
-  no UDI: a `udi_di` key returns no recalls with a note (look it up by brand or product code).
-- **Safety:** the key is always a bound parameter, never part of the SQL text; every statement
-  is checked to be a single read-only `SELECT` before it is sent.
-- **Cost guard:** before a step runs, its queries are dry-run (free). If together they would
-  scan more than the question has left (`MAX_GB_PER_QUESTION`, default 2 GB), nothing runs
-  (`QueryBudgetExceeded`); every job also has `maximum_bytes_billed`.
+| `entity_type` | `entity_id` | Its reports |
+|---|---|---|
+| `device` | `dev:` + 12 hex (GUDID records grouped by company and brand) | MAUDE rows with one of its UDIs (exact UDI links only) |
+| `product_code` | the FDA product code, e.g. `LZG` | MAUDE rows with that product code |
+| `manufacturer` | `manufacturer_name_norm`, e.g. `respironics` | MAUDE rows with that name |
+
+| Function | Returns | Reads |
+|---|---|---|
+| `device_summary` | `entity` (title, company, product codes, `found`); `counts` (total, by event type, by year) and `counts_note` (for a device: "linked by UDI"); `problems` (top 10 device and patient terms, no-information terms already removed, `no_harm_reports`); `recalls` (total, newest 50 with class, reason, root cause, action, `matched_by`) | `entity_catalog`, `entity_counts`, `entity_problems`, `entity_recalls` |
+| `narratives` | up to 5 excerpts (about 600 characters, cut at a word), one per event type in turn (Death, Injury, Malfunction), newest first; texts under 50 characters skipped | `entity_reports`, then `maude_text` for those reports only |
+| `identity` | a device's GUDID name, company, model numbers, product codes; for a product code or manufacturer, its catalog entry (top brand names) | `device_catalog` or `entity_catalog` |
+
+- **One partition per lookup:** every query filters on `bucket` (`config.entity_bucket`, the
+  same function as the pipeline's), `entity_type` and `entity_id`. On `vigil_md_prod`
+  (2026-11-07): a device summary reads 0.17 MB (before the summary tables: 3.5-4.7 GB);
+  narratives for DreamStation 3.1 MB, for the largest product code (DZE) 220 MB. BigQuery
+  bills at least 10 MB per table read, so a typical question bills about 40-50 MB.
+- **Safety:** the entity is always a bound parameter; every statement is checked to be a
+  single read-only `SELECT` before it is sent.
+- **Cost guard:** before a step runs, its queries are dry-run (free); if together they would
+  read more than the question has left (`MAX_GB_PER_QUESTION`, 0.5 GB), nothing runs
+  (`QueryBudgetExceeded`); every job has `maximum_bytes_billed`.
 - **Sources:** every result carries the queries run (SQL, parameters, bytes) and the tables'
   last-modified times, for citations and for the gate.
-- **Settings** in [`config.py`](query_layer/config.py) (environment variables override them);
-  the non-informative and no-harm term lists in [`terms.py`](query_layer/terms.py).
-
-**Measured cost on `vigil_md_prod`** (dry runs, 2026-11-07, `python -m query_layer.estimate`):
-
-| Key | Device summary | Narratives |
-|---|---|---|
-| `product_code=LZG` | 3.55 GB | 0.73 GB |
-| `brand=DreamStation` | 4.74 GB | 1.33 GB |
-| `manufacturer=medtronic` | 4.22 GB | 1.06 GB |
-| `udi_di` (no recalls) | 3.68 GB | 0.84 GB |
-
-The cost hardly depends on the device: BigQuery reads whole columns, and `problems` (joining
-`maude` with `maude_problems`) is about 3 GB of it. At this rate the free 1 TiB covers about
-250 questions a month, and the 2 GB cap refuses the summary on PROD. **Daily summary tables**
-(per device, built once a day in the data pipeline) are needed before real use; until then,
-development runs against the small `vigil_md_dev` extract. The narrative texts themselves are
-cheap (under 1 MB): `maude_text` is pruned by month and report key.
+- **Settings:** [`config.py`](query_layer/config.py); `python -m query_layer.estimate
+  --entity-type device --entity-id dev:f0cdc15b4d63` prints what each query would read (free).
 
 ### Development dataset (`vigil_md_dev`)
 
@@ -213,7 +209,8 @@ A small copy of `vigil_md_prod` with the same table names and layout, for develo
 integration tests. Built by [`scripts/build_dev_extract.py`](scripts/build_dev_extract.py) from
 [`data/dev_extract.json`](data/dev_extract.json): product codes LZG (insulin pump), BZD (CPAP,
 Class I recall), OZD (heart pump, death-heavy), FTR (breast implant, injury-heavy), PKU (app, no
-recalls), MAUDE reports from 2023-01-01.
+recalls), MAUDE reports from 2023-01-01. Its summary tables are built with the pipeline's
+script (`--dataset vigil_md_dev`).
 
 | Table | Rows (v1, 2026-11-07) |
 |---|---|
@@ -222,65 +219,89 @@ recalls), MAUDE reports from 2023-01-01.
 | `maude_text` | 515,147 |
 | `recall` / `enforcement` | 273 / 139 |
 | `gudid` | 8,155 |
+| summary tables | `entity_reports` 1,041,954; `entity_catalog` 1,063; others smaller |
 
-492 MB in total. Building it read 12.8 GB from PROD once. A device summary on it costs about
-0.07 GB (PROD: 3.5 GB).
+About 550 MB in total. Building the extract read 12.8 GB from PROD once; its summary tables 0.24 GB.
 
 ```bash
 # from Model-Development/chatbot/
-python scripts/build_dev_extract.py --print-only       # the SQL
 python scripts/build_dev_extract.py --estimate-only    # dry runs (free)
-python scripts/build_dev_extract.py --yes              # rebuild (replaces each table)
-VIGIL_BQ_DATASET=vigil_md_dev python -m query_layer.estimate --key-type product_code --key LZG
-pytest -m integration -q                               # 7 tests on vigil_md_dev, about 0.2 GB
+python scripts/build_dev_extract.py --yes              # rebuild the extract (replaces each table)
+python ../../Data-Pipeline/scripts/warehouse/build_summaries.py --project vigil-md-1792696816 \
+       --dataset vigil_md_dev --max-gb 1               # rebuild its summary tables (about 0.24 GB)
+python -m device_search.build_index                    # its search index (a few MB)
+pytest -m integration -q                               # 12 tests on vigil_md_dev, about 0.3-0.5 GB
 ```
 
-The script writes only to a `vigil_md_dev*` dataset and labels each table with the extract
-version. To change what is copied, edit `dev_extract.json`, bump `version`, and rebuild.
-`pytest` alone skips the integration tests (marker `integration`), as does CI.
+The extract script writes only to a `vigil_md_dev*` dataset. To change what is copied, edit
+`dev_extract.json`, bump `version`, and rebuild the extract, its summaries and its index.
+`pytest` alone skips the integration tests (marker `integration`), as does CI. They compare the
+query layer's answers (from the summary tables) with independent SQL on the raw dev tables.
 
 ## Device search
 
-[`device_search/`](device_search/) finds devices from what people type. It is **shared by the
-website's search box and the chatbot**, so both find the same device. Search runs on a SQLite
-file (`data/search/<dataset>.sqlite`, not in git), built from BigQuery; searching costs nothing.
+[`device_search/`](device_search/) finds entities from what people type. It is **shared by the
+website's search box and the chatbot**, so both find the same entity. Search runs on a SQLite
+file (`data/search/<dataset>.sqlite`, not in git), built from the summary tables
+`entity_catalog` and `device_catalog`; searching costs nothing.
 
 ```python
 from device_search import DeviceIndex
 index = DeviceIndex.open("vigil_md_dev")
-index.search("dreamstaton")                                   # ranked devices, companies, codes
+index.search("dreamstaton")                                   # ranked devices, manufacturers, codes
 r = index.resolve("How many deaths were reported for the dreamstaton?")
 r.status       # resolved | several ("X vs Y") | ambiguous (bot asks which) | none (bot asks)
-key = index.query_key(r.matches[0])                           # → query layer
-device_summary(backend, key["key_type"], key["key"], budget, recall_key=key["recall_key"])
+device_summary(backend, **index.query_key(r.matches[0]), budget=budget)
 ```
 
-| Entry | What | Query layer key |
-|---|---|---|
-| device | GUDID records grouped by company and brand name (e.g. "DreamStation", Respironics), with all its UDIs and model numbers | `udi_dis` (its UDIs); recalls by its name (`recall_key`) |
-| company | a manufacturer name as in MAUDE | `manufacturer` |
-| product code | an FDA product code and its most reported brand names | `product_code` |
-
+- **Entries:** every device, product code and manufacturer in `entity_catalog`, with the same
+  `entity_type` and `entity_id` as the query layer (`query_key(hit)` gives them). Devices also
+  carry their model numbers and UDIs (`udis_for(hit)`).
 - **Matching:** words in names and model numbers, typos allowed (similarity, 4-letter prefixes,
-  plurals); a company name counts slightly less, so "medtronic" ranks companies first and
-  "philips dreamstation" finds the device. Equal scores rank by report count.
+  plurals); a device's company name counts slightly less, so "medtronic" ranks manufacturers
+  first and "philips dreamstation" finds the device. Equal scores rank by report count.
 - **Owner names:** [`aliases.json`](device_search/aliases.json) maps names users type to names
   in the data (Philips → Respironics). The matching team's company grouping can replace it.
 - **In a question:** a UDI (8-14 digits) wins, then a product code in capitals, then the
-  question's device words (question and judgement words removed). One clear match is
-  taken; otherwise the bot shows the top matches and asks.
-- **Report counts are exact UDI links only** (MAUDE `udi_di` = a GUDID DI). Many reports have
-  no UDI: DreamStation has 26,408 linked reports in `vigil_md_dev`, while product code BZD has
-  about 205,000. Answers say "reports linked by UDI". The matching team's predicted links will
-  add the rest.
+  question's device words (question and judgement words removed). The top match is taken
+  when it is alone, or has 3x the reports of an equal match from the same company (or another
+  spelling of a manufacturer name), or 20x those of an equal match from another company.
+  Otherwise the bot shows the top matches and asks: "breast implants" matches several
+  companies' products (MENTOR 22,152 vs Natrelle 5,191 reports) and asks.
+- **Report counts for devices are exact UDI links only.** Many reports have no UDI:
+  DreamStation has 30,356 linked reports in `vigil_md_prod`, while product code BZD has many
+  more. Answers should say "reports linked by UDI". The matching team's predicted links will add
+  the rest, through the pipeline's summary tables, with no change here.
 
 ```bash
 # from Model-Development/chatbot/
-python -m device_search.build_index --estimate-only    # dry run: about 0.07 GB on vigil_md_dev
-python -m device_search.build_index                    # data/search/vigil_md_dev.sqlite (1.5 MB)
-pytest -m integration -q                               # includes question → device → reports
+python -m device_search.build_index --estimate-only                     # vigil_md_dev: about 0 GB
+python -m device_search.build_index                                     # data/search/vigil_md_dev.sqlite
+python -m device_search.build_index --dataset vigil_md_prod --estimate-only   # about 0.15 GB
 ```
 
-On `vigil_md_dev`: 838 devices, 220 companies, 5 product codes, 8,155 UDIs; a search takes
-2 to 55 ms. A PROD index (5.3M GUDID records) reads 3.9 GB to build (dry run, 2026-11-07):
-`--dataset vigil_md_prod --max-gb 5`. Run it daily with the summary tables, not per search.
+On `vigil_md_dev`: 838 devices, 220 manufacturers, 5 product codes, 8,155 UDIs; a search
+takes 2 to 55 ms. Rebuild the index after the summary tables change (daily on PROD).
+
+## Handoff: building the answer (step 7)
+
+The pieces for one chatbot turn, in order. Everything returns plain dicts.
+
+1. `QueryRouter.load("models/baseline").classify(question)`: `reply_kind` (`help`,
+   `medical_refusal`, `scope`: show `reply`, the fixed text), `run_queries` (which parts were
+   asked: `counts`, `problems`, `recalls`, `narratives`, `identity`), `unclear` (ask to
+   rephrase).
+2. `DeviceIndex.open(dataset).resolve(question)`: which entity. `ambiguous` → show
+   `matches` as choices; `none` → ask which device; `several` → one summary per match. A
+   device page can skip this and pass its entity directly. Keep the entity for follow-up
+   questions in the same conversation.
+3. With one `Budget()` per question: always `device_summary(...)`; `narratives(...)` if
+   `narratives` is in `run_queries`; `identity(...)` if `identity` is.
+4. Write the answer from the returned numbers only, and cite `sources`. Rules from the design
+   doc: "N reports describe…", never a safety judgement; MAUDE counts reports, not failure
+   rates; for a device say "reports linked by UDI"; `(B)(4)` / `(B)(6)` in narratives mean
+   text withheld by the FDA; if the router set `out_of_scope` with facts (policy
+   `facts_with_refusal`), start with the refusal text.
+
+Develop against `vigil_md_dev` (`VIGIL_BQ_DATASET=vigil_md_dev`, index `vigil_md_dev`): a
+question there bills a few tens of MB.

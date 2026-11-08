@@ -1,10 +1,13 @@
 """Tests for device_search: normalization, index building, search ranking, question resolution.
 
-Uses a small made-up index written to a temporary file. No GCP.
+Uses a small made-up index written to a temporary file, from rows shaped like the summary
+tables entity_catalog and device_catalog. No GCP.
 """
+import hashlib
+
 import pytest
 
-from device_search.build_index import alias_words, device_id, entity_rows, write_index
+from device_search.build_index import alias_words, entity_rows, write_index
 from device_search.normalize import norm, phrase_score, trigrams, word_similarity
 from device_search.search import DeviceIndex, device_words, score_entry
 
@@ -16,7 +19,7 @@ DEVICES = [
      "models": ["DSX500"], "n_models": 1, "product_codes": ["BZD"], "reports": 26000, "deaths": 40, "injuries": 900},
     {"company_norm": "respironics", "brand_key": "dreamstation go", "name": "DreamStation Go",
      "company": "Respironics, Inc.", "udi_dis": ["00000000000103"], "models": [], "n_models": 0,
-     "product_codes": ["BZD"], "reports": 280, "deaths": 0, "injuries": 3},
+     "product_codes": ["BZD"], "reports": 5000, "deaths": 0, "injuries": 3},
     {"company_norm": "insulet", "brand_key": "omnipod dash pdm", "name": "Omnipod DASH PDM",
      "company": "Insulet Corporation", "udi_dis": ["00000000000201"], "models": ["PDM-INT1"], "n_models": 1,
      "product_codes": ["LZG"], "reports": 590, "deaths": 1, "injuries": 20},
@@ -28,7 +31,10 @@ DEVICES = [
      "product_codes": ["FTR"], "reports": 5000, "deaths": 0, "injuries": 4900},
     {"company_norm": "mentor texas", "brand_key": "mentor memorygel breast implant",
      "name": "MENTOR MemoryGel Breast Implant", "company": "MENTOR TEXAS L.P.", "udi_dis": ["00000000000501"],
-     "models": [], "n_models": 0, "product_codes": ["FTR"], "reports": 4800, "deaths": 0, "injuries": 4700},
+     "models": [], "n_models": 0, "product_codes": ["FTR"], "reports": 1200, "deaths": 0, "injuries": 1100},
+    {"company_norm": "acme cables", "brand_key": "impella adapter cable", "name": "Impella Adapter Cable",
+     "company": "Acme Cables", "udi_dis": ["00000000000701"], "models": [], "n_models": 0,
+     "product_codes": ["OZD"], "reports": 2, "deaths": 0, "injuries": 0},
     {"company_norm": "sientra", "brand_key": "sientra silicone gel breast implant",
      "name": "SIENTRA Silicone Gel Breast Implant", "company": "Sientra, Inc.", "udi_dis": ["00000000000601"],
      "models": [], "n_models": 0, "product_codes": ["FTR"], "reports": 1, "deaths": 0, "injuries": 1},
@@ -45,10 +51,33 @@ CODES = [{"product_code": "LZG", "reports": 60000, "deaths": 33, "injuries": 420
           "top_names": ["OMNIPOD DASH INSULIN MANAGEMENT SYSTEM"]}]
 
 
+def dev_id(company_norm, brand_key):
+    """The pipeline's device_catalog id (build_summaries.py, checked against BigQuery)."""
+    return "dev:" + hashlib.sha1(f"{company_norm}|{brand_key}".encode()).hexdigest()[:12]
+
+
+# The same entries as summary-table rows
+CATALOG = (
+    [{"entity_type": "device", "entity_id": dev_id(d["company_norm"], d["brand_key"]),
+      "title": d["name"], "subtitle": d["company"], "company_norm": d["company_norm"],
+      "product_codes": d["product_codes"], "top_names": [], "reports": d["reports"],
+      "deaths": d["deaths"], "injuries": d["injuries"]} for d in DEVICES]
+    + [{"entity_type": "manufacturer", "entity_id": c["company_norm"], "title": c["company"],
+        "subtitle": None, "company_norm": c["company_norm"], "product_codes": c["product_codes"],
+        "top_names": [], "reports": c["reports"], "deaths": c["deaths"], "injuries": c["injuries"]}
+       for c in COMPANIES]
+    + [{"entity_type": "product_code", "entity_id": p["product_code"],
+        "title": f"Product code {p['product_code']}", "subtitle": "; ".join(p["top_names"]),
+        "company_norm": None, "product_codes": [p["product_code"]], "top_names": p["top_names"],
+        "reports": p["reports"], "deaths": p["deaths"], "injuries": p["injuries"]} for p in CODES])
+DEVICE_DETAILS = [{"device_id": dev_id(d["company_norm"], d["brand_key"]), "models": d["models"],
+                   "n_models": d["n_models"], "udi_dis": d["udi_dis"]} for d in DEVICES]
+
+
 @pytest.fixture(scope="module")
 def index(tmp_path_factory):
     path = tmp_path_factory.mktemp("search") / "test.sqlite"
-    rows, udis = entity_rows(DEVICES, COMPANIES, CODES, ALIASES)
+    rows, udis = entity_rows(CATALOG, DEVICE_DETAILS, ALIASES)
     write_index(path, rows, udis, {"dataset": "test"})
     return DeviceIndex.open(path)
 
@@ -80,9 +109,14 @@ def test_aliases_attach_to_matching_company_names_only():
     assert alias_words("judeco", ALIASES) == []          # whole words only
 
 
-def test_device_ids_are_stable():
-    assert device_id("respironics", "dreamstation") == device_id("respironics", "dreamstation")
-    assert device_id("respironics", "dreamstation") != device_id("respironics", "dreamstation go")
+def test_device_id_matches_the_pipeline():
+    # BigQuery gave dev:f0cdc15b4d63 for respironics|dreamstation (build_summaries.py)
+    assert dev_id("respironics", "dreamstation") == "dev:f0cdc15b4d63"
+
+
+def test_entries_use_the_query_layer_entity_types(index):
+    kinds = {r[0] for r in index.con.execute("SELECT DISTINCT kind FROM entities")}
+    assert kinds == {"device", "manufacturer", "product_code"}
 
 
 def test_device_words_drop_question_and_judgement_words():
@@ -116,7 +150,7 @@ def test_equal_scores_rank_by_reports(index):
 
 def test_equal_scores_rank_by_reports_across_kinds(index):
     # the company (4,500 reports) before a device of the same name with 1 report
-    assert [h.kind for h in index.search("sientra")[:2]] == ["company", "device"]
+    assert [h.kind for h in index.search("sientra")[:2]] == ["manufacturer", "device"]
 
 
 def test_a_udi_in_the_question_wins_over_device_words(index):
@@ -137,7 +171,7 @@ def test_search_by_udi_and_unknown_text(index):
     ("compare the impella and the dreamstation", "several", ["Impella", "DreamStation"]),
     ("Any recalls for product code LZG?", "resolved", ["Product code LZG"]),
     ("who makes UDI 00000000000201", "resolved", ["Omnipod DASH PDM"]),
-    ("what goes wrong with breast implants", "ambiguous", None),   # two brands, close counts
+    ("what goes wrong with breast implants", "ambiguous", None),   # several companies' products
     ("how many reports since 2020?", "none", []),
     ("tell me about the zzzzqqq", "none", []),
 ])
@@ -151,8 +185,23 @@ def test_resolve(index, question, status, titles):
 
 
 def test_dominant_device_is_taken_without_asking(index):
-    # DreamStation (26,000 reports) vs DreamStation Go (280): clearly the first
+    # DreamStation (26,000 reports) vs DreamStation Go (5,000), same company: 5.2x, taken
     assert index.resolve("dreamstation problems").status == "resolved"
+
+
+def test_equal_matches_from_different_companies_ask_unless_one_is_far_ahead(index):
+    # Natrelle (Allergan, 5,000) vs MENTOR (1,200): 4x, enough within one company, not across
+    r = index.resolve("breast implant problems")
+    assert r.status == "ambiguous" and len({h.company_norm for h in r.matches}) > 1
+    # Impella (28,000) vs another company's Impella Adapter Cable (2): far ahead, taken
+    r = index.resolve("impella deaths")
+    assert r.status == "resolved" and r.matches[0].title == "Impella"
+
+
+def test_a_dominant_manufacturer_spelling_is_taken(index):
+    # one firm can have several name spellings until the matching team groups them
+    r = index.resolve("philips recalls")
+    assert r.status == "resolved" and r.matches[0].entity_id == "respironics"
 
 
 def test_unknown_udi_falls_back_to_words(index):
@@ -161,12 +210,12 @@ def test_unknown_udi_falls_back_to_words(index):
 
 def test_query_key_for_each_kind(index):
     dev = index.resolve("dreamstation").matches[0]
-    assert index.query_key(dev) == {"key_type": "udi_dis", "key": ["00000000000101", "00000000000102"],
-                                    "recall_key": ("brand", "dreamstation")}
+    assert index.query_key(dev) == {"entity_type": "device", "entity_id": "dev:f0cdc15b4d63"}
+    assert index.udis_for(dev) == ["00000000000101", "00000000000102"]
     co = index.search("sientra")[0]
-    assert index.query_key(co) == {"key_type": "manufacturer", "key": "sientra", "recall_key": None}
+    assert index.query_key(co) == {"entity_type": "manufacturer", "entity_id": "sientra"}
     pc = index.search("lzg")[0]
-    assert index.query_key(pc)["key"] == "LZG"
+    assert index.query_key(pc) == {"entity_type": "product_code", "entity_id": "LZG"}
 
 
 def test_index_file_is_read_only(index):

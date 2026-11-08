@@ -1,11 +1,14 @@
-"""What the chatbot fetches for a device, as plain dicts (JSON-friendly).
+"""What the chatbot fetches for an entity, as plain dicts (JSON-friendly).
 
-  device_summary  always: report counts (by event type and year), top problems, recalls
+  device_summary  always: the entity (title, company, totals), report counts by event type
+                  and year, top problems, recalls
   narratives      when asked: a few report excerpts, newest first, one per event type in turn
-  identity        when asked: who makes it (GUDID)
+  identity        when asked: who makes it, model numbers, product codes
 
-Every result has "sources": the queries run (SQL, parameters, bytes), so an answer can cite
-them and the gate can check its numbers against them. One Budget per user question.
+An entity is (entity_type, entity_id): device ("dev:…", from device_search), product_code,
+or manufacturer. Every result has "sources": the queries run (SQL, parameters, bytes), so an
+answer can cite them and the gate can check its numbers against them. One Budget per user
+question. Device report counts are exact UDI links ("reports linked by UDI").
 """
 from __future__ import annotations
 
@@ -14,11 +17,21 @@ from collections import defaultdict
 from . import config, queries
 from .backend import BigQueryBackend, Budget, QueryRecord
 
+LINK_NOTE = {
+    "device": "Reports linked to this device by UDI. Reports without a UDI are not counted.",
+    "product_code": None,
+    "manufacturer": "Reports where this manufacturer name appears, as normalized in MAUDE.",
+}
+
 
 def _sources(records: list[QueryRecord]) -> list[dict]:
     return [{"query": r.name, "params": r.params, "tables": list(r.tables),
              "estimated_bytes": r.estimated_bytes, "billed_bytes": r.billed_bytes,
              "rows": r.rows, "sql": r.sql} for r in records]
+
+
+def _budget(budget: Budget) -> dict:
+    return {"max": budget.max_gb, "spent": round(budget.spent_gb, 4)}
 
 
 def summarize_counts(rows: list[dict]) -> dict:
@@ -47,37 +60,25 @@ def summarize_problems(rows: list[dict]) -> dict:
     return out
 
 
-def device_summary(backend: BigQueryBackend, key_type: str, key, budget: Budget | None = None,
-                   recall_key: tuple[str, str] | None = None) -> dict:
-    """Counts, top problems and recalls for one device key, in one budget-checked step.
-    Recalls have no UDI: for udi_di / udi_dis keys pass recall_key (e.g. ("brand",
-    "dreamstation"), as device_search's query_key gives); without it recalls are skipped
-    with a note."""
+def device_summary(backend: BigQueryBackend, entity_type: str, entity_id: str,
+                   budget: Budget | None = None) -> dict:
+    """The entity, counts, top problems and recalls, in one budget-checked step."""
     budget = budget or Budget()
-    qs = [queries.counts(backend.table, key_type, key),
-          queries.problems(backend.table, key_type, key)]
-    if key_type in queries.RECALL_FILTER:
-        recall_key = (key_type, key)
-    with_recalls = recall_key is not None
-    if with_recalls:
-        qs.append(queries.recalls(backend.table, *recall_key))
-    results, records = backend.run(qs, budget)
-    recall_rows = results[2] if with_recalls else []
+    t = backend.table
+    qs = [queries.catalog(t, entity_type, entity_id), queries.counts(t, entity_type, entity_id),
+          queries.problems(t, entity_type, entity_id), queries.recalls(t, entity_type, entity_id)]
+    (cat, cnt, prob, rec), records = backend.run(qs, budget)
     return {
-        "key": {"type": key_type, "value": key if key_type not in config.LIST_KEY_TYPES
-                else f"{len(key)} UDIs"},
-        "counts": summarize_counts(results[0]),
-        "problems": summarize_problems(results[1]),
-        "recalls": {
-            "matched_by": list(recall_key) if with_recalls else None,
-            "total": recall_rows[0]["total_recalls"] if recall_rows else 0,
-            "shown": [{k: v for k, v in r.items() if k != "total_recalls"} for r in recall_rows],
-            "note": None if with_recalls else
-                    "Recalls are not linked by UDI; look the device up by brand or product code.",
-        },
-        "data_as_of": backend.data_as_of([t for q in qs for t in q.tables]),
+        "entity": {"type": entity_type, "id": entity_id, "found": bool(cat),
+                   **({k: cat[0][k] for k in ("title", "subtitle", "product_codes")} if cat else {})},
+        "counts": summarize_counts(cnt),
+        "counts_note": LINK_NOTE[entity_type],
+        "problems": summarize_problems(prob),
+        "recalls": {"total": rec[0]["total_recalls"] if rec else 0,
+                    "shown": [{k: v for k, v in r.items() if k != "total_recalls"} for r in rec]},
+        "data_as_of": backend.data_as_of([q.tables[0] for q in qs]),
         "sources": _sources(records),
-        "budget_gb": {"max": budget.max_gb, "spent": round(budget.spent_gb, 4)},
+        "budget_gb": _budget(budget),
     }
 
 
@@ -110,40 +111,45 @@ def pick_narratives(rows: list[dict], n: int = config.NARRATIVES_PER_QUESTION,
     return picked
 
 
-def narratives(backend: BigQueryBackend, key_type: str, key: str,
+def narratives(backend: BigQueryBackend, entity_type: str, entity_id: str,
                n: int = config.NARRATIVES_PER_QUESTION,
                max_chars: int = config.NARRATIVE_MAX_CHARS,
                budget: Budget | None = None) -> dict:
-    """A few report excerpts. Step 1 picks candidate reports (newest per event type);
-    step 2 reads only their texts, in their months of maude_text."""
+    """A few report excerpts. Step 1 picks candidate reports (newest per event type) from
+    entity_reports; step 2 reads only their texts, in their months of maude_text."""
     budget = budget or Budget()
-    (cands,), rec1 = backend.run([queries.narrative_candidates(backend.table, key_type, key)],
-                                 budget)
+    entity = {"type": entity_type, "id": entity_id}
+    (cands,), rec1 = backend.run(
+        [queries.narrative_candidates(backend.table, entity_type, entity_id)], budget)
     if not cands:
-        return {"key": {"type": key_type, "value": key}, "excerpts": [],
-                "sources": _sources(rec1), "budget_gb": {"max": budget.max_gb,
-                                                        "spent": round(budget.spent_gb, 4)}}
+        return {"entity": entity, "excerpts": [], "sources": _sources(rec1),
+                "budget_gb": _budget(budget)}
     keys = [c["mdr_report_key"] for c in cands]
     dates = sorted({c["record_date"] for c in cands if c["record_date"]})
     (texts,), rec2 = backend.run([queries.narrative_texts(backend.table, keys, dates,
                                                           max_chars=max_chars)], budget)
     chosen = pick_narratives(texts, n)
     return {
-        "key": {"type": key_type, "value": key},
+        "entity": entity,
         "excerpts": [{"mdr_report_key": r["mdr_report_key"], "event_type": r["event_type"],
                       "date_received": r["date_received"],
                       "text": excerpt(r["text"], r["text_length"], max_chars),
                       "shortened": r["text_length"] > max_chars} for r in chosen],
         "sources": _sources(rec1 + rec2),
-        "budget_gb": {"max": budget.max_gb, "spent": round(budget.spent_gb, 4)},
+        "budget_gb": _budget(budget),
     }
 
 
-def identity(backend: BigQueryBackend, key_type: str, key: str,
+def identity(backend: BigQueryBackend, entity_type: str, entity_id: str,
              budget: Budget | None = None) -> dict:
-    """GUDID records for the key, grouped by manufacturer, device name, model, codes."""
+    """Who makes it: for a device, its GUDID name, company, model numbers and product codes;
+    for a product code or manufacturer, its catalog entry (top brand names, product codes)."""
     budget = budget or Budget()
-    (rows,), records = backend.run([queries.identity(backend.table, key_type, key)], budget)
-    return {"key": {"type": key_type, "value": key}, "devices": rows,
-            "sources": _sources(records),
-            "budget_gb": {"max": budget.max_gb, "spent": round(budget.spent_gb, 4)}}
+    if entity_type == "device":
+        (rows,), records = backend.run([queries.device_details(backend.table, entity_id)], budget)
+    else:
+        (rows,), records = backend.run([queries.catalog(backend.table, entity_type, entity_id)],
+                                       budget)
+    return {"entity": {"type": entity_type, "id": entity_id, "found": bool(rows)},
+            "details": rows[0] if rows else None, "sources": _sources(records),
+            "budget_gb": _budget(budget)}

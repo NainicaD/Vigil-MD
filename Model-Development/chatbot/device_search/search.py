@@ -4,7 +4,7 @@
     index.search("dreamstaton")            # ranked hits: devices, companies, product codes
     index.resolve("how many deaths for the dreamstaton?")
     # Resolution(status="resolved" | "several" | "ambiguous" | "none", matches=[...])
-    index.query_key(hit)                   # what the query layer needs for that hit
+    index.query_key(hit)                   # {"entity_type", "entity_id"} for the query layer
 
 Ranking: how well the user's words match the entry (typos allowed: difflib similarity,
 prefixes of 4+ letters), then the number of reports. Words in a device's name and model
@@ -25,8 +25,9 @@ from .normalize import norm, phrase_score, trigrams, word_similarity, words
 MIN_SCORE = 0.75           # below this a hit is not shown
 RESOLVE_SCORE = 0.85       # the top hit must reach this to be taken without asking
 OTHER_WORD_WEIGHT = 0.9    # a match on a device's company counts this much
-DOMINANT_RATIO = 3         # the top hit is taken if it has 3x the reports of the next one
-KIND_ORDER = {"device": 0, "company": 1, "product_code": 2}
+DOMINANT_RATIO = 3         # equal matches in one family: the top is taken at 3x the next one's reports
+CROSS_COMPANY_RATIO = 20   # equal matches from different companies: only at 20x ("breast implants" asks)
+KIND_ORDER = {"device": 0, "manufacturer": 1, "product_code": 2}
 
 # Words in a question that are about what to fetch, not which device
 STOPWORDS = set("""
@@ -49,8 +50,9 @@ _SPLIT = re.compile(r"\s+(?:vs\.?|versus|compared (?:to|with)|and|or)\s+|,", re.
 
 @dataclass
 class Hit:
-    id: str
-    kind: str
+    id: str                         # index key "kind|entity_id"
+    kind: str                       # device | manufacturer | product_code (= entity_type)
+    entity_id: str
     title: str
     subtitle: str
     reports: int
@@ -104,7 +106,8 @@ class DeviceIndex:
         return cls(sqlite3.connect(f"file:{path}?mode=ro", uri=True))
 
     def _hit(self, row: sqlite3.Row, score: float) -> Hit:
-        return Hit(row["id"], row["kind"], row["title"], row["subtitle"] or "", row["reports"],
+        return Hit(row["id"], row["kind"], row["entity_id"], row["title"], row["subtitle"] or "",
+                   row["reports"],
                    row["deaths"], row["injuries"],
                    [c for c in (row["product_codes"] or "").split(",") if c],
                    row["company_norm"], round(score, 4), json.loads(row["data"] or "{}"))
@@ -149,7 +152,16 @@ class DeviceIndex:
         if not hits or hits[0].score < RESOLVE_SCORE:
             return Resolution("none" if not hits else "ambiguous", hits[:3], phrase)
         top, rest = hits[0], [h for h in hits[1:] if round(h.score, 2) == round(hits[0].score, 2)]
-        if not rest or top.reports >= DOMINANT_RATIO * max(1, rest[0].reports):
+        # manufacturer entries are spellings of company names (one firm can have several,
+        # until the matching team groups them); devices count as one family per company
+        same_family = all(h.kind == top.kind and (top.kind == "manufacturer"
+                                                   or h.company_norm == top.company_norm)
+                          for h in rest)
+        ratio = DOMINANT_RATIO if same_family else CROSS_COMPANY_RATIO
+        if not rest or top.reports >= ratio * max(1, rest[0].reports):
+            # one match; one product family where one entry dominates (DreamStation vs
+            # DreamStation Go); or one entry far above other companies' (Impella vs a small
+            # accessory). Similar matches across companies ("breast implants") ask.
             return Resolution("resolved", [top], phrase)
         return Resolution("ambiguous", [top] + rest[:2], phrase)
 
@@ -166,7 +178,7 @@ class DeviceIndex:
             if hit:
                 return Resolution("resolved", [hit], udi)
         for code in _CODE.findall(question):
-            hit = self.get("pc:" + code)
+            hit = self.get("product_code|" + code)
             if hit:
                 return Resolution("resolved", [hit], code)
         parts = [p for p in _SPLIT.split(question) if device_words(p)]
@@ -180,16 +192,11 @@ class DeviceIndex:
             return Resolution("none", [], "")
         return self._resolve_phrase(phrase)
 
-    def udis_for(self, entity_id: str) -> list[str]:
+    def udis_for(self, hit: Hit) -> list[str]:
         return [r[0] for r in self.con.execute(
-            "SELECT udi_di FROM udis WHERE entity_id = ? ORDER BY udi_di", (entity_id,))]
+            "SELECT udi_di FROM udis WHERE entity_id = ? ORDER BY udi_di", (hit.id,))]
 
-    def query_key(self, hit: Hit) -> dict:
-        """What the query layer needs for a hit: key_type, key, and a recall_key for devices
-        (recalls have no UDI, so they are found by the device name in the recall text)."""
-        if hit.kind == "device":
-            return {"key_type": "udi_dis", "key": self.udis_for(hit.id),
-                    "recall_key": ("brand", norm(hit.title))}
-        if hit.kind == "company":
-            return {"key_type": "manufacturer", "key": hit.company_norm, "recall_key": None}
-        return {"key_type": "product_code", "key": hit.product_codes[0], "recall_key": None}
+    @staticmethod
+    def query_key(hit: Hit) -> dict:
+        """What the query layer needs: device_summary(backend, **index.query_key(hit))."""
+        return {"entity_type": hit.kind, "entity_id": hit.entity_id}
