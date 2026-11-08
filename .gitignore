@@ -241,5 +241,11 @@ __marimo__/
 # Per-user Claude Code settings
 .claude/settings.local.json
 # Airflow logs and data written at the repo root by docker compose
-/data/
+/data/# Model development local outputs
+Model-Development/**/*.csv
+Model-Development/**/mlflow.db
+mlruns/
+mlartifacts/
 /logs/
+
+Model-Development/**/*.parquet
