@@ -130,6 +130,11 @@ X_test = encode(test)
 assert set(train["meta_device_key"]).isdisjoint(test["meta_device_key"]), "a device is in both splits"
 print(f"test rows: {len(test)}, match rate {y_test.mean():.1%}")
 
+# the bias report found the top-10 manufacturers under-represented in training, so report
+# the test split per tier as well as overall. Absent on a feature table built before s04 added it.
+TEST_TIERS = ({t: (test["meta_mfr_tier"] == t).to_numpy() for t in sorted(test["meta_mfr_tier"].unique())}
+              if "meta_mfr_tier" in test.columns else {})
+
 hand = read_table(args.hand)
 X_hand = encode(hand)
 
@@ -179,6 +184,11 @@ def finish(name, track, val_scores, test_scores, hand_scores, params, model=None
         print(f"  {name}: no cutoff reached 99% precision, so the test split is unscored")
     else:
         print(f"  {name}: TEST precision={test_prec:.4f}, recall={test_rec:.4f}, avg_precision={test_ap:.4f}")
+        for tier, idx in TEST_TIERS.items():
+            if y_test[idx].sum() == 0:      # no positives: precision/recall say nothing
+                continue
+            tp, tr = at_cutoff(y_test[idx], test_scores[idx], cutoff)
+            print(f"    {tier}: n={int(idx.sum())}, precision={tp:.4f}, recall={tr:.4f}")
 
     run_id = "none"
     if not args.no_mlflow:

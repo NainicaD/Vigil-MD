@@ -58,7 +58,8 @@ never need the intermediate tables to slice by it.
 | `labels/hand_label_sample_v1.csv` | `s02`, then labeled by hand | Yes |
 | `labels/hand_label_sample_v1.manifest.json` | `s02` | Yes. Stratum sizes and the sample weights |
 | `data/label_set_v1.parquet` | `s03` | No, git-ignored |
-| `data/sibling_keys.csv` | `s04` | No. The cache; delete it or pass `--refresh-siblings` to re-query |
+| `data/sibling_keys.csv` | `s04` | No. A cache; delete it or pass `--refresh` to re-query |
+| `data/mfr_rank.csv` | `s04` | No. A cache: the top 100 MAUDE manufacturers by report count, which give `meta_mfr_tier` |
 | `data/label_set_v1_features.parquet` | `s04` | No. **The training table the model reads** |
 | `data/hand_features.csv` | `s05` | No |
 | `data/scores/*.csv`, `data/cutoffs.json` | `s06`, `s07` | No |
@@ -73,7 +74,7 @@ The free tier is 1 TiB of query scan per month. These are the only billed reads:
 | `s01_build_label_set.py` | ~25 GB for a full rebuild. Rarely needed |
 | `s02_build_hand_label_sheet.py` | ~7 GB per batch |
 | `s03_export_label_set.py` | **0.** `list_rows` is the row-listing API, not a query. A `SELECT *` would bill for the whole table |
-| `s04_build_feature_table.py` | ~0.3 GB, once. Cached in `data/sibling_keys.csv` afterwards |
+| `s04_build_feature_table.py` | Two queries, once: sibling keys 0.221 GB, manufacturer ranking 0.441 GB (both measured by dry run). Cached in `data/` afterwards, so later rebuilds are free |
 | `s05`–`s09` | **0.** Local files only |
 
 Every script that queries takes `--print-only` (shows the SQL, no GCP call), `--estimate-only`

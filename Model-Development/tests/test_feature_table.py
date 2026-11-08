@@ -18,9 +18,9 @@ def row(**kw):
     return {**base, **kw}
 
 
-def build(records, siblings=None):
+def build(records, siblings=None, ranks=None):
     pd = pytest.importorskip("pandas")
-    return s04.build(pd.DataFrame(records), frozenset(), siblings or {})
+    return s04.build(pd.DataFrame(records), frozenset(), siblings or {}, ranks or {})
 
 
 # --- the SQL -----------------------------------------------------------------------------------
@@ -32,6 +32,12 @@ def test_sibling_sql_renders_with_no_macros_left():
 
 def test_sibling_sql_accepts_the_dev_dataset():
     assert "proj.vigil_md_dev.gudid" in s04.sibling_sql("proj", "vigil_md_dev", "label_set_v1")
+
+
+def test_mfr_rank_sql_reads_only_maude_in_the_given_dataset():
+    sql = s04.mfr_rank_sql("proj", "vigil_md_dev")
+    assert "proj.vigil_md_dev.maude" in sql
+    assert "gudid" not in sql and f"<= {s04.TIERS[1]}" in sql
 
 
 def test_missing_input_fails_before_any_gcp_call(tmp_path, monkeypatch):
@@ -56,7 +62,30 @@ def test_guard_rejects_writes_and_foreign_datasets(sql):
 # --- the features ------------------------------------------------------------------------------
 def test_columns_are_carry_then_features_in_order():
     out = build([row()])
-    assert list(out.columns) == s04.CARRY + list(FEATURE_COLUMNS)
+    assert list(out.columns) == s04.META + list(FEATURE_COLUMNS)
+
+
+# --- the manufacturer tier ------------------------------------------------------------------------
+@pytest.mark.parametrize("rk,expected", [(1, "top_10"), (10, "top_10"), (11, "11_100"),
+                                         (100, "11_100"), (None, "long_tail")])
+def test_tier_follows_the_bias_report_boundaries(rk, expected):
+    assert s04.tier_of("acme", {"acme": rk} if rk else {}) == expected
+
+
+def test_tier_is_mfr_missing_when_maude_has_no_manufacturer():
+    assert s04.tier_of(None, {"acme": 1}) == "mfr_missing"
+
+
+def test_tier_comes_from_the_maude_side_not_the_candidate():
+    """key_g_mfr is the GUDID labeler; the bias report ranks MAUDE report volume."""
+    out = build([row(key_m_mfr="smallco", key_g_mfr="acme")], ranks={"acme": 1})
+    assert out["meta_mfr_tier"][0] == "long_tail"
+
+
+def test_tier_is_not_a_feature():
+    out = build([row()], ranks={"acme": 1})
+    assert "meta_mfr_tier" not in FEATURE_COLUMNS
+    assert out["meta_mfr_tier"][0] == "top_10"
 
 
 def test_no_identifier_or_di_column_survives():
