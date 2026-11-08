@@ -11,12 +11,13 @@ Follows the team's instructions (status, 7 Nov):
 Input: a feature table with label (MATCH/NON_MATCH), meta_split, meta_device_key and the feat_* columns.
 Output per model: <model>_hand_scores.csv (scores for the hand sheet) and its cutoff in cutoffs.json.
 
-Usage (from Model-Development/models):
-    python train_models.py --data label_set_v1_features.parquet --hand ../eval/hand_features.csv
+Usage (from anywhere):
+    python pipeline/s06_train_models.py
 """
 import argparse
 import json
 import sys
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -25,13 +26,15 @@ from sklearn.metrics import average_precision_score, precision_recall_curve
 from sklearn.model_selection import GroupShuffleSplit
 from xgboost import XGBClassifier
 
-sys.path.append("../scripts")
-from same_device_features import FEATURE_COLUMNS, MatchKind, assert_no_leakage  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from vigil_model.same_device_features import FEATURE_COLUMNS, MatchKind, assert_no_leakage  # noqa: E402
 
 parser = argparse.ArgumentParser(description="Train LR and XGBoost on label_set_v1 features")
-parser.add_argument("--data", required=True, help="feature table (.parquet or .csv)")
-parser.add_argument("--hand", default="../eval/hand_features.csv", help="hand-sheet features to score")
-parser.add_argument("--manifest", default="../labels/label_set_v1.manifest.json")
+parser.add_argument("--data", default=ROOT / "data/label_set_v1_features.parquet",
+                    help="feature table from s04 (.parquet or .csv)")
+parser.add_argument("--hand", default=ROOT / "data/hand_features.csv", help="hand-sheet features to score")
+parser.add_argument("--manifest", default=ROOT / "labels/label_set_v1.manifest.json")
 parser.add_argument("--trials", type=int, default=10, help="random-search trials per XGBoost variant")
 parser.add_argument("--no-mlflow", action="store_true")
 args = parser.parse_args()
@@ -97,6 +100,17 @@ def recall_at_p99(y, scores):
     return float(thresholds[ok][best]), float(recall[ok][best])
 
 
+def at_cutoff(y_true, scores, cutoff):
+    """Precision and recall at a cutoff chosen elsewhere. (None, None) if there is no cutoff."""
+    if cutoff is None:
+        return None, None
+    pred = scores >= cutoff
+    tp = int((pred & (y_true == 1)).sum())
+    fp = int((pred & (y_true == 0)).sum())
+    fn = int(((~pred) & (y_true == 1)).sum())
+    return (tp / (tp + fp) if tp + fp else 0.0), (tp / (tp + fn) if tp + fn else 0.0)
+
+
 data = read_table(args.data)
 train = data[data["meta_split"] == "train"].reset_index(drop=True)
 y = (train["label"] == "MATCH").astype(int).to_numpy()
@@ -109,6 +123,13 @@ fit_idx, val_idx = next(splitter.split(X, y, groups=train["meta_device_key"]))
 assert set(train.loc[fit_idx, "meta_device_key"]).isdisjoint(train.loc[val_idx, "meta_device_key"])
 print(f"fit rows: {len(fit_idx)}, validation rows: {len(val_idx)}, validation match rate {y[val_idx].mean():.1%}")
 
+# the held-out split of the label set: never fitted, never used to pick the cutoff
+test = data[data["meta_split"] == "test"].reset_index(drop=True)
+y_test = (test["label"] == "MATCH").astype(int).to_numpy()
+X_test = encode(test)
+assert set(train["meta_device_key"]).isdisjoint(test["meta_device_key"]), "a device is in both splits"
+print(f"test rows: {len(test)}, match rate {y_test.mean():.1%}")
+
 hand = read_table(args.hand)
 X_hand = encode(hand)
 
@@ -119,27 +140,45 @@ try:
 except FileNotFoundError:
     print(f"warning: {args.manifest} not found; hashes will be logged as unknown")
 
+# refuse a feature table built under different rules than the label set it claims to describe
+feature_manifest = Path(args.data).with_suffix(".manifest.json")
+if feature_manifest.exists() and manifest:
+    built = json.loads(feature_manifest.read_text()).get("constants_sha256")
+    if built and built != manifest.get("constants_sha256"):
+        raise SystemExit(f"{args.data} was built with constants {built[:12]}, but "
+                         f"{args.manifest} says {manifest.get('constants_sha256', '?')[:12]}. "
+                         "Rebuild it with pipeline/s04_build_feature_table.py.")
+
 if not args.no_mlflow:
     import mlflow
     import mlflow.xgboost
-    mlflow.set_tracking_uri("sqlite:///../mlflow.db")
+    mlflow.set_tracking_uri(f"sqlite:///{ROOT / 'mlflow.db'}")
     mlflow.set_experiment("vigil-md-linkage")
 
 common_tags = {
-    "threshold_version": "t1", "normalization_version": "n1", "data_file": args.data,
+    "threshold_version": "t1", "normalization_version": "n1", "data_file": str(args.data),
     "constants_sha256": manifest.get("constants_sha256", "unknown"),
     "alias_table_sha256": manifest.get("alias_table_sha256", "unknown"),
     "snapshot_date": manifest.get("snapshot_date", "unknown"),
 }
 cutoffs = {}
+SCORES = ROOT / "data" / "scores"
 
 
-def finish(name, track, val_scores, hand_scores, params, model=None):
-    """Pick the cutoff on validation, log everything, write the hand-sheet scores file."""
+def finish(name, track, val_scores, test_scores, hand_scores, params, model=None):
+    """Pick the cutoff on validation, score the held-out test split with it, log, write scores."""
     cutoff, recall = recall_at_p99(y[val_idx], val_scores)
     avg_prec = average_precision_score(y[val_idx], val_scores)
     cutoffs[name] = cutoff
     print(f"  {name}: validation avg_precision={avg_prec:.4f}, recall_at_p99={recall:.4f}, cutoff={cutoff}")
+
+    # the test split is scored at the validation cutoff, never at one chosen on itself
+    test_prec, test_rec = at_cutoff(y_test, test_scores, cutoff)
+    test_ap = average_precision_score(y_test, test_scores)
+    if cutoff is None:
+        print(f"  {name}: no cutoff reached 99% precision, so the test split is unscored")
+    else:
+        print(f"  {name}: TEST precision={test_prec:.4f}, recall={test_rec:.4f}, avg_precision={test_ap:.4f}")
 
     run_id = "none"
     if not args.no_mlflow:
@@ -147,27 +186,33 @@ def finish(name, track, val_scores, hand_scores, params, model=None):
             mlflow.set_tags({**common_tags, "track": track, "model_name": name})
             mlflow.log_params(params)
             mlflow.log_metrics({"val_average_precision": avg_prec, "val_recall_at_p99": recall,
-                                "val_match_rate": float(y[val_idx].mean())})
+                                "val_match_rate": float(y[val_idx].mean()),
+                                "test_average_precision": test_ap,
+                                "test_match_rate": float(y_test.mean())})
             if cutoff is not None:
-                mlflow.log_metric("cutoff_p99", cutoff)
+                mlflow.log_metrics({"cutoff_p99": cutoff, "test_precision": test_prec,
+                                    "test_recall": test_rec})
             if model is not None:
                 mlflow.xgboost.log_model(model, name="model")
             run_id = run.info.run_id
 
+    SCORES.mkdir(parents=True, exist_ok=True)
     pd.DataFrame({
         "pair_id": hand["pair_id"], "score": np.round(hand_scores, 6), "model_name": name,
         "mlflow_run_id": run_id, "timestamp": pd.Timestamp.now(tz="UTC").isoformat(),
-    }).to_csv(f"{name}_hand_scores.csv", index=False)
+    }).to_csv(SCORES / f"{name}_hand_scores.csv", index=False)
 
 
 # --- logistic regression baseline --------------------------------------------------------------------
 print("\nlogistic regression")
 M = lr_matrix(X)
 M_hand = lr_matrix(X_hand).reindex(columns=M.columns, fill_value=0.0)
+M_test = lr_matrix(X_test).reindex(columns=M.columns, fill_value=0.0)
 lr = LogisticRegression(max_iter=2000)
 lr.fit(M.iloc[fit_idx], y[fit_idx])
 finish("logreg_v1", "baseline", lr.predict_proba(M.iloc[val_idx])[:, 1],
-       lr.predict_proba(M_hand)[:, 1], {"model": "LogisticRegression", "max_iter": 2000})
+       lr.predict_proba(M_test)[:, 1], lr.predict_proba(M_hand)[:, 1],
+       {"model": "LogisticRegression", "max_iter": 2000})
 
 # --- XGBoost, three feature variants, random search each -------------------------------------------
 rng = np.random.default_rng(42)
@@ -191,9 +236,12 @@ for name, cols in VARIANTS.items():
         if best is None or avg_prec > best["avg_prec"]:
             best = {"avg_prec": avg_prec, "model": model, "params": params, "val": val_scores}
     hand_scores = best["model"].predict_proba(X_hand[cols])[:, 1]
-    finish(name, "xgb", best["val"], hand_scores, {**best["params"], "features": ",".join(cols)}, best["model"])
+    test_scores = best["model"].predict_proba(X_test[cols])[:, 1]
+    finish(name, "xgb", best["val"], test_scores, hand_scores,
+           {**best["params"], "features": ",".join(cols)}, best["model"])
 
-with open("cutoffs.json", "w") as f:
+SCORES.mkdir(parents=True, exist_ok=True)
+with open(ROOT / "data" / "cutoffs.json", "w") as f:
     json.dump(cutoffs, f, indent=2)
 
 print("\nNext, score each model on the hand labels with its validation cutoff:")
@@ -202,5 +250,5 @@ for name, cutoff in cutoffs.items():
     if cutoff is None:
         print(f"  {name}: never reached 99% precision on validation, so no cutoff")
         continue
-    print(f"  cd ../eval && python evaluate_hand.py --scores ../models/{name}_hand_scores.csv "
+    print(f"  python pipeline/s08_evaluate_hand.py --scores data/scores/{name}_hand_scores.csv "
           f"--cutoff {cutoff:.6f} --track {track}")

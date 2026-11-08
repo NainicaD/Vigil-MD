@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-import build_labels
-import same_device_features as f
+from pipeline import s01_build_label_set as build_labels
+from vigil_model import same_device_features as f
 
 LABEL_SQL = sorted((Path(__file__).resolve().parents[1] / "sql" / "labels").glob("*.sql"))
 MACRO = re.compile(r"\{\{\s*(\w+)\((.*?)\)\s*\}\}")

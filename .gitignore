@@ -241,7 +241,11 @@ __marimo__/
 # Per-user Claude Code settings
 .claude/settings.local.json
 # Airflow logs and data written at the repo root by docker compose
-/data/# Model development local outputs
+/data/
+# Handovers are sent to a person, not committed: they go stale and contradict the docs
+HANDOFF*
+# Model development local outputs
+Model-Development/data/
 Model-Development/**/*.csv
 Model-Development/**/mlflow.db
 mlruns/

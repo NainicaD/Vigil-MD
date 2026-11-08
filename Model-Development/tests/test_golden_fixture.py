@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import build_labels as bl
-import golden_fixture as gf
-import same_device_features as f
+from pipeline import s01_build_label_set as bl
+from vigil_model import golden_fixture as gf
+from vigil_model import same_device_features as f
 
 FILE_HASH, ROWS = gf.load()
 BY_ID = {r["case_id"]: r for r in ROWS}

@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import bq_utils
-import same_device_profile
+from vigil_model import bq_utils
+from pipeline import same_device_profile
 
 PROJECT = "test-project"
 SQL_FILES = sorted(same_device_profile.SQL_DIR.glob("*.sql"))

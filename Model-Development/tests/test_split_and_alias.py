@@ -5,9 +5,9 @@ import re
 
 import pytest
 
-import bq_utils
-import build_labels as bl
-import same_device_features as f
+from vigil_model import bq_utils
+from pipeline import s01_build_label_set as bl
+from vigil_model import same_device_features as f
 
 PROJECT = "p"
 PARAMS = {"__MAX_PER_DEVICE__": 200, "__NEG_PER_ANCHOR__": 2, "__CAND_POOL__": 50,

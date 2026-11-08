@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-import hand_label_agreement as ag
-import make_hand_label_sheet as hs
+from vigil_model import hand_label_agreement as ag
+from pipeline import s02_build_hand_label_sheet as hs
 
 
 def _write(path, rows):

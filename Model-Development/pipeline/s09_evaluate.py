@@ -1,6 +1,6 @@
 import argparse
+from pathlib import Path
 
-import mlflow
 import pandas as pd
 from sklearn.metrics import precision_score, recall_score, f1_score
 from sklearn.metrics import precision_recall_curve
@@ -75,7 +75,9 @@ for name, value in metrics.items():
 if args.no_mlflow:
     print("Skipped MLflow logging")
 else:
-    mlflow.set_tracking_uri("sqlite:///mlflow.db")
+    import mlflow   # imported here so --no-mlflow works without mlflow installed, as in s08
+
+    mlflow.set_tracking_uri(f"sqlite:///{Path(__file__).resolve().parents[1] / 'mlflow.db'}")
     mlflow.set_experiment("vigil-md-linkage")
 
     with mlflow.start_run(run_name=model_name):

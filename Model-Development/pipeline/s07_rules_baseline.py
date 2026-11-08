@@ -4,20 +4,23 @@ It reads only feat_* columns, so it runs on any feature table (the hand sheet no
 Each rule outcome gets a fixed score; a pair counts as MATCH when score >= RULES_CUTOFF.
 The scores are ordered so the eval script can also draw a precision-recall curve.
 
-Usage (from Model-Development/eval):
-    python rules_baseline.py --features hand_features.csv --out rules_hand_scores.csv
+Usage (from anywhere):
+    python pipeline/s07_rules_baseline.py
 """
 import argparse
+from pathlib import Path
 
 import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[1]
 
 RULES_CUTOFF = 0.75   # fixed by design, not tuned on any labels
 
 CATALOG_KINDS = {"catalog_eq_catalog", "maude_model_eq_gudid_catalog", "maude_catalog_eq_gudid_model"}
 
 parser = argparse.ArgumentParser(description="Rules baseline scores")
-parser.add_argument("--features", default="hand_features.csv")
-parser.add_argument("--out", default="rules_hand_scores.csv")
+parser.add_argument("--features", default=ROOT / "data/hand_features.csv")
+parser.add_argument("--out", default=ROOT / "data/scores/rules_hand_scores.csv")
 args = parser.parse_args()
 
 

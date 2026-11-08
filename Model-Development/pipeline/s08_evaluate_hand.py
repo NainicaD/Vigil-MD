@@ -7,21 +7,25 @@
 - precision comes with a 95% lower bound and the count of accepted pairs behind it
 - the cutoff must come from validation; it is never chosen here (plan rule 1)
 
-Usage (from Model-Development/eval):
-    python evaluate_hand.py --scores rules_hand_scores.csv --cutoff 0.75 --track baseline
+Usage (from anywhere):
+    python pipeline/s08_evaluate_hand.py --scores data/scores/rules_hand_scores.csv \
+        --cutoff 0.75 --track baseline
 """
 import argparse
 import json
 import os
+from pathlib import Path
 
 import pandas as pd
 from scipy.stats import beta
 
+ROOT = Path(__file__).resolve().parents[1]
+
 parser = argparse.ArgumentParser(description="Evaluate scores on the hand-labeled sheet")
 parser.add_argument("--scores", required=True)
 parser.add_argument("--cutoff", type=float, required=True, help="chosen on validation, never on these labels")
-parser.add_argument("--sheet", default="../labels/hand_label_sample_v1.csv")
-parser.add_argument("--manifest", default="../labels/label_set_v1.manifest.json")
+parser.add_argument("--sheet", default=ROOT / "labels/hand_label_sample_v1.csv")
+parser.add_argument("--manifest", default=ROOT / "labels/label_set_v1.manifest.json")
 parser.add_argument("--track", default="test", choices=["test", "baseline", "xgb", "embed", "ft"])
 parser.add_argument("--threshold-version", default="t1")
 parser.add_argument("--normalization-version", default="n1")
@@ -146,7 +150,7 @@ else:
         flat[f"slice_{name}_accepted"] = m["accepted"]
     flat = {k: float(v) for k, v in flat.items() if pd.notna(v)}
 
-    mlflow.set_tracking_uri("sqlite:///../mlflow.db")
+    mlflow.set_tracking_uri(f"sqlite:///{ROOT / 'mlflow.db'}")
     mlflow.set_experiment("vigil-md-linkage")
     with mlflow.start_run(run_name=f"{model_name}_hand"):
         mlflow.set_tags({

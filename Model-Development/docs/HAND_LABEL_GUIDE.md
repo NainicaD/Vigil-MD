@@ -4,7 +4,7 @@
 This guide only says how to apply them to the sheet. If the two ever disagree, the definition wins,
 and the disagreement is reported so one of them is fixed.
 
-**Sheet:** `labels/hand_label_sample_v1.csv`, made by `scripts/make_hand_label_sheet.py`. Batch 1 is 150
+**Sheet:** `labels/hand_label_sample_v1.csv`, made by `pipeline/s02_build_hand_label_sheet.py`. Batch 1 is 150
 MAUDE rows from the test split. Do not sort or delete rows in the file you hand back; filter views are fine.
 
 ---

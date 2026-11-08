@@ -5,64 +5,27 @@ calls pair_features, and writes one row per candidate with the feat_* columns.
 
 Runs on the local CSV only: no BigQuery.
 
-Usage (from Model-Development/eval):
-    python hand_label_features.py --sheet /tmp/hand_labels.csv
+Usage (from anywhere):
+    python pipeline/s05_build_hand_features.py --sheet /tmp/hand_labels.csv
 """
 import argparse
-import re
 import sys
+from pathlib import Path
 
 import pandas as pd
 
-sys.path.append("../scripts")
-from same_device_features import (  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from vigil_model.rows import is_true, load_aliases, number, product_codes, text  # noqa: E402
+from vigil_model.same_device_features import (  # noqa: E402
     FEATURE_COLUMNS, DeviceSide, MatchContext, assert_no_leakage, pair_features, usable_key,
 )
 
 parser = argparse.ArgumentParser(description="Features for the hand-label sheet")
-parser.add_argument("--sheet", default="../labels/hand_label_sample_v1.csv")
-parser.add_argument("--alias", default="../labels/alias_table_v1.csv")
-parser.add_argument("--out", default="hand_features.csv")
+parser.add_argument("--sheet", default=ROOT / "labels/hand_label_sample_v1.csv")
+parser.add_argument("--alias", default=ROOT / "labels/alias_table_v1.csv")
+parser.add_argument("--out", default=ROOT / "data/hand_features.csv")
 args = parser.parse_args()
-
-
-def text(value):
-    """A clean string, or None. Treats empty cells and NaN as missing."""
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return None
-    value = str(value).strip()
-    return value or None
-
-
-def number(value):
-    """An int, or None."""
-    value = text(value)
-    return None if value is None else int(float(value))
-
-
-def is_true(value):
-    return text(value) is not None and text(value).upper() in ("TRUE", "1", "YES")
-
-
-def product_codes(value):
-    """FDA product codes are 3 letters; pull every one out, whatever the separator."""
-    value = text(value)
-    return tuple(re.findall(r"[A-Z]{3}", value.upper())) if value else ()
-
-
-def load_aliases(path):
-    """Alias pairs (maude labeler, gudid labeler) from the train-only alias table."""
-    table = pd.read_csv(path, dtype=str)
-    known = [("maude_labeler", "gudid_labeler"),
-             ("maude_manufacturer_norm", "gudid_manufacturer_norm"),
-             ("maude_name", "gudid_name")]
-    for m_col, g_col in known:
-        if m_col in table.columns and g_col in table.columns:
-            break
-    else:
-        m_col, g_col = table.columns[0], table.columns[1]
-    print(f"alias table: {len(table)} pairs, using columns {m_col!r} -> {g_col!r}")
-    return frozenset((text(m), text(g)) for m, g in zip(table[m_col], table[g_col]) if text(m) and text(g))
 
 
 # read everything as text, so model numbers like 007 or 1006402 stay exactly as written

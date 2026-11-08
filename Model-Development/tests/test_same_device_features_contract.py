@@ -1,4 +1,4 @@
-"""Pins the Step 0 contract of scripts/same_device_features.py.
+"""Pins the Step 0 contract of vigil_model/same_device_features.py.
 
 These tests need no function bodies. They check the constants against the README and the SQL that
 already exists, so the module cannot start out different from the rest of the repo. Delete nothing
@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-import same_device_features as f
+from vigil_model import same_device_features as f
 
 ROOT = Path(__file__).resolve().parents[1]
 SQL_FILES = sorted((ROOT / "sql").rglob("*.sql"))

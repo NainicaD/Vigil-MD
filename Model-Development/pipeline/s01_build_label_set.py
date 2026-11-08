@@ -13,7 +13,7 @@ Train-only alias invariant: steps 02 and later refuse to run unless vigil_md_mod
 to the value in the manifest (written by --export-alias, which also writes labels/alias_table_v1.csv).
 
 Usage (WSL; only whoever owns the write access runs it):
-  ~/.venvs/vigil-analysis/bin/python Model-Development/scripts/build_labels.py \
+  ~/.venvs/vigil-analysis/bin/python Model-Development/pipeline/s01_build_label_set.py \
       --project vigil-md-1792696816 --print-only
   ... --estimate-only
   ... --only 02 03 --snapshot-date 2026-11-06
@@ -33,10 +33,10 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import bq_utils  # noqa: E402
-import golden_fixture  # noqa: E402
-import same_device_features as feat  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from vigil_model import bq_utils  # noqa: E402
+from vigil_model import golden_fixture  # noqa: E402
+from vigil_model import same_device_features as feat  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 SQL_DIR = ROOT / "sql" / "labels"

@@ -1,11 +1,11 @@
-"""Behaviour of scripts/same_device_features.py. Offline: no BigQuery. The golden fixture (H4) is separate."""
+"""Behaviour of vigil_model/same_device_features.py. Offline: no BigQuery. The golden fixture (H4) is separate."""
 import hashlib
 import re
 
 import pytest
 
-import same_device_features as f
-from same_device_features import DeviceSide, MatchContext, MatchKind
+from vigil_model import same_device_features as f
+from vigil_model.same_device_features import DeviceSide, MatchContext, MatchKind
 
 
 def side(model=None, cat=None, mfr="acme", name=None, pcs=()):

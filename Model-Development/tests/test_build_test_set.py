@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import bq_utils
-import build_test_set as bts
+from vigil_model import bq_utils
+from pipeline import build_test_set as bts
 
 PROJECT = "test-project"
 SQL_FILES = sorted(bts.SQL_DIR.glob("*.sql"))

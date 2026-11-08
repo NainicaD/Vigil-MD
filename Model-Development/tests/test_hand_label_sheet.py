@@ -8,9 +8,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import bq_utils
-import make_hand_label_sheet as hs
-import same_device_features as f
+from vigil_model import bq_utils
+from pipeline import s02_build_hand_label_sheet as hs
+from vigil_model import same_device_features as f
 
 PROJECT = "p"
 SQL_FILES = sorted(hs.SQL_DIR.glob("*.sql"))

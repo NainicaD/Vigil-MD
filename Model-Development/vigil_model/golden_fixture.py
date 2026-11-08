@@ -26,9 +26,9 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import bq_utils  # noqa: E402
-import same_device_features as feat  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from vigil_model import bq_utils  # noqa: E402
+from vigil_model import same_device_features as feat  # noqa: E402
 
 FIXTURE = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "normalization_golden.csv"
 INPUT_COLS = ("case_id", "note", "mfr", "m_model_raw", "m_cat_raw", "g_model_raw", "g_cat_raw",

@@ -1,12 +1,10 @@
 import sys
 import types
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-sys.path.insert(0, str(SCRIPTS))
+# imports resolve via pythonpath = ["."] in pyproject.toml, not a sys.path hack
 
 
 @pytest.fixture

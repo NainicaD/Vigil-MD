@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import bq_utils
-import embedding_retrieval as er
-import export_embedding_data as ex
+from vigil_model import bq_utils
+from vigil_model import embedding_retrieval as er
+from pipeline import export_embedding_data as ex
 
 PROJECT = "test-project"
 SQL_FILES = sorted(ex.SQL_DIR.glob("*.sql"))
