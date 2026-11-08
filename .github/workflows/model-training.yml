@@ -1,0 +1,195 @@
+# Model training CI/CD for Model-Development/ (the MAUDE -> GUDID matcher).
+#
+#   test         every pull request and push that touches Model-Development/: the offline tests.
+#   smoke-train  same trigger: runs the real training code (s05 + s06) on a small synthetic feature
+#                table and the committed hand sheet. No GCP. Catches broken training code before merge.
+#   train        push to main or same-device-profiling, or by hand (Actions -> model-training ->
+#                Run workflow): the real chain s03 -> s04 -> s05 -> s06 -> s08 on BigQuery data,
+#                then uploads the models, MLflow data and scores as a workflow artifact.
+#
+# GCP access is keyless (Workload Identity Federation): no service-account key is stored in GitHub.
+# Pull requests never get it, so a fork cannot spend the team's query budget. One-time setup and
+# costs: Model-Development/docs/CI_CD.md.
+name: model-training
+
+on:
+  push:
+    branches: [main, same-device-profiling]
+    paths:
+      - "Model-Development/**"
+      - ".github/workflows/model-training.yml"
+  pull_request:
+    paths:
+      - "Model-Development/**"
+      - ".github/workflows/model-training.yml"
+  workflow_dispatch:
+    inputs:
+      trials:
+        description: "Random-search trials per XGBoost variant"
+        default: "10"
+      refresh_data:
+        description: "Re-download the label set and re-run the s04 queries (ignores the cache)"
+        type: boolean
+        default: false
+
+# One training run per branch at a time; a newer push cancels the older run.
+concurrency:
+  group: model-training-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: Model-Development
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: Model-Development/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-ml.txt
+      - name: Run the tests (mocked; none of them talk to GCP)
+        run: python -m pytest -q -rs
+
+  smoke-train:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: Model-Development/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-ml.txt
+      - name: Make a synthetic feature table
+        run: python ci/make_ci_feature_table.py --out data/ci/features.csv
+      - name: Hand-sheet features (s05, from the committed sheet)
+        run: python pipeline/s05_build_hand_features.py
+      - name: Train on the synthetic table (s06, 1 trial, no MLflow)
+        run: python pipeline/s06_train_models.py --data data/ci/features.csv --trials 1 --no-mlflow
+      - name: Check the outputs
+        run: python ci/check_training_outputs.py --title "Smoke training (synthetic data, numbers mean nothing)" --summary "$GITHUB_STEP_SUMMARY"
+
+  train:
+    needs: [test, smoke-train]
+    # Only on a push to the shared branches or a manual run, and only once GCP access is configured.
+    if: >-
+      (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+      && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write          # lets the job ask GCP for a short-lived token (no stored key)
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      TRIALS: ${{ github.event.inputs.trials || '10' }}
+      REFRESH: ${{ github.event.inputs.refresh_data || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: Model-Development/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-ml.txt
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      # The label set and the s04 query answers only change when the label set is rebuilt, which
+      # rewrites its manifest. Caching on the manifest means later pushes pay for no query at all.
+      - name: Restore the downloaded label set and query caches
+        if: env.REFRESH != 'true'
+        uses: actions/cache/restore@v4
+        id: data-cache
+        with:
+          path: |
+            Model-Development/data/label_set_v1.parquet
+            Model-Development/data/sibling_keys.csv
+            Model-Development/data/mfr_rank.csv
+          key: label-data-${{ hashFiles('Model-Development/labels/label_set_v1.manifest.json', 'Model-Development/pipeline/s04_build_feature_table.py') }}
+
+      - name: s03 download the label set (free, no query)
+        if: steps.data-cache.outputs.cache-hit != 'true'
+        run: python pipeline/s03_export_label_set.py --project "$PROJECT" --overwrite
+
+      - name: s04 dry run (free; stops here if over budget)
+        run: python pipeline/s04_build_feature_table.py --project "$PROJECT" --estimate-only --max-gb 2
+
+      - name: s04 build the feature table (about 0.3 GB the first time, then cached)
+        run: |
+          if [ "$REFRESH" = "true" ]; then
+            python pipeline/s04_build_feature_table.py --project "$PROJECT" --max-gb 2 --refresh
+          else
+            python pipeline/s04_build_feature_table.py --project "$PROJECT" --max-gb 2
+          fi
+
+      - name: Save the query caches
+        if: steps.data-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            Model-Development/data/label_set_v1.parquet
+            Model-Development/data/sibling_keys.csv
+            Model-Development/data/mfr_rank.csv
+          key: label-data-${{ hashFiles('Model-Development/labels/label_set_v1.manifest.json', 'Model-Development/pipeline/s04_build_feature_table.py') }}
+
+      - name: s05 hand-sheet features
+        run: python pipeline/s05_build_hand_features.py
+
+      - name: s06 train logistic regression and XGBoost (logged to MLflow)
+        run: python pipeline/s06_train_models.py --trials "$TRIALS"
+
+      - name: s08 score every model on the hand labels at its validation cutoff
+        run: |
+          python - <<'EOF'
+          import json, subprocess, sys
+          cutoffs = json.load(open("data/cutoffs.json"))
+          for name, cutoff in cutoffs.items():
+              if cutoff is None:
+                  print(f"{name}: no 99%-precision cutoff on validation; not scored on the hand labels")
+                  continue
+              track = "baseline" if name.startswith("logreg") else "xgb"
+              cmd = [sys.executable, "pipeline/s08_evaluate_hand.py", "--scores",
+                     f"data/scores/{name}_hand_scores.csv", "--cutoff", str(cutoff), "--track", track]
+              print("+", " ".join(cmd), flush=True)
+              subprocess.run(cmd, check=True)
+          EOF
+
+      - name: Check the outputs and write the run summary
+        run: python ci/check_training_outputs.py --require-mlflow --title "Training run ${{ github.sha }} (trials=${{ env.TRIALS }})" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload models, MLflow data and scores
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-${{ github.run_number }}-${{ github.sha }}
+          retention-days: 30
+          if-no-files-found: warn
+          path: |
+            Model-Development/mlflow.db
+            Model-Development/mlruns/
+            Model-Development/mlartifacts/
+            Model-Development/data/cutoffs.json
+            Model-Development/data/scores/
+            Model-Development/data/label_set_v1_features.manifest.json

@@ -1,0 +1,128 @@
+# CI/CD for model training
+
+Workflow: [`.github/workflows/model-training.yml`](../../.github/workflows/model-training.yml).
+When code under `Model-Development/` is committed, GitHub Actions tests it, checks that the training
+code runs, and (on the shared branches) retrains the models on the real BigQuery data.
+
+## 1. What runs when
+
+| Job | Runs on | Uses GCP | What it does | Time |
+|---|---|---|---|---|
+| `test` | every pull request and push that touches `Model-Development/` | no | `python -m pytest`: the mocked tests | ~2 min |
+| `smoke-train` | same | no | `ci/make_ci_feature_table.py` makes a synthetic feature table, `s05` builds the hand-sheet features from the committed sheet, `s06` trains all four models on the synthetic table (1 trial, no MLflow), `ci/check_training_outputs.py` checks the outputs | ~3 min |
+| `train` | push to `main` or `same-device-profiling` (a merged PR), or **Actions → model-training → Run workflow** | yes | `s03 → s04 → s05 → s06 → s08` on the real label set, checks the outputs, uploads the results | 20-60 min |
+
+- `train` needs `test` and `smoke-train` to pass first.
+- A newer push to the same branch cancels the older run (`concurrency`).
+- `train` is skipped, not failed, until the GCP setup in section 3 is done.
+- The smoke run's numbers mean nothing: the data is synthetic. It only proves the code runs end to end.
+
+## 2. What a training run produces
+
+- **Run page summary:** each model's 99%-precision cutoff, its validation and test metrics, and its
+  hand-label metrics from `s08`.
+- **Artifact** `training-<run number>-<commit>` (kept 30 days): `mlflow.db` and `mlruns/` (the
+  MLflow runs, with the XGBoost models), `data/cutoffs.json`, `data/scores/*_hand_scores.csv`, and the
+  feature-table manifest. To look at the runs, download the artifact, then from that folder:
+
+  ```bash
+  mlflow ui --backend-store-uri sqlite:///mlflow.db
+  ```
+
+- The job **fails** (exit 3) if training leaves incomplete or broken outputs: no `cutoffs.json`, a model
+  without scores, scores that do not match the hand sheet, a score outside [0, 1], or a model with no
+  MLflow run. It does **not** fail on a low metric. Whether a model is good enough is decided in the
+  validation step, before anything is pushed to the model registry.
+
+## 3. One-time GCP setup (someone with Owner on the project)
+
+GitHub gets a short-lived token through **Workload Identity Federation**. No service-account key is
+created or stored. Only this repository can use it, and pull requests never get it, so a fork cannot
+spend the query budget.
+
+```bash
+PROJECT_ID=vigil-md-1792696816
+PROJECT_NUMBER=292904548224
+REPO=NainicaD/Vigil-MD
+SA=github-ci-trainer@$PROJECT_ID.iam.gserviceaccount.com
+```
+
+**1. A service account that can read BigQuery and run queries, nothing else:**
+
+```bash
+gcloud iam service-accounts create github-ci-trainer --project "$PROJECT_ID" --display-name "GitHub Actions model training"
+```
+
+```bash
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$SA" --role roles/bigquery.jobUser
+```
+
+```bash
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$SA" --role roles/bigquery.dataViewer
+```
+
+`dataViewer` at project level is read-only on every dataset. To limit it to `vigil_md_prod` and
+`vigil_md_model`, grant it on those two datasets instead (BigQuery console → dataset → Sharing →
+Permissions). The training chain never writes to BigQuery, so no write role is needed.
+
+**2. A workload identity pool and a provider that trusts only this repository:**
+
+```bash
+gcloud iam workload-identity-pools create github --project "$PROJECT_ID" --location global --display-name "GitHub Actions"
+```
+
+```bash
+gcloud iam workload-identity-pools providers create-oidc vigil-md --project "$PROJECT_ID" --location global \
+  --workload-identity-pool github --display-name "Vigil-MD repository" \
+  --issuer-uri "https://token.actions.githubusercontent.com" \
+  --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
+  --attribute-condition "assertion.repository == '$REPO'"
+```
+
+**3. Let that repository act as the service account:**
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID" --role roles/iam.workloadIdentityUser \
+  --member "principalSet://iam.googleapis.com/projects/$PROJECT_NUMBER/locations/global/workloadIdentityPools/github/attribute.repository/$REPO"
+```
+
+**4. Three repository variables** (GitHub → repository Settings → Secrets and variables → Actions →
+**Variables** tab; they are identifiers, not secrets):
+
+| Variable | Value |
+|---|---|
+| `GCP_PROJECT_ID` | `vigil-md-1792696816` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/292904548224/locations/global/workloadIdentityPools/github/providers/vigil-md` |
+| `GCP_SERVICE_ACCOUNT` | `github-ci-trainer@vigil-md-1792696816.iam.gserviceaccount.com` |
+
+Then run it once by hand: **Actions → model-training → Run workflow**, branch `same-device-profiling`.
+
+## 4. Cost
+
+- `s03` downloads the label set through the row-listing API: **no query cost**.
+- `s04` runs two small queries, **about 0.3 GB the first time**. Its answers and the downloaded label
+  set are cached in GitHub Actions, keyed on `labels/label_set_v1.manifest.json` and `s04`'s code. Later
+  runs reuse them and **query nothing** until the label set is rebuilt or `s04` changes.
+- Every `s04` call is dry-run first and refused above `--max-gb 2` (the job fails with exit 3).
+- `refresh_data` on a manual run ignores the cache and re-queries.
+- GitHub Actions minutes: a training run takes 20-60 minutes. Lower `trials` on a manual run for a
+  quicker check.
+
+## 5. Running the same thing locally
+
+```bash
+python ci/make_ci_feature_table.py --out data/ci/features.csv          # the smoke run
+python pipeline/s05_build_hand_features.py
+python pipeline/s06_train_models.py --data data/ci/features.csv --trials 1 --no-mlflow
+python ci/check_training_outputs.py
+```
+
+The real chain is in the Model-Development README ("The training chain").
+
+## 6. Changing it
+
+- A new `feat_*` column: add it to `ci/make_ci_feature_table.py`, or the smoke job stops with
+  "FEATURE_COLUMNS has columns this generator does not know".
+- A new model in `s06`: add its name to `EXPECTED_MODELS` in `ci/check_training_outputs.py`.
+- `tests/test_ci_training.py` checks the workflow itself: triggers, that only `train` can reach GCP,
+  the order of the stages, the cost guards, the cache key and the uploaded files.
