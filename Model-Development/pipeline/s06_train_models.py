@@ -50,7 +50,7 @@ assert_no_leakage(FEATURE_COLUMNS)
 
 # --- loading and encoding --------------------------------------------------------------------------
 def read_table(path):
-    return pd.read_parquet(path) if path.endswith(".parquet") else pd.read_csv(path, dtype=str)
+    return pd.read_parquet(path) if str(path).endswith(".parquet") else pd.read_csv(path, dtype=str)
 
 
 def to_float(series):
