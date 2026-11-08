@@ -205,6 +205,30 @@ def test_recalls_newest_first_with_class_and_more():
         'device.']
 
 
+def test_identical_recalls_share_one_line():
+    rec = {k: v for k, v in ROWS['recalls'][0].items() if k != 'total_recalls'}
+    other = {**rec, 'record_date': '2020-01-01'}
+    lines = render.recalls(facts(recalls={'total': 5,
+                                          'shown': [rec, rec, rec, other]}))
+    assert lines[1].startswith('- Class I, 2021-06-14 (terminated), 3 recalls:')
+    assert lines[2].startswith('- Class I, 2020-01-01 (terminated):')
+    assert lines[3] == '- …and 1 more.'  # 5 in total, 4 listed.
+
+
+def test_product_code_title_that_repeats_the_code_is_left_out():
+    result = facts(entity={'type': 'product_code', 'id': 'OZD', 'found': True,
+                           'title': 'Product code OZD'})
+    assert render.headline(result).startswith('**Product code OZD**: ')
+
+
+def test_bare_numbers_are_not_listed_as_models():
+    details = {**ROWS['device_details'][0],
+               'models': ['00', 'DSX500', '00606959027251'], 'n_models': 3}
+    line = render.identity({'entity': {'type': 'device', 'id': DEV},
+                            'details': details})[0]
+    assert 'Models include DSX500 (3 in total).' in line
+
+
 @pytest.mark.parametrize('value,expected', [
     ('Class II', 'Class II'), ('2', 'Class II'), ('class iii', 'Class III'),
     (None, 'class not listed'), ('Not Yet Classified', 'Not Yet Classified'),
@@ -242,7 +266,7 @@ def test_identity_for_a_device_and_a_product_code():
                            'details': ROWS['device_details'][0]})
     assert dev == [
         '**Who makes it:** DreamStation is listed in FDA GUDID by Respironics, '
-        'Inc. Models include DSX500, DSX600 (12 in total). Product code: BZD.']
+        'Inc. Models include DSX500; DSX600 (12 in total). Product code: BZD.']
     pc = render.identity({'entity': {'type': 'product_code', 'id': 'LZG'},
                           'details': {'title': 'Insulin pump',
                                       'top_names': ['MiniMed 780G'],

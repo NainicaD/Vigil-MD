@@ -87,10 +87,11 @@ def headline(result: dict) -> str:
             name=name, company=f' ({company})' if company else '',
             reports=total, span=span)
     if entity['type'] == 'product_code':
-        title = entity.get('title')
+        title = entity.get('title') or ''
+        same = (entity['id'].lower(), f'product code {entity["id"]}'.lower())
         return templates.HEADLINE['product_code'].format(
             code=entity['id'],
-            title=f' ({title})' if title and title != entity['id'] else '',
+            title=f' ({title})' if title.lower() not in ('',) + same else '',
             reports=total, span=span)
     return templates.HEADLINE['manufacturer'].format(
         name=name, reports=total, span=span)
@@ -162,8 +163,16 @@ def recalls(result: dict) -> list[str]:
     if not r['total']:
         return [templates.RECALLS_NONE.format(matched=matched)]
     lines = [templates.RECALLS.format(n=num(r['total']), matched=matched)]
-    shown = r['shown'][:RECALLS_SHOWN]
-    for rec in shown:
+    # FDA files one recall number per model: identical ones share a line.
+    groups = {}
+    for rec in r['shown']:
+        key = tuple(rec.get(k) for k in ('recall_class', 'record_date',
+                                         'recall_status', 'reason_text',
+                                         'action'))
+        groups.setdefault(key, []).append(rec)
+    listed = 0
+    for rec, *same in list(groups.values())[:RECALLS_SHOWN]:
+        listed += 1 + len(same)
         status = rec.get('recall_status')
         reason = shorten(rec.get('reason_text') or 'reason not given',
                          REASON_CHARS)
@@ -172,12 +181,12 @@ def recalls(result: dict) -> list[str]:
             klass=recall_class(rec.get('recall_class')),
             date=(rec.get('record_date') or 'date not given')[:10],
             status=f' ({status.lower()})' if status else '',
+            count=f', {1 + len(same)} recalls' if same else '',
             reason=f'"{reason}"',
             action=(f' Action: "{shorten(action, REASON_CHARS)}"'
                     if action else '')))
-    if r['total'] > len(shown):
-        lines.append(templates.RECALLS_MORE.format(n=num(r['total'] -
-                                                         len(shown))))
+    if r['total'] > listed:
+        lines.append(templates.RECALLS_MORE.format(n=num(r['total'] - listed)))
     return lines
 
 
@@ -217,13 +226,16 @@ def identity(result: dict) -> list[str]:
         codes_txt = (f' Product code{"s" if len(codes) > 1 else ""}: '
                      f'{", ".join(codes[:5])}.')
     if entity_type == 'device':
-        models = [m for m in d.get('models') or [] if m]
+        # GUDID's model field also holds bare numbers (UDIs, "00"): skip them.
+        models = [m for m in d.get('models') or []
+                  if m and len(m) > 2 and not m.isdigit()]
         n_models = d.get('n_models') or len(models)
         models_txt = ''
         if models:
             more = (f' ({num(n_models)} in total)'
                     if n_models > len(models[:5]) else '')
-            models_txt = f' Models include {", ".join(models[:5])}{more}.'
+            # Model names can contain commas, so they are joined with "; ".
+            models_txt = f' Models include {"; ".join(models[:5])}{more}.'
         company = (d.get('company') or 'a company not listed').rstrip('.')
         return [templates.IDENTITY_DEVICE.format(
             name=d.get('name') or 'This device', company=company,
