@@ -44,3 +44,35 @@ Labels live in a separate file and are joined by `pair_id`. Models never see lab
 
 - How INSUFFICIENT_EVIDENCE labels are treated
 - Review rate definition (proposed: two cutoffs, middle goes to human review)
+## How to run
+
+Run from `Model-Development/eval`. Setup once:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Score a model on validation (simple 0/1 labels):
+
+```bash
+python evaluate.py --scores your_scores.csv --labels val_labels.csv --track xgb
+python evaluate.py --help
+```
+
+Score a model on the hand labels (final numbers):
+
+```bash
+python hand_label_features.py --sheet <labeled sheet>
+python rules_baseline.py
+python evaluate_hand.py --scores rules_hand_scores.csv --cutoff 0.75 --track baseline --sheet <labeled sheet>
+```
+
+For a trained model, use its scores file and the cutoff chosen on validation (`models/cutoffs.json`). Never pick the cutoff on the hand labels.
+
+View all runs (every script logs to `Model-Development/mlflow.db`):
+
+```bash
+cd .. && mlflow ui --backend-store-uri sqlite:///mlflow.db --port 5001
+```

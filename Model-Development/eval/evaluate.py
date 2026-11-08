@@ -75,7 +75,7 @@ for name, value in metrics.items():
 if args.no_mlflow:
     print("Skipped MLflow logging")
 else:
-    mlflow.set_tracking_uri("sqlite:///mlflow.db")
+    mlflow.set_tracking_uri("sqlite:///../mlflow.db")
     mlflow.set_experiment("vigil-md-linkage")
 
     with mlflow.start_run(run_name=model_name):
