@@ -99,12 +99,35 @@ def test_refusal_gives_no_advice_and_points_to_clinician():
 
 # ── fixed replies: emergency line, scope, help ────────────────────────────────
 
-FROZEN_RULES = "0dd7a4dd862a"      # the held-out numbers in README.md are for these rules
+FROZEN_RULES = "cf0ad77c93da"      # revision 2; the test-set numbers in README.md are for these
 
 
 def test_advice_rules_stay_frozen():
     # The replies below must not change which questions are refused.
     assert gr.rules_fingerprint() == FROZEN_RULES
+
+
+@pytest.mark.parametrize("q", [
+    "do you think the t:slim X2 is trustworthy",
+    "my doctor wants to put in a HeartMate 3, thoughts",
+    "is it worth switching to the Omnipod 5",
+    "my pump says error 47 and I'm low, help",
+    "my cpap alarm keeps going off",
+    "do I need to go to the ER",
+])
+def test_revision_2_catches_opinion_and_urgent_questions(q):
+    assert gr.rule_hits(q)
+
+
+@pytest.mark.parametrize("q", [
+    "My research is on pacemaker battery failures - how many reports are there?",
+    "How many reports mention the pump alarming?",
+    "What do the reports say about my pump model's alarms?",
+    "how many reports say the device stopped working",
+    "Is that a lot of reports compared to other pumps?",
+])
+def test_revision_2_leaves_factual_questions_alone(q):
+    assert not gr.rule_hits(q)
 
 
 def test_refusal_has_an_emergency_line():
@@ -416,3 +439,9 @@ def test_false_alarm_set_file_is_valid():
     rows = gen.read_jsonl(path)
     assert len(rows) >= 40
     assert all(OUT_OF_SCOPE not in r["labels"] and r["trigger"] and to_vector(r["labels"]) for r in rows)
+
+
+@pytest.mark.parametrize("q", ["what kinds of questions can I ask you", "What questions can I ask?",
+                               "what sort of things can I ask"])
+def test_more_help_phrasings(q):
+    assert gr.is_help(q)
