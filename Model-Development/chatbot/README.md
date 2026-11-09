@@ -457,6 +457,47 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
   spellings, an app on two platforms), 2 are router label misses ("What is product code LZG?"
   refused; "deaths… Should I let my dad get one?" lost `counts`), 1 reference is debatable
   ("mentor implants" picks the MENTOR implant with 6x the reports).
+- **PROD end-to-end** (`data/test/e2e_prod.jsonl`, 22 questions about devices outside the dev
+  extract; references set from what a careful reader would want, checking only that each device
+  exists in the catalog). `python -m device_search.build_index --dataset vigil_md_prod` (0.15
+  GB, a 712 MB local file), then `python -m answer.evaluate --dataset vigil_md_prod --e2e
+  data/test/e2e_prod.jsonl`.
+
+  | 2026-11-09 | Correct | Billed |
+  |---|---|---|
+  | First run | 13 of 22 (59%) | 0.65 GB |
+  | After the fixes below (the 5 changed questions rerun) | **18 of 22 (82%)** | 0.13 GB |
+
+  Fixes from this run (`device_search/search.py`, `answer/pipeline.py`):
+  - a one-digit model number after a name word is kept ("HeartMate 3", "SAPIEN 3 Ultra");
+  - the search candidate pool is 3,000 (was 300): on PROD, entries sharing common trigrams
+    crowded out "t:slim X2 … Control-IQ"; about 0.9 s instead of 0.8 s per question;
+  - each family is compared with its own ratio: 3x against the same company, 20x against
+    other companies (Alaris: 51,260 vs 5,636 same company, 0 from another);
+  - matches under 0.80 are not offered as choices ("Zorbix 3000" is not "SPIFE 3000");
+  - narratives over the per-question cap are left out with a note; the facts stay (product
+    code DZE, 3.96 M reports).
+
+  Checked on 316 PROD questions before and after: mostly wrong picks becoming right ("TRICAM
+  Dental" was "Zoer RC Automix") or honest questions ("t:slim X2" was product code QFG). On
+  `e2e_dev.jsonl` one result changes: "omnipod recalls" now takes Omnipod DASH (592 vs 91
+  reports, same company) instead of asking, because a 1-report "OMNIPOD" manufacturer entry no
+  longer forces the 20x rule; the reference expects "ambiguous", so dev is 42 of 48 now.
+
+  Still wrong on PROD (4):
+  - **One product under several GUDID names:** "SAPIEN 3 Ultra" has entries with 2,141, 876
+    and 872 reports, so the bot asks. Grouping them needs the matching team's device identity.
+  - **"MiniMed 780G":** three GUDID entries, all with 0 UDI-linked reports, while product code
+    LZG has 315,523. UDI-only counts can show a popular device as unreported: the strongest
+    case for the matching model's links.
+  - Router: "deaths… my dad is getting one, should he?" loses `counts`; "Compare deaths for
+    the WATCHMAN FLX vs the WATCHMAN FLX Pro" gets no label (the search resolves both).
+
+  Found, not changed (company grouping, a team decision): "medtronic" resolves to MEDTRONIC
+  PUERTO RICO OPERATIONS CO. (1.8 M reports, 5.5x the next spelling) under the 3x rule for
+  manufacturer spellings; 20x would ask instead but also turns Boston Scientific, Abbott,
+  Baxter and Respironics into "which one?". And the whole-name rule picks the shortest exact
+  spelling: "tandem" → "TANDEM" (992 reports), not TANDEM DIABETES CARE (1.37 M).
 - **Known gap:** the answer has only what the router labels. If the router misses a label
   ("How many deaths…? Should I stop using it?" labelled only `out_of_scope`), only the refusal
   is shown. The router's next model fixes that, not the templates.
