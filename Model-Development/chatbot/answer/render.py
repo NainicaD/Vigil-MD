@@ -190,13 +190,27 @@ def recalls(result: dict) -> list[str]:
     return lines
 
 
+def event_words(event_types: list[str]) -> str:
+    """Returns e.g. "death" or "death and injury" for the event types asked about."""
+    return join([EVENT_WORDS[et][0] for et in event_types if et in EVENT_WORDS])
+
+
 def narratives(result: dict) -> list[str]:
     """Returns the quoted report excerpts (a narratives() result)."""
     excerpts = result.get('excerpts') or []
+    kind = result['entity']['type'].replace('_', ' ')
+    asked = [et for et in result.get('event_types') or EVENT_ORDER if et in EVENT_ORDER]
+    filtered = len(asked) < len(EVENT_ORDER)
     if not excerpts:
-        kind = result['entity']['type'].replace('_', ' ')
+        if filtered:
+            return [templates.NARRATIVES_NONE_OF_TYPE.format(
+                events=event_words(asked), kind=kind)]
         return [templates.NARRATIVES_NONE.format(kind=kind)]
-    lines = [templates.NARRATIVES.format(n=len(excerpts))]
+    if filtered:
+        lines = [templates.NARRATIVES_ONE_TYPE.format(
+            events=event_words(asked), n=len(excerpts))]
+    else:
+        lines = [templates.NARRATIVES.format(n=len(excerpts))]
     for e in excerpts:
         lines.append(templates.NARRATIVE_ITEM.format(
             event=e['event_type'] or 'Event type not given',

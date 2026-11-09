@@ -256,6 +256,7 @@ backend = BigQueryBackend()                 # dataset: VIGIL_BQ_DATASET (default
 budget = Budget()                           # one per user question (cap 0.5 GB)
 device_summary(backend, "device", "dev:f0cdc15b4d63", budget)   # always: entity, counts, problems, recalls
 narratives(backend, "product_code", "OZD", budget=budget)       # when asked: a few report excerpts
+narratives(backend, "product_code", "OZD", budget=budget, event_types=("Death",))   # deaths only
 identity(backend, "device", "dev:f0cdc15b4d63", budget)         # when asked: who makes it
 ```
 
@@ -270,7 +271,7 @@ An **entity** is `(entity_type, entity_id)`, the same in the summary tables and 
 | Function | Returns | Reads |
 |---|---|---|
 | `device_summary` | `entity` (title, company, product codes, `found`); `counts` (total, by event type, by year) and `counts_note` (for a device: "linked by UDI"); `problems` (top 10 device and patient terms, no-information terms already removed, `no_harm_reports`); `recalls` (total, newest 50 with class, reason, root cause, action, `matched_by`) | `entity_catalog`, `entity_counts`, `entity_problems`, `entity_recalls` |
-| `narratives` | up to 5 excerpts (about 600 characters, cut at a word), one per event type in turn (Death, Injury, Malfunction), newest first; texts under 50 characters skipped | `entity_reports`, then `maude_text` for those reports only |
+| `narratives` | up to 5 excerpts (about 600 characters, cut at a word), one per event type in turn (Death, Injury, Malfunction), newest first; texts under 50 characters skipped. `event_types=("Death",)` keeps only those: the chatbot passes the event types a question names ("describe the death reports"; death, died, fatal, injury, malfunction; "dead" is left out because "the pump went dead" is a malfunction) | `entity_reports`, then `maude_text` for those reports only |
 | `identity` | a device's GUDID name, company, model numbers, product codes; for a product code or manufacturer, its catalog entry (top brand names) | `device_catalog` or `entity_catalog` |
 
 - **One partition per lookup:** every query filters on `bucket` (`config.entity_bucket`, the
