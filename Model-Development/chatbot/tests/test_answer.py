@@ -493,6 +493,51 @@ def test_narratives_over_budget_keep_the_facts():
     assert 'narrative_texts' not in {s['query'] for s in out['sources']}
 
 
+@pytest.mark.parametrize('question,expected', [
+    ('Describe the death reports for the Impella', ('Death',)),
+    ('What do the injury and malfunction reports say?', ('Injury', 'Malfunction')),
+    ('Show me reports where a patient died', ('Death',)),
+    ('Describe the reports for the DreamStation', ('Death', 'Injury', 'Malfunction')),
+    ('Describe reports where the pump went dead', ('Death', 'Injury', 'Malfunction')),
+])
+def test_asked_event_types(question, expected):
+    assert pipeline.asked_event_types(question) == expected
+
+
+def test_narratives_for_a_named_event_type_only():
+    client = FakeClient(rows=ROWS)
+    out = make_bot(['narratives'], client=client)[0].answer(
+        'Describe the death reports for the DreamStation')
+    narr = [s['text'] for s in out['sections'] if s['kind'] == 'narratives'][0]
+    assert narr.startswith('**What the death reports describe** (1, newest first):')
+    # The candidate query asked for deaths only.
+    cfgs = [cfg for name, cfg in client.calls if name == 'narrative_candidates']
+    sent = [list(p.values) for cfg in cfgs for p in cfg.query_parameters
+            if p.name == 'event_types']
+    assert sent and all(v == ['Death'] for v in sent)
+
+
+def test_no_reports_of_the_named_event_type():
+    rows = {**ROWS, 'narrative_candidates': [], 'narrative_texts': []}
+    out = make_bot(['narratives'], rows=rows)[0].answer(
+        'Describe the injury reports for the DreamStation')
+    narr = [s['text'] for s in out['sections'] if s['kind'] == 'narratives'][0]
+    assert narr == templates.NARRATIVES_NONE_OF_TYPE.format(events='injury',
+                                                            kind='device')
+
+
+def test_unfiltered_narratives_keep_the_general_header():
+    out = make_bot(['narratives'])[0].answer('Describe the reports for the DreamStation')
+    narr = [s['text'] for s in out['sections'] if s['kind'] == 'narratives'][0]
+    assert narr.startswith(templates.NARRATIVES.format(n=1))
+
+
+def test_narratives_reject_an_unknown_event_type():
+    with pytest.raises(ValueError):
+        summary.narratives(test_query_layer.backend(FakeClient(rows=ROWS)), 'device', DEV,
+                           event_types=('Recall',))
+
+
 def test_data_failure_gives_a_fixed_reply_not_a_traceback():
     class Broken(FakeClient):
         """Fails every query as a network error would."""
