@@ -7,4 +7,5 @@ scipy==1.18.1
 pyarrow==26.0.1
 mlflow==3.18.0
 google-cloud-bigquery
+google-cloud-storage
 db-dtypes

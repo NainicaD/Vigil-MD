@@ -1,4 +1,5 @@
 import argparse
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -77,7 +78,8 @@ if args.no_mlflow:
 else:
     import mlflow   # imported here so --no-mlflow works without mlflow installed, as in s08
 
-    mlflow.set_tracking_uri(f"sqlite:///{Path(__file__).resolve().parents[1] / 'mlflow.db'}")
+    mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI")
+                            or f"sqlite:///{Path(__file__).resolve().parents[1] / 'mlflow.db'}")
     mlflow.set_experiment("vigil-md-linkage")
 
     with mlflow.start_run(run_name=model_name):

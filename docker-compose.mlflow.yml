@@ -1,0 +1,24 @@
+name: vigil-md
+
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: mlflow.Dockerfile
+    image: vigil-md-mlflow:v3.18.0
+    container_name: vigil-md-mlflow
+    user: "${MLFLOW_UID:-1000}:0"   # your `id -u`, so mlflow.db in the repo stays yours, not root's
+    ports:
+      - "5000:5000"                  # UI + tracking API at http://localhost:5000
+    environment:
+      # the server needs GCS credentials only to show artifacts in the UI; training writes its own
+      GOOGLE_APPLICATION_CREDENTIALS: /gcloud/application_default_credentials.json
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-mlops-lab-511420}
+    volumes:
+      - ./Model-Development:/mlflow  # holds mlflow.db, the run index the scripts also write directly
+      - ${GCLOUD_CONFIG_DIR:?set GCLOUD_CONFIG_DIR in .env to your gcloud config dir}:/gcloud:ro
+    command: >
+      mlflow server --host 0.0.0.0 --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root ${MLFLOW_ARTIFACT_ROOT:-gs://vigil-md-raw-nd/mlflow/artifacts}
+    restart: unless-stopped

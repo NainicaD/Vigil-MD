@@ -15,7 +15,9 @@ Usage (from anywhere):
     python pipeline/s06_train_models.py
 """
 import argparse
+import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -51,6 +53,33 @@ assert_no_leakage(FEATURE_COLUMNS)
 # --- loading and encoding --------------------------------------------------------------------------
 def read_table(path):
     return pd.read_parquet(path) if str(path).endswith(".parquet") else pd.read_csv(path, dtype=str)
+
+
+# Where the training data is published. The MLflow server writes run artifacts (the models) under
+# <root>/artifacts; see docker-compose.mlflow.yml, which must point at the same root.
+GCS_ROOT = os.environ.get("VIGIL_MLFLOW_GCS", "gs://vigil-md-raw-nd/mlflow")
+
+
+def publish_training_data(path):
+    """Copy the feature table and its manifest to GCS under their own content hash, so that a run
+    recorded in MLflow names a file anyone on the team can pull and nobody can overwrite.
+    Returns (uri, sha256). Uploads nothing if that version is already there."""
+    from google.cloud import storage
+
+    path = Path(path)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    bucket_name, _, prefix = GCS_ROOT.removeprefix("gs://").partition("/")
+    bucket = storage.Client().bucket(bucket_name)
+    uri = None
+    for f in (path, path.with_suffix(".manifest.json")):
+        if not f.exists():
+            continue
+        blob = bucket.blob(f"{prefix}/data/{path.stem}/{digest[:12]}/{f.name}")
+        if not blob.exists():
+            blob.upload_from_filename(str(f))
+        if f == path:
+            uri = f"gs://{bucket_name}/{blob.name}"
+    return uri, digest
 
 
 def to_float(series):
@@ -154,14 +183,18 @@ if feature_manifest.exists() and manifest:
                          f"{args.manifest} says {manifest.get('constants_sha256', '?')[:12]}. "
                          "Rebuild it with pipeline/s04_build_feature_table.py.")
 
+data_uri, data_sha256 = "none", "none"
 if not args.no_mlflow:
     import mlflow
     import mlflow.xgboost
-    mlflow.set_tracking_uri(f"sqlite:///{ROOT / 'mlflow.db'}")
+    mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI") or f"sqlite:///{ROOT / 'mlflow.db'}")
     mlflow.set_experiment("vigil-md-linkage")
+    data_uri, data_sha256 = publish_training_data(args.data)
+    print(f"training data published: {data_uri}")
 
 common_tags = {
     "threshold_version": "t1", "normalization_version": "n1", "data_file": str(args.data),
+    "training_data_uri": data_uri, "training_data_sha256": data_sha256,
     "constants_sha256": manifest.get("constants_sha256", "unknown"),
     "alias_table_sha256": manifest.get("alias_table_sha256", "unknown"),
     "snapshot_date": manifest.get("snapshot_date", "unknown"),
@@ -203,7 +236,10 @@ def finish(name, track, val_scores, test_scores, hand_scores, params, model=None
                 mlflow.log_metrics({"cutoff_p99": cutoff, "test_precision": test_prec,
                                     "test_recall": test_rec})
             if model is not None:
-                mlflow.xgboost.log_model(model, name="model")
+                # the registry gives each run's model a version number under a stable name;
+                # its files live in the run's artifact folder, which is on GCS
+                mlflow.xgboost.log_model(model, name="model",
+                                         registered_model_name=f"vigil-md-linkage-{name}")
             run_id = run.info.run_id
 
     SCORES.mkdir(parents=True, exist_ok=True)

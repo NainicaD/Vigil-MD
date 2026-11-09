@@ -68,6 +68,59 @@ Stages `s01` and `s02` rebuild the label set and the hand-label sheet. They are 
 rarely needed; only run them if you know why. `docs/LABELS.md` says what they do and
 `docs/TABLES.md` gives the cost of each stage.
 
+## MLflow and GCS
+
+`s06` and `s09` record runs in MLflow. The run index lives in `Model-Development/mlflow.db`;
+the training data and the trained models live in GCS, so the rest of the team can pull them.
+
+Start the server once (from the repo root; needs `GCLOUD_CONFIG_DIR` set in `.env`):
+
+```bash
+docker compose -f docker-compose.mlflow.yml up -d   # UI at http://localhost:5000
+```
+
+Then train against it:
+
+```bash
+export MLFLOW_TRACKING_URI=http://localhost:5000
+python pipeline/s06_train_models.py
+```
+
+Without `MLFLOW_TRACKING_URI` the scripts write `mlflow.db` directly and keep artifacts local;
+`--no-mlflow` skips logging and the GCS upload entirely.
+
+### What goes where
+
+| What | Path |
+|---|---|
+| Training data | `gs://vigil-md-raw-nd/mlflow/data/<table>/<sha256[:12]>/` |
+| Models | `gs://vigil-md-raw-nd/mlflow/artifacts/<experiment>/<run>/artifacts/` |
+| Run index | `Model-Development/mlflow.db` (local, git-ignored) |
+
+Set `VIGIL_MLFLOW_GCS` (script) and `MLFLOW_ARTIFACT_ROOT` (compose) to move the root; keep them
+pointing at the same place.
+
+The feature table is named by the sha256 of its own bytes, so a run always names the exact file
+it trained on and nothing is ever overwritten. Re-running on unchanged data uploads nothing.
+Each run carries the hash and the URI as the tags `training_data_sha256` and `training_data_uri`.
+
+### Pulling a run's data and model
+
+Copy the exact table a run trained on, straight from the tag MLflow shows on that run:
+
+```bash
+gcloud storage cp gs://vigil-md-raw-nd/mlflow/data/label_set_v1_features/<sha12>/*.parquet .
+```
+
+Models are also in the MLflow registry as `vigil-md-linkage-<variant>`, one version per run:
+
+```python
+import mlflow
+model = mlflow.xgboost.load_model("models:/vigil-md-linkage-xgb_all/2")   # or runs:/<run-id>/model
+```
+
+Loading from the registry needs `MLFLOW_TRACKING_URI` set and read access to the bucket.
+
 ## Before any query, every time
 
 Each BigQuery stage takes the same three flags. Use them in this order:
