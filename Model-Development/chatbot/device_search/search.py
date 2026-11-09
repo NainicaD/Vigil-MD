@@ -24,6 +24,7 @@ from .normalize import norm, phrase_score, trigrams, word_similarity, words
 
 MIN_SCORE = 0.75           # below this a hit is not shown
 RESOLVE_SCORE = 0.85       # the top hit must reach this to be taken without asking
+SUGGEST_SCORE = 0.80       # below this the closest matches are not offered as choices: "not found"
 OTHER_WORD_WEIGHT = 0.9    # a match on a device's company counts this much
 DOMINANT_RATIO = 3         # equal matches in one family: the top is taken at 3x the next one's reports
 CROSS_COMPANY_RATIO = 20   # equal matches from different companies: only at 20x ("breast implants" asks)
@@ -86,14 +87,16 @@ def score_entry(query_words: list[str], title_words: list[str], other_words: lis
 
 def name_parts(question: str) -> set[str]:
     """Words that belong to a name even if they are stopwords or single letters: parts of a
-    hyphenated name ("V-Go", "Accu-Chek") and a capitalised word right after a device word
-    ("DreamStation Go"). Pure function."""
+    hyphenated name ("V-Go", "Accu-Chek"), a capitalised word right after a device word
+    ("DreamStation Go") and a one-digit model number right after one ("HeartMate 3",
+    "SAPIEN 3 Ultra"). Pure function."""
     keep = {w for m in re.finditer(r"\w+(?:-\w+)+", question) for w in words(m.group())}
     tokens = question.split()
     for prev, tok in zip(tokens, tokens[1:]):
         prev_words = words(prev)
-        if (tok[:1].isupper() and prev_words and prev_words[-1] not in STOPWORDS
-                and not prev.endswith((".", "?", "!"))):
+        if (prev_words and prev_words[-1] not in STOPWORDS
+                and not prev.endswith((".", "?", "!", ","))
+                and (tok[:1].isupper() or re.fullmatch(r"\d[™®]?[?.!,]?", tok))):
             keep.update(words(tok))
     return keep
 
@@ -144,8 +147,12 @@ class DeviceIndex:
         row = self.con.execute("SELECT entity_id FROM udis WHERE udi_di = ?", (udi,)).fetchone()
         return self.get(row[0]) if row else None
 
-    def search(self, text: str, limit: int = 10, candidates: int = 300) -> list[Hit]:
-        """Ranked hits for free text (a search box query or the device words of a question)."""
+    def search(self, text: str, limit: int = 10, candidates: int = 3000) -> list[Hit]:
+        """Ranked hits for free text (a search box query or the device words of a question).
+
+        candidates: entries taken from the trigram index before exact scoring. On the PROD
+        index (337,729 devices) 300 missed "t:slim x2 control iq", crowded out by entries
+        sharing common trigrams; 3,000 finds it (about 0.4 s instead of 0.07 s)."""
         q = words(text)
         if not q:
             return []
@@ -192,8 +199,11 @@ class DeviceIndex:
 
     def _resolve_exact(self, phrase: str) -> Resolution:
         hits = self.search(phrase, limit=5)
-        if not hits or hits[0].score < RESOLVE_SCORE:
-            return Resolution("none" if not hits else "ambiguous", hits[:3], phrase)
+        if not hits or hits[0].score < SUGGEST_SCORE:
+            # nothing close enough to offer ("Zorbix 3000" is not "SPIFE 3000")
+            return Resolution("none", [], phrase)
+        if hits[0].score < RESOLVE_SCORE:
+            return Resolution("ambiguous", hits[:3], phrase)
         top, rest = hits[0], [h for h in hits[1:] if round(h.score, 2) == round(hits[0].score, 2)]
         # Equal scores: the one entry whose whole name was typed wins ("Natrelle INSPIRA Breast
         # Implants" over "Natrelle Inspira SoftTouch Breast Implants").
@@ -212,11 +222,17 @@ class DeviceIndex:
             top, rest = kept[0], kept[1:]
         # manufacturer entries are spellings of company names (one firm can have several,
         # until the matching team groups them); devices count as one family per company
-        same_family = all(h.kind == top.kind and (top.kind == "manufacturer"
-                                                   or h.company_norm == top.company_norm)
-                          for h in rest)
-        ratio = DOMINANT_RATIO if same_family else CROSS_COMPANY_RATIO
-        if not rest or top.reports >= ratio * max(1, rest[0].reports):
+        def family(h):
+            return h.kind == top.kind and (top.kind == "manufacturer"
+                                           or h.company_norm == top.company_norm)
+        # Each group is compared with its own ratio: the top must beat the next entry of its
+        # family by DOMINANT_RATIO and the next entry of other companies by CROSS_COMPANY_RATIO
+        # (Alaris: 51,260 vs 5,636 from the same company and 0 from another company).
+        same = [h.reports for h in rest if family(h)]
+        other = [h.reports for h in rest if not family(h)]
+        dominates = (top.reports >= DOMINANT_RATIO * max(1, max(same, default=0))
+                     and top.reports >= CROSS_COMPANY_RATIO * max(1, max(other, default=0)))
+        if not rest or dominates:
             # one match; one product family where one entry dominates (DreamStation vs
             # DreamStation Go); or one entry far above other companies' (Impella vs a small
             # accessory). Similar matches across companies ("breast implants") ask.

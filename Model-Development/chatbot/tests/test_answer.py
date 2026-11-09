@@ -480,6 +480,19 @@ def test_over_budget_gives_the_budget_reply():
     assert not client.real_runs()
 
 
+def test_narratives_over_budget_keep_the_facts():
+    # The largest product codes' report texts do not fit one question: only the
+    # narratives are left out, with a note; counts and the footer stay.
+    client = FakeClient(rows=ROWS, estimates={'narrative_texts': 0.6e9})
+    out = make_bot(['counts', 'narratives'], client=client)[0].answer(
+        'Show me reports for the DreamStation')
+    assert out['status'] == 'answered'
+    assert kinds(out) == ['headline', 'counts', 'narratives', 'footer']
+    narr = [s['text'] for s in out['sections'] if s['kind'] == 'narratives'][0]
+    assert narr == templates.NARRATIVES_BUDGET.format(kind='device')
+    assert 'narrative_texts' not in {s['query'] for s in out['sources']}
+
+
 def test_data_failure_gives_a_fixed_reply_not_a_traceback():
     class Broken(FakeClient):
         """Fails every query as a network error would."""

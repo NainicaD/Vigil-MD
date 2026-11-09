@@ -42,6 +42,22 @@ DEVICES = [
     {"company_norm": "dexcom", "brand_key": "dexcom g6", "name": "Dexcom G6", "company": "Dexcom, Inc.",
      "udi_dis": ["00000000000901"], "models": [], "n_models": 0, "product_codes": ["MDS"],
      "reports": 3000, "deaths": 0, "injuries": 300},
+    {"company_norm": "thoratec", "brand_key": "heartmate 3", "name": "HeartMate 3", "company": "Thoratec",
+     "udi_dis": ["00000000001001"], "models": [], "n_models": 0, "product_codes": ["DSQ"],
+     "reports": 21000, "deaths": 5000, "injuries": 3000},
+    {"company_norm": "thoratec", "brand_key": "heartmate ii", "name": "HeartMate II", "company": "Thoratec",
+     "udi_dis": ["00000000001002"], "models": [], "n_models": 0, "product_codes": ["DSQ"],
+     "reports": 8000, "deaths": 400, "injuries": 900},
+    {"company_norm": "carefusion 303", "brand_key": "bd alaris pump module",
+     "name": "BD Alaris Pump Module", "company": "CareFusion 303", "udi_dis": ["00000000001101"],
+     "models": [], "n_models": 0, "product_codes": ["FRN"], "reports": 51000, "deaths": 30,
+     "injuries": 900},
+    {"company_norm": "carefusion 303", "brand_key": "alaris pump module", "name": "Alaris Pump Module",
+     "company": "CareFusion 303", "udi_dis": ["00000000001102"], "models": [], "n_models": 0,
+     "product_codes": ["FRN"], "reports": 5600, "deaths": 2, "injuries": 80},
+    {"company_norm": "bd switzerland", "brand_key": "bd alaris pump infusion set",
+     "name": "BD Alaris Pump Infusion Set", "company": "BD Switzerland", "udi_dis": ["00000000001103"],
+     "models": [], "n_models": 0, "product_codes": ["FPA"], "reports": 0, "deaths": 0, "injuries": 0},
     {"company_norm": "sientra", "brand_key": "sientra silicone gel breast implant",
      "name": "SIENTRA Silicone Gel Breast Implant", "company": "Sientra, Inc.", "udi_dis": ["00000000000601"],
      "models": [], "n_models": 0, "product_codes": ["FTR"], "reports": 1, "deaths": 0, "injuries": 1},
@@ -309,3 +325,43 @@ def test_matched_only_in_suffix():
     assert not _matched_only_in_suffix(m("MENTOR TEXAS"), {"mentor"})
     assert not _matched_only_in_suffix(m("V-Go - Pump", kind="device"), {"pump"})
 
+
+
+
+def test_a_one_digit_model_number_is_kept():
+    assert device_words("What problems are reported for the HeartMate 3?") == ["heartmate", "3"]
+    assert device_words("Describe the death reports for the SAPIEN 3 Ultra") == ["sapien", "3", "ultra"]
+    # a digit after a question word or a stopword is not a model number
+    assert device_words("top 5 problems for the DreamStation") == ["dreamstation"]
+    assert device_words("deaths in 3 years for the Impella") == ["impella"]
+
+
+def test_heartmate_3_is_not_the_heartmate_ii(index):
+    r = index.resolve("What problems are reported for the HeartMate 3?")
+    assert r.status == "resolved" and r.matches[0].title == "HeartMate 3"
+
+
+def test_each_family_is_compared_with_its_own_ratio(index):
+    # 51,000 vs 5,600 in the same company (9x >= 3x) and 0 from another company (>= 20x):
+    # resolved, although a strict 20x against the same-company runner-up would ask.
+    r = index.resolve("How many injury reports are there for the Alaris pump?")
+    assert r.status == "resolved" and r.matches[0].title == "BD Alaris Pump Module"
+
+
+def test_weak_matches_are_not_offered_as_choices(index, monkeypatch):
+    # On PROD "zorbix 3000 pump" scored 0.77 against "SPIFE 3000 w/ New Pump & Valve".
+    from device_search.search import Hit
+    def weak(score):
+        return [Hit("device|x", "device", "x", "SPIFE 3000 w/ New Pump", "", 0, 0, 0, [],
+                    "helena", score)]
+    monkeypatch.setattr(index, "search", lambda text, limit=10: weak(0.77))
+    r = index.resolve("Any recalls for the Zorbix 3000 pump?")
+    assert r.status == "none" and r.matches == [] and r.phrase
+    monkeypatch.setattr(index, "search", lambda text, limit=10: weak(0.82))
+    assert index.resolve("Any recalls for the Zorbix 3000 pump?").status == "ambiguous"
+
+
+def test_the_candidate_pool_is_large_enough_for_prod():
+    import inspect
+    from device_search.search import DeviceIndex
+    assert inspect.signature(DeviceIndex.search).parameters["candidates"].default >= 3000
