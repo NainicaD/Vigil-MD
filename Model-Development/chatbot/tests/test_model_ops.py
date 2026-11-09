@@ -239,7 +239,8 @@ def test_e2e_set_has_slice_fields():
 
 
 def test_reference_files_are_valid():
-    for path in ('data/test/handwritten_test.jsonl', 'data/test/e2e_dev.jsonl'):
+    for path in ('data/test/handwritten_test.jsonl', 'data/test/e2e_dev.jsonl',
+                 'data/test/e2e_prod.jsonl'):
         for line in open(path, encoding='utf-8'):
             row = json.loads(line)
             labels.to_vector(row['labels'])  # Raises on an unknown label.

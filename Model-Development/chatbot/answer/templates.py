@@ -51,6 +51,9 @@ NARRATIVES = ('**What the reports describe** ({n}, taking the event types in '
 NARRATIVE_ITEM = '- *{event}, received {date}* (report {key}): "{text}"'
 NARRATIVES_NONE = ('**What the reports describe:** no report texts were found '
                    'for this {kind}.')
+NARRATIVES_BUDGET = ('**What the reports describe:** this {kind} has too many '
+                     'reports to read their texts within one question. Ask about one '
+                     'device to see example reports.')
 WITHHELD_NOTE = ('(b)(4) and (b)(6) mark text the FDA withheld (confidential '
                  'or personal).')
 

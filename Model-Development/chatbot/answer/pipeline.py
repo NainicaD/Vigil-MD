@@ -211,9 +211,17 @@ class Chatbot:
             if 'recalls' in asked:
                 blocks['recalls'] = render.recalls(facts)
             if 'narratives' in asked and has_reports:
-                narr = summary.narratives(self.backend, et, eid, budget=budget)
-                self._cite(narr, out)
-                blocks['narratives'] = render.narratives(narr)
+                # Narratives are the only optional part that can be large (the biggest
+                # product codes): over the cap they are left out, the facts stay.
+                try:
+                    narr = summary.narratives(self.backend, et, eid, budget=budget)
+                except ql_backend.QueryBudgetExceeded:
+                    logging.warning('Narratives over budget: %s', eid)
+                    blocks['narratives'] = [templates.NARRATIVES_BUDGET.format(
+                        kind=et.replace('_', ' '))]
+                else:
+                    self._cite(narr, out)
+                    blocks['narratives'] = render.narratives(narr)
         result = [{'kind': 'headline', 'entity': eid,
                    'text': render.headline(facts)}]
         for kind in SECTION_ORDER:
