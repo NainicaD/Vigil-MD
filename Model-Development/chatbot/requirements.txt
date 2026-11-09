@@ -11,3 +11,7 @@ pytest==9.1.1
 
 # Experiment tracking and model registry (conventions: ../MLFLOW.md)
 mlflow==3.18.0
+
+# Router tuning and the sensitivity plot (query_router/tune.py, sensitivity.py)
+optuna==4.5.0
+matplotlib==3.10.7
