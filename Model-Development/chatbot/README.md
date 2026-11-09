@@ -405,9 +405,11 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
   per entity a headline and the sections asked for, always as identity → counts → problems →
   recalls → narratives, then the disclaimer, the UDI note (devices) and the sources.
 - **Templates** ([`templates.py`](answer/templates.py)): every sentence in one file. A test
-  rejects judgement or advice words (safe, dangerous, better, recommend, should, …). Report text
-  and recall reasons are quoted from the FDA as they are. Changing a template changes
-  `templates_fingerprint()`.
+  rejects judgement or advice words (safe, dangerous, better, recommend, should, …, with their
+  common inflections) in every template, and a second test renders whole answers (every section
+  and the empty, not-found and ambiguous paths) and checks the text `render.py` adds around the
+  templates. Report text and recall reasons are quoted from the FDA as they are. Changing a
+  template changes `templates_fingerprint()`.
 - **Edge cases**, each a fixed reply: no device words (asks which device), device not found,
   several close matches (lists them), comparisons (one block per device, at most 3, no ranking),
   found but no reports, over the cost cap, BigQuery unreachable (no traceback shown).
@@ -434,7 +436,9 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
 
   From the full run (48 questions, 0.92 GB) before the fix, plus a rerun of the only two
   questions whose search result the fix changed (both V-Go, now correct; 0.19 GB). Still
-  wrong: Abiomed (two company spellings), Bionic Circle (Android and iOS entries), "what is
+  wrong: Abiomed (two company spellings), Bionic Circle (Android and iOS entries; taking the top one of a company's 0-report devices
+  was tried and rejected: across 800 sampled searches it changed 255 results, mostly picking one
+  size or colour of a mask, and 0-report entries can still differ in recalls), "what is
   product code LZG?" (refusal added), the Impella question that also asks for advice (router
   drops the counts) and "mentor implants" (reference expects a question back).
 

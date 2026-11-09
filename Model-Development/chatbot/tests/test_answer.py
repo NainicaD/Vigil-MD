@@ -127,6 +127,51 @@ def test_no_template_judges_a_device_or_advises(name, text):
     assert not banned, (name, banned)
 
 
+def _banned_in(text):
+    """Banned words in answer text, leaving out what is quoted from the FDA ("...")."""
+    unquoted = re.sub(r'"[^"]*"', '', text)
+    return set(re.findall(r'[a-z]+', unquoted.lower())) & templates.BANNED_WORDS
+
+
+def rendered_answers():
+    """Answer text the bot writes itself: the whole pipeline with every factual label, and
+    each render function on its other paths (no reports, not found, no recalls, ...)."""
+    bot = make_bot(['counts', 'problems', 'recalls', 'narratives', 'identity'])[0]
+    out = bot.answer('Tell me everything about the DreamStation')
+    texts = [s['text'] for s in out['sections'] if s['kind'] != 'medical_refusal']
+    empty = facts()
+    empty['counts'] = {**empty['counts'], 'total_reports': 0}
+    empty['problems'] = {'device': [], 'patient': [], 'no_harm_reports': 0}
+    empty['recalls'] = {'total': 0, 'shown': []}
+    missing = facts()
+    missing['entity'] = {**missing['entity'], 'found': False}
+    texts += render.counts(facts()) + render.problems(empty) + render.recalls(empty)
+    texts += [render.headline(empty), render.headline(missing)]
+    texts += render.narratives({'entity': {'type': 'product_code', 'id': 'BZD'},
+                                'excerpts': []})
+    texts += render.identity({'entity': {'type': 'product_code', 'id': 'BZD'},
+                              'details': {'title': 'Product code BZD',
+                                          'top_names': ['DreamStation'],
+                                          'product_codes': ['BZD']}})
+    texts += render.ambiguous('implants', [hit(), hit('dev:2', 'Other', '', 0)])
+    texts += render.footer({'device'}, out['sources'], out['data_as_of'])
+    return texts
+
+
+def test_rendered_answers_never_judge_or_advise():
+    # templates.py is checked above; this checks what render.py adds around it
+    # ("Models include", "Action:", "other or not stated", ...).
+    texts = rendered_answers()
+    assert len(texts) > 10
+    for text in texts:
+        assert not _banned_in(text), (text, _banned_in(text))
+
+
+def test_the_rendered_check_catches_a_banned_word():
+    assert _banned_in('Recalls: 3 found. This device is safe.') == {'safe'}
+    assert not _banned_in('Reason: "the device is not safe to use"')   # FDA quote
+
+
 def test_template_fingerprint_is_stable_and_covers_every_template():
     fingerprint = templates.templates_fingerprint()
     assert fingerprint == templates.templates_fingerprint()
