@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .guardrails import DEFAULT_POLICY, route
+from .guardrails import DEFAULT_POLICY, route, rules_fingerprint
 from .labels import LABELS
 
 
@@ -35,6 +35,13 @@ class QueryRouter:
         meta = json.loads((model_dir / "meta.json").read_text())
         if meta["labels"] != list(LABELS):
             raise ValueError(f"model labels {meta['labels']} != {list(LABELS)}")
+        # The thresholds were tuned together with the guardrail rules: a model trained under
+        # other rules must be retrained, not used silently.
+        trained, current = meta.get("rules_fingerprint"), rules_fingerprint()
+        if trained != current:
+            raise ValueError(f"model in {model_dir} was trained with guardrail rules {trained}, "
+                             f"the code has {current}: run python -m query_router.generate and "
+                             f"python -m query_router.train")
         return cls(joblib.load(model_dir / "model.joblib"), meta["thresholds"], policy)
 
     def scores(self, questions: list[str]) -> list[dict[str, float]]:

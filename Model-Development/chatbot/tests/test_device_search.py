@@ -259,3 +259,14 @@ def test_chatty_words_do_not_block_a_clear_name(index):
 def test_a_model_number_is_never_dropped(index):
     # Not in the index: must not fall back to the company (MEDTRONIC MINIMED).
     assert index.resolve("Any recalls for the MiniMed 780G?").status != "resolved"
+
+
+@pytest.mark.parametrize("question", [
+    "How many deaths for the MiniMed Paradigm?",       # company in the index, model not
+    "respironics trilogy deaths",
+])
+def test_an_unknown_model_name_does_not_fall_back_to_the_company(index, question):
+    # Dropping the unknown model name leaves only the company: answering about the whole firm
+    # would answer a different question, so the bot asks or says not found instead.
+    r = index.resolve(question)
+    assert not (r.status == "resolved" and r.matches[0].kind != "device"), r

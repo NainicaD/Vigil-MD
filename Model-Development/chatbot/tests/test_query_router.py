@@ -445,3 +445,16 @@ def test_false_alarm_set_file_is_valid():
                                "what sort of things can I ask"])
 def test_more_help_phrasings(q):
     assert gr.is_help(q)
+
+
+def test_a_model_trained_with_other_rules_is_not_loaded(model_dir, tmp_path):
+    # Thresholds are tuned with the rules; old models must be retrained, not used silently.
+    import shutil
+    old = tmp_path / "old"
+    shutil.copytree(model_dir, old)
+    meta = json.loads((old / "meta.json").read_text())
+    meta["rules_fingerprint"] = "0dd7a4dd862a"
+    (old / "meta.json").write_text(json.dumps(meta))
+    with pytest.raises(ValueError, match="query_router.train"):
+        QueryRouter.load(old)
+    QueryRouter.load(model_dir)          # current rules: loads
