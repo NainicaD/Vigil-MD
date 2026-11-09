@@ -107,6 +107,14 @@ def device_words(question: str) -> list[str]:
                              and not re.fullmatch(r"(19|20)\d\d", w))]
 
 
+def _matched_only_in_suffix(hit: "Hit", typed: set[str]) -> bool:
+    """True for a manufacturer entry "COMPANY - SUFFIX" that shares no typed word with
+    COMPANY (the typed words matched its suffix only). Pure function."""
+    if hit.kind != "manufacturer" or " - " not in hit.title:
+        return False
+    return not set(words(hit.title.split(" - ", 1)[0])) & typed
+
+
 class DeviceIndex:
     def __init__(self, con: sqlite3.Connection):
         self.con = con
@@ -193,6 +201,15 @@ class DeviceIndex:
         whole = [h for h in [top] + rest if set(words(h.title)) <= typed]
         if rest and len(whole) == 1:
             return Resolution("resolved", whole, phrase)
+        # Some manufacturer spellings carry a product after " - " ("MANNKIND CORPORATION -
+        # V-GO"). If the typed words match such an entry only in that suffix, it is the
+        # product that was asked about: the entry leaves the tie and the devices decide
+        # ("V-Go"). Typing the company ("mannkind") or a plain company name ("MENTOR TEXAS",
+        # "OMNIPOD") keeps the entry, so those ties are unchanged.
+        tied = [top] + rest
+        kept = [h for h in tied if not _matched_only_in_suffix(h, typed)]
+        if len(kept) < len(tied) and any(h.kind == "device" for h in kept):
+            top, rest = kept[0], kept[1:]
         # manufacturer entries are spellings of company names (one firm can have several,
         # until the matching team groups them); devices count as one family per company
         same_family = all(h.kind == top.kind and (top.kind == "manufacturer"
