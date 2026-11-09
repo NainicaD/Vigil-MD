@@ -20,6 +20,7 @@ status: answered | refused | help | scope | unclear | need_device |
 
 import logging
 import pathlib
+import re
 
 from google.api_core import exceptions as api_exceptions
 from google.auth import exceptions as auth_exceptions
@@ -34,6 +35,20 @@ from query_router import guardrails
 from query_router import predict
 
 SECTION_ORDER = ('identity', 'counts', 'problems', 'recalls', 'narratives')
+# Event types named in a question: narratives then show only those ("describe the death
+# reports"). Counts, problems and recalls are not filtered. "dead" is left out on purpose:
+# "the pump went dead" is a malfunction, not a death.
+EVENT_PATTERNS = (
+    ('Death', re.compile(r'\b(?:deaths?|died|fatal(?:ity|ities)?)\b', re.I)),
+    ('Injury', re.compile(r'\binjur(?:y|ies|ed|ing)\b', re.I)),
+    ('Malfunction', re.compile(r'\bmalfunction(?:s|ed|ing)?\b', re.I)),
+)
+
+
+def asked_event_types(question: str) -> tuple[str, ...]:
+    """Returns the event types the question names, in the fixed order; all three if none."""
+    named = tuple(et for et, pat in EVENT_PATTERNS if pat.search(question))
+    return named or tuple(et for et, _ in EVENT_PATTERNS)
 MAX_ENTITIES = 3  # Devices compared in one answer ("X vs Y vs Z").
 DEFAULT_MODEL_DIR = (
     pathlib.Path(__file__).resolve().parents[1] / 'models' / 'baseline')
@@ -214,7 +229,9 @@ class Chatbot:
                 # Narratives are the only optional part that can be large (the biggest
                 # product codes): over the cap they are left out, the facts stay.
                 try:
-                    narr = summary.narratives(self.backend, et, eid, budget=budget)
+                    narr = summary.narratives(self.backend, et, eid, budget=budget,
+                                              event_types=asked_event_types(
+                                                  out['question']))
                 except ql_backend.QueryBudgetExceeded:
                     logging.warning('Narratives over budget: %s', eid)
                     blocks['narratives'] = [templates.NARRATIVES_BUDGET.format(

@@ -49,6 +49,10 @@ RECALL_MATCH = {
 NARRATIVES = ('**What the reports describe** ({n}, taking the event types in '
               'turn, newest first within each):')
 NARRATIVE_ITEM = '- *{event}, received {date}* (report {key}): "{text}"'
+NARRATIVES_ONE_TYPE = ('**What the {events} reports describe** ({n}, newest '
+                      'first):')
+NARRATIVES_NONE_OF_TYPE = ('**What the {events} reports describe:** no {events} report '
+                           'texts were found for this {kind}.')
 NARRATIVES_NONE = ('**What the reports describe:** no report texts were found '
                    'for this {kind}.')
 NARRATIVES_BUDGET = ('**What the reports describe:** this {kind} has too many '

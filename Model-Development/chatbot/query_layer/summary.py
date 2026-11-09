@@ -114,23 +114,31 @@ def pick_narratives(rows: list[dict], n: int = config.NARRATIVES_PER_QUESTION,
 def narratives(backend: BigQueryBackend, entity_type: str, entity_id: str,
                n: int = config.NARRATIVES_PER_QUESTION,
                max_chars: int = config.NARRATIVE_MAX_CHARS,
-               budget: Budget | None = None) -> dict:
+               budget: Budget | None = None,
+               event_types: tuple[str, ...] = config.NARRATIVE_EVENT_ORDER) -> dict:
     """A few report excerpts. Step 1 picks candidate reports (newest per event type) from
-    entity_reports; step 2 reads only their texts, in their months of maude_text."""
+    entity_reports; step 2 reads only their texts, in their months of maude_text.
+    event_types: only these (e.g. ("Death",) for "describe the death reports"), taken in
+    NARRATIVE_EVENT_ORDER; the default is all three."""
     budget = budget or Budget()
+    event_types = tuple(et for et in config.NARRATIVE_EVENT_ORDER if et in event_types)
+    if not event_types:
+        raise ValueError(f"event_types must be among {config.NARRATIVE_EVENT_ORDER}")
     entity = {"type": entity_type, "id": entity_id}
     (cands,), rec1 = backend.run(
-        [queries.narrative_candidates(backend.table, entity_type, entity_id)], budget)
+        [queries.narrative_candidates(backend.table, entity_type, entity_id,
+                                      event_types=event_types)], budget)
     if not cands:
-        return {"entity": entity, "excerpts": [], "sources": _sources(rec1),
-                "budget_gb": _budget(budget)}
+        return {"entity": entity, "excerpts": [], "event_types": list(event_types),
+                "sources": _sources(rec1), "budget_gb": _budget(budget)}
     keys = [c["mdr_report_key"] for c in cands]
     dates = sorted({c["record_date"] for c in cands if c["record_date"]})
     (texts,), rec2 = backend.run([queries.narrative_texts(backend.table, keys, dates,
                                                           max_chars=max_chars)], budget)
-    chosen = pick_narratives(texts, n)
+    chosen = pick_narratives(texts, n, order=event_types)
     return {
         "entity": entity,
+        "event_types": list(event_types),
         "excerpts": [{"mdr_report_key": r["mdr_report_key"], "event_type": r["event_type"],
                       "date_received": r["date_received"],
                       "text": excerpt(r["text"], r["text_length"], max_chars),
