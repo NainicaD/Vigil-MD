@@ -46,8 +46,8 @@ RECALL_MATCH = {
     'product_code': ' for this product code',
     'manufacturer': ' by this manufacturer',
 }
-NARRATIVES = ('**What the reports describe** ({n}, newest first, one event '
-              'type at a time):')
+NARRATIVES = ('**What the reports describe** ({n}, taking the event types in '
+              'turn, newest first within each):')
 NARRATIVE_ITEM = '- *{event}, received {date}* (report {key}): "{text}"'
 NARRATIVES_NONE = ('**What the reports describe:** no report texts were found '
                    'for this {kind}.')
@@ -98,7 +98,11 @@ BANNED_WORDS = frozenset((
     'safe', 'safer', 'safest', 'unsafe', 'dangerous', 'danger', 'risky',
     'reliable', 'unreliable', 'better', 'worse', 'best', 'worst', 'recommend',
     'should', 'trustworthy', 'concerning', 'alarming', 'good', 'bad', 'high',
-    'low', 'rare', 'common', 'only', 'just'))
+    'low', 'rare', 'common', 'only', 'just',
+    # inflections, so "Recommended action" or "safely" are caught too
+    'recommended', 'recommends', 'recommendation', 'recommendations', 'safely',
+    'safety', 'dangerously', 'reliability', 'risk', 'risks', 'riskier', 'trust',
+    'trusted', 'advise', 'advised', 'advice'))
 
 
 def all_templates() -> dict[str, str]:

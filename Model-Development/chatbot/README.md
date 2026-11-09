@@ -141,6 +141,32 @@ Advice recall and false refusals as the out_of_scope threshold moves, rules alwa
 curve is flat from 0.45 to 0.65, so a higher threshold would refuse fewer normal questions at
 no loss here. It is **not** changed: choosing it from the test set would be tuning on it.
 
+### Feature importance ([`importance.py`](query_router/importance.py))
+
+For a logistic regression on TF-IDF features, each feature's weight is its exact effect on the
+label's log-odds, so the top weights per label are the feature-importance check (SHAP would
+only estimate them). `reports/importance/router_features.json` (also on the MLflow run) lists
+the strongest positive and negative word and character n-grams per label, and flags device or
+company names (from `slots.json`) among the top features.
+
+Champion (C = 1, rules `cf0ad77c93da`), top word features:
+
+| Label | Pushed up by |
+|---|---|
+| counts | "how many", "number of", "total" |
+| problems | "are reported", "issues", "problems", "goes (wrong)" |
+| recalls | "recalls", "was", "class", "why was", "recalled" |
+| narratives | "the", "the injury", "reports for", "summarize", "say" |
+| identity | "udi", "makes", "who", "what company" |
+| out_of_scope | "is", "my", "should", "joke", "and", "it" |
+
+- **No device or company names** among any label's top 15 word features: the labels depend on
+  the question's wording, not on which device is asked about.
+- **out_of_scope leans on generic words** ("is", "my", "it"): this explains most false refusals
+  ("Is there a recall on the Omnipod 5?"). A target for the next router model, not for the
+  frozen rules.
+- **narratives** has "the" as its top word, a template artifact of the generated data.
+
 ### Tuning ([`tune.py`](query_router/tune.py))
 
 Optuna (TPE, 30 trials, seed 13) searches C, word and character n-gram ranges, `min_df` and class
@@ -181,6 +207,7 @@ python -m query_router.train             # models/baseline/{model.joblib,meta.js
 python -m query_router.evaluate          # heldout + false-alarm set + bias, added to that run
 python -m query_router.evaluate --test data/test/handwritten_test.jsonl --prefix test --out reports/test_report.json
 python -m query_router.sensitivity       # threshold sweep: reports/sensitivity/
+python -m query_router.importance        # top features per label: reports/importance/
 python -m query_router.tune --trials 30  # Optuna; models/optuna, alias challenger
 python -m query_router.gate --candidate models/optuna --champion models/baseline   # [--promote]
 pytest -q                                # logs to a temporary MLflow store only
@@ -333,6 +360,10 @@ device_summary(backend, **index.query_key(r.matches[0]), budget=budget)
   "dreamstation"), never dropping a word with a digit ("MiniMed 780G" stays not found). The
   retry is kept only if it resolves to a device: a dropped word may be a model name missing
   from the index, and "Medtronic Azure" must not become the MEDTRONIC company (2026-11-09).
+  A manufacturer spelling with a product after " - " ("MANNKIND CORPORATION - V-GO") that the
+  typed words match only in that suffix leaves a tie, so "V-Go" resolves to the device;
+  plain company names ("MENTOR TEXAS", "OMNIPOD") and a typed company ("mannkind") are
+  unchanged (2026-11-09).
 - **Report counts for devices are exact UDI links only.** Many reports have no UDI:
   DreamStation has 30,356 linked reports in `vigil_md_prod`, while product code BZD has many
   more. Answers should say "reports linked by UDI". The matching team's predicted links will add
@@ -374,9 +405,11 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
   per entity a headline and the sections asked for, always as identity → counts → problems →
   recalls → narratives, then the disclaimer, the UDI note (devices) and the sources.
 - **Templates** ([`templates.py`](answer/templates.py)): every sentence in one file. A test
-  rejects judgement or advice words (safe, dangerous, better, recommend, should, …). Report text
-  and recall reasons are quoted from the FDA as they are. Changing a template changes
-  `templates_fingerprint()`.
+  rejects judgement or advice words (safe, dangerous, better, recommend, should, …, with their
+  common inflections) in every template, and a second test renders whole answers (every section
+  and the empty, not-found and ambiguous paths) and checks the text `render.py` adds around the
+  templates. Report text and recall reasons are quoted from the FDA as they are. Changing a
+  template changes `templates_fingerprint()`.
 - **Edge cases**, each a fixed reply: no device words (asks which device), device not found,
   several close matches (lists them), comparisons (one block per device, at most 3, no ranking),
   found but no reports, over the cost cap, BigQuery unreachable (no traceback shown).
@@ -387,6 +420,27 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
   status, the device named, the refusal and the sections. Logged to MLflow experiment
   `chatbot/answer-v1` (router version, rules and template fingerprints, search index, cost).
   `pytest -m integration tests/test_answer_integration.py` fails below 80% accuracy.
+- **Bias slices for the whole chatbot:** accuracy per `device_type`, `event_type` (fields in
+  `e2e_dev.jsonl`, added 2026-11-09 from each question's wording) and `advice_mixed` (answered
+  questions with or without an advice part), with the gap between the best and worst slice of
+  at least 8 questions. Printed, in the report and in MLflow (`e2e_bias_gap_accuracy_*`).
+  Reported, not gated: 48 questions give slices of 1-12.
+
+  | 2026-11-09, rules `cf0ad77c93da`, router C = 1 | Accuracy (n) |
+  |---|---|
+  | overall | **43 of 48 (89.6%)**, was 41 of 48 before the V-Go tie fix |
+  | device_type | cpap 1.0 (8), none 1.0 (8), insulin_pump 0.917 (12), breast_implant 0.875 (8), app_software 0.75 (4), heart_pump 0.667 (6) |
+  | **gap** | **0.125** (cpap vs breast_implant); was 0.25 (cpap vs insulin_pump) before the fix, from the two V-Go questions |
+  | event_type | none 0.886 (35), death 0.833 (6), malfunction 1.0 (4), injury 1.0 (3); no gap (one slice of 8+) |
+  | advice_mixed | facts_only 0.870 (23), with_advice 0.8 (5); no gap (one slice of 8+) |
+
+  From the full run (48 questions, 0.92 GB) before the fix, plus a rerun of the only two
+  questions whose search result the fix changed (both V-Go, now correct; 0.19 GB). Still
+  wrong: Abiomed (two company spellings), Bionic Circle (Android and iOS entries; taking the top one of a company's 0-report devices
+  was tried and rejected: across 800 sampled searches it changed 255 results, mostly picking one
+  size or colour of a mask, and 0-report entries can still differ in recalls), "what is
+  product code LZG?" (refusal added), the Impella question that also asks for advice (router
+  drops the counts) and "mentor implants" (reference expects a question back).
 
   | 2026-11-08, rules `cf0ad77c93da` | |
   |---|---|
