@@ -58,7 +58,8 @@ word ("can I shower with my DreamStation") gets the scope reply, which still giv
 device lookup (next step) will recognise brand names.
 
 **The rules are frozen** at `rules_fingerprint()` = `cf0ad77c93da` (revision 2, 2026-11-08), stored
-with every trained model and evaluation. Revision 2 added `opinion` ("do you think X is
+with every trained model and evaluation; `QueryRouter.load` refuses a model trained under other
+rules (retrain it: `generate`, then `train`). Revision 2 added `opinion` ("do you think X is
 trustworthy", "would you trust…", "…, thoughts?", "is it worth switching", "is that bad") and
 `urgent` ("my pump says error 47 and I'm low", "my CPAP keeps alarming", "do I need to go to the
 ER"). Those patterns came from held-out misses, so **the held-out split is no longer unseen**: the
@@ -329,7 +330,9 @@ device_summary(backend, **index.query_key(r.matches[0]), budget=budget)
   name was typed wins ("Natrelle INSPIRA Breast Implants" over "…SoftTouch…"); a stopword or
   single letter inside a name is kept ("V-Go", "DreamStation Go"); if a phrase doesn't resolve,
   it is retried with only the words that match an entry confidently ("dreamstation mine" →
-  "dreamstation"), never dropping a word with a digit ("MiniMed 780G" stays not found).
+  "dreamstation"), never dropping a word with a digit ("MiniMed 780G" stays not found). The
+  retry is kept only if it resolves to a device: a dropped word may be a model name missing
+  from the index, and "Medtronic Azure" must not become the MEDTRONIC company (2026-11-09).
 - **Report counts for devices are exact UDI links only.** Many reports have no UDI:
   DreamStation has 30,356 linked reports in `vigil_md_prod`, while product code BZD has many
   more. Answers should say "reports linked by UDI". The matching team's predicted links will add

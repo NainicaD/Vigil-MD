@@ -169,13 +169,16 @@ class DeviceIndex:
             return res
         # Chatty words ("…stop using mine", "…most often") lower every score: retry with
         # only the words that match an entry confidently ("mine" is only a typo-level match
-        # for "MiniMe"); keep the retry only if it resolves. A word with a digit is a model
-        # number and is never dropped: "MiniMed 780G" must not become the MiniMed company.
+        # for "MiniMe"); keep the retry only if it resolves to a device. A dropped word can be
+        # a model name that is not in the index ("Medtronic Azure", "Philips Trilogy"), so a
+        # retry that leaves only a company or product code is not taken: the user asked about
+        # one device, not the whole firm. A word with a digit is a model number and is never
+        # dropped ("MiniMed 780G").
         kept = [w for w in phrase.split() if re.search(r"\d", w)
                 or any(h.score >= RESOLVE_SCORE for h in self.search(w, limit=1))]
         if kept and len(kept) < len(phrase.split()):
             retry = self._resolve_exact(" ".join(kept))
-            if retry.status == "resolved":
+            if retry.status == "resolved" and retry.matches[0].kind == "device":
                 return retry
         return res
 
