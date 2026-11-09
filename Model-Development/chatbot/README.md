@@ -141,6 +141,32 @@ Advice recall and false refusals as the out_of_scope threshold moves, rules alwa
 curve is flat from 0.45 to 0.65, so a higher threshold would refuse fewer normal questions at
 no loss here. It is **not** changed: choosing it from the test set would be tuning on it.
 
+### Feature importance ([`importance.py`](query_router/importance.py))
+
+For a logistic regression on TF-IDF features, each feature's weight is its exact effect on the
+label's log-odds, so the top weights per label are the feature-importance check (SHAP would
+only estimate them). `reports/importance/router_features.json` (also on the MLflow run) lists
+the strongest positive and negative word and character n-grams per label, and flags device or
+company names (from `slots.json`) among the top features.
+
+Champion (C = 1, rules `cf0ad77c93da`), top word features:
+
+| Label | Pushed up by |
+|---|---|
+| counts | "how many", "number of", "total" |
+| problems | "are reported", "issues", "problems", "goes (wrong)" |
+| recalls | "recalls", "was", "class", "why was", "recalled" |
+| narratives | "the", "the injury", "reports for", "summarize", "say" |
+| identity | "udi", "makes", "who", "what company" |
+| out_of_scope | "is", "my", "should", "joke", "and", "it" |
+
+- **No device or company names** among any label's top 15 word features: the labels depend on
+  the question's wording, not on which device is asked about.
+- **out_of_scope leans on generic words** ("is", "my", "it"): this explains most false refusals
+  ("Is there a recall on the Omnipod 5?"). A target for the next router model, not for the
+  frozen rules.
+- **narratives** has "the" as its top word, a template artifact of the generated data.
+
 ### Tuning ([`tune.py`](query_router/tune.py))
 
 Optuna (TPE, 30 trials, seed 13) searches C, word and character n-gram ranges, `min_df` and class
@@ -181,6 +207,7 @@ python -m query_router.train             # models/baseline/{model.joblib,meta.js
 python -m query_router.evaluate          # heldout + false-alarm set + bias, added to that run
 python -m query_router.evaluate --test data/test/handwritten_test.jsonl --prefix test --out reports/test_report.json
 python -m query_router.sensitivity       # threshold sweep: reports/sensitivity/
+python -m query_router.importance        # top features per label: reports/importance/
 python -m query_router.tune --trials 30  # Optuna; models/optuna, alias challenger
 python -m query_router.gate --candidate models/optuna --champion models/baseline   # [--promote]
 pytest -q                                # logs to a temporary MLflow store only
@@ -387,6 +414,22 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
   status, the device named, the refusal and the sections. Logged to MLflow experiment
   `chatbot/answer-v1` (router version, rules and template fingerprints, search index, cost).
   `pytest -m integration tests/test_answer_integration.py` fails below 80% accuracy.
+- **Bias slices for the whole chatbot:** accuracy per `device_type`, `event_type` (fields in
+  `e2e_dev.jsonl`, added 2026-11-09 from each question's wording) and `advice_mixed` (answered
+  questions with or without an advice part), with the gap between the best and worst slice of
+  at least 8 questions. Printed, in the report and in MLflow (`e2e_bias_gap_accuracy_*`).
+  Reported, not gated: 48 questions give slices of 1-12.
+
+  | 2026-11-09, rules `cf0ad77c93da`, router C = 1 | Accuracy (n) |
+  |---|---|
+  | device_type | cpap 1.0 (8), none 1.0 (8), breast_implant 0.875 (8), insulin_pump 0.75 (12), heart_pump 0.667 (6), app_software 0.75 (4) |
+  | **gap** | **0.25** (cpap vs insulin_pump): both V-Go questions come back ambiguous (the device ties with the "MANNKIND CORPORATION - V-GO" manufacturer entry) |
+  | event_type | none 0.886 (35), death 0.833 (6), malfunction 0.75 (4), injury 0.667 (3); no gap (one slice of 8+) |
+  | advice_mixed | facts_only 0.826 (23), with_advice 0.6 (5); no gap (one slice of 8+) |
+
+  Questions that also ask for advice are answered less often (3 of 5): the refusal is right,
+  but the router drops the factual part or the device is ambiguous. Same 41 of 48 correct as
+  on 2026-11-08; billed 0.92 GB for all 48.
 
   | 2026-11-08, rules `cf0ad77c93da` | |
   |---|---|
