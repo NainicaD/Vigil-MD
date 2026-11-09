@@ -360,6 +360,10 @@ device_summary(backend, **index.query_key(r.matches[0]), budget=budget)
   "dreamstation"), never dropping a word with a digit ("MiniMed 780G" stays not found). The
   retry is kept only if it resolves to a device: a dropped word may be a model name missing
   from the index, and "Medtronic Azure" must not become the MEDTRONIC company (2026-11-09).
+  A manufacturer spelling with a product after " - " ("MANNKIND CORPORATION - V-GO") that the
+  typed words match only in that suffix leaves a tie, so "V-Go" resolves to the device;
+  plain company names ("MENTOR TEXAS", "OMNIPOD") and a typed company ("mannkind") are
+  unchanged (2026-11-09).
 - **Report counts for devices are exact UDI links only.** Many reports have no UDI:
   DreamStation has 30,356 linked reports in `vigil_md_prod`, while product code BZD has many
   more. Answers should say "reports linked by UDI". The matching team's predicted links will add
@@ -422,14 +426,17 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
 
   | 2026-11-09, rules `cf0ad77c93da`, router C = 1 | Accuracy (n) |
   |---|---|
-  | device_type | cpap 1.0 (8), none 1.0 (8), breast_implant 0.875 (8), insulin_pump 0.75 (12), heart_pump 0.667 (6), app_software 0.75 (4) |
-  | **gap** | **0.25** (cpap vs insulin_pump): both V-Go questions come back ambiguous (the device ties with the "MANNKIND CORPORATION - V-GO" manufacturer entry) |
-  | event_type | none 0.886 (35), death 0.833 (6), malfunction 0.75 (4), injury 0.667 (3); no gap (one slice of 8+) |
-  | advice_mixed | facts_only 0.826 (23), with_advice 0.6 (5); no gap (one slice of 8+) |
+  | overall | **43 of 48 (89.6%)**, was 41 of 48 before the V-Go tie fix |
+  | device_type | cpap 1.0 (8), none 1.0 (8), insulin_pump 0.917 (12), breast_implant 0.875 (8), app_software 0.75 (4), heart_pump 0.667 (6) |
+  | **gap** | **0.125** (cpap vs breast_implant); was 0.25 (cpap vs insulin_pump) before the fix, from the two V-Go questions |
+  | event_type | none 0.886 (35), death 0.833 (6), malfunction 1.0 (4), injury 1.0 (3); no gap (one slice of 8+) |
+  | advice_mixed | facts_only 0.870 (23), with_advice 0.8 (5); no gap (one slice of 8+) |
 
-  Questions that also ask for advice are answered less often (3 of 5): the refusal is right,
-  but the router drops the factual part or the device is ambiguous. Same 41 of 48 correct as
-  on 2026-11-08; billed 0.92 GB for all 48.
+  From the full run (48 questions, 0.92 GB) before the fix, plus a rerun of the only two
+  questions whose search result the fix changed (both V-Go, now correct; 0.19 GB). Still
+  wrong: Abiomed (two company spellings), Bionic Circle (Android and iOS entries), "what is
+  product code LZG?" (refusal added), the Impella question that also asks for advice (router
+  drops the counts) and "mentor implants" (reference expects a question back).
 
   | 2026-11-08, rules `cf0ad77c93da` | |
   |---|---|

@@ -35,11 +35,22 @@ DEVICES = [
     {"company_norm": "acme cables", "brand_key": "impella adapter cable", "name": "Impella Adapter Cable",
      "company": "Acme Cables", "udi_dis": ["00000000000701"], "models": [], "n_models": 0,
      "product_codes": ["OZD"], "reports": 2, "deaths": 0, "injuries": 0},
+    {"company_norm": "mannkind", "brand_key": "v-go disposable insulin delivery",
+     "name": "V-Go Disposable Insulin Delivery", "company": "MannKind Corporation",
+     "udi_dis": ["00000000000801"], "models": [], "n_models": 0, "product_codes": ["LZG"],
+     "reports": 105, "deaths": 0, "injuries": 12},
+    {"company_norm": "dexcom", "brand_key": "dexcom g6", "name": "Dexcom G6", "company": "Dexcom, Inc.",
+     "udi_dis": ["00000000000901"], "models": [], "n_models": 0, "product_codes": ["MDS"],
+     "reports": 3000, "deaths": 0, "injuries": 300},
     {"company_norm": "sientra", "brand_key": "sientra silicone gel breast implant",
      "name": "SIENTRA Silicone Gel Breast Implant", "company": "Sientra, Inc.", "udi_dis": ["00000000000601"],
      "models": [], "n_models": 0, "product_codes": ["FTR"], "reports": 1, "deaths": 0, "injuries": 1},
 ]
 COMPANIES = [
+    {"company_norm": "mannkind corporation - v-go", "company": "MANNKIND CORPORATION - V-GO",
+     "reports": 253, "deaths": 0, "injuries": 40, "product_codes": ["LZG"]},
+    {"company_norm": "dexcom", "company": "DEXCOM", "reports": 9000, "deaths": 2,
+     "injuries": 800, "product_codes": ["MDS"]},
     {"company_norm": "respironics", "company": "RESPIRONICS, INC.", "reports": 200000, "deaths": 4000,
      "injuries": 46000, "product_codes": ["BZD"]},
     {"company_norm": "medtronic minimed", "company": "MEDTRONIC MINIMED", "reports": 32000, "deaths": 20,
@@ -270,3 +281,31 @@ def test_an_unknown_model_name_does_not_fall_back_to_the_company(index, question
     # would answer a different question, so the bot asks or says not found instead.
     r = index.resolve(question)
     assert not (r.status == "resolved" and r.matches[0].kind != "device"), r
+
+
+def test_a_device_wins_a_tie_with_a_manufacturer_named_after_it(index):
+    # "V-Go" scores the same for the device and for "MANNKIND CORPORATION - V-GO": the chat
+    # question is about the product.
+    for q in ("how many malfunction reports does the V-Go have",
+              "Is the V-Go reliable? Also how many injury reports does it have?"):
+        r = index.resolve(q)
+        assert r.status == "resolved" and r.matches[0].title == "V-Go Disposable Insulin Delivery"
+
+
+def test_a_typed_company_name_still_resolves_to_the_company(index):
+    # "Dexcom" ties the DEXCOM entry and the Dexcom G6 (a plain company name, no " - "
+    # suffix); "mannkind" matches the company part of "MANNKIND CORPORATION - V-GO".
+    for q in ("What recalls has Dexcom had?", "What recalls has MannKind had?"):
+        r = index.resolve(q)
+        assert r.status == "resolved" and r.matches[0].kind == "manufacturer", q
+
+
+def test_matched_only_in_suffix():
+    from device_search.search import Hit, _matched_only_in_suffix
+    def m(title, kind="manufacturer"):
+        return Hit("x", kind, "x", title, "", 0, 0, 0, [], None, 1.0)
+    assert _matched_only_in_suffix(m("MANNKIND CORPORATION - V-GO"), {"v", "go"})
+    assert not _matched_only_in_suffix(m("MANNKIND CORPORATION - V-GO"), {"mannkind", "go"})
+    assert not _matched_only_in_suffix(m("MENTOR TEXAS"), {"mentor"})
+    assert not _matched_only_in_suffix(m("V-Go - Pump", kind="device"), {"pump"})
+
