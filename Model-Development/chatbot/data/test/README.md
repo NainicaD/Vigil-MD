@@ -4,8 +4,19 @@ This set is the only honest score for the router, because the training and valid
 questions come from templates and are easier than real questions. It is **never used for
 training or tuning**.
 
-**Who writes it:** teammates who have **not** read `query_router/templates.py`.
+**Who writes it:** someone who has **not** read `query_router/templates.py` or the rules.
 Write questions the way real people would ask them.
+
+**Status (2026-11-08):** `handwritten_test.jsonl` has 230 rows, written by a separate agent
+session that was given only this README and `labels.py` (no access to the templates, the rules
+or the generated data). The rules were frozen at `cf0ad77c93da` before it was written, and it
+was scored once. Teammates should add their own rows: a second, human-written set is the
+stronger check, and after the next rule revision this one counts as seen.
+
+Extra fields used by the bias slices: `device_type` (insulin_pump, cpap, heart_pump,
+breast_implant, pacemaker_icd, glucose_monitor, infusion_pump, hip_knee_implant, app_software,
+other, none), `event_type` (death, injury, malfunction, none) and `style` (direct, indirect,
+typo, short, long, multi_part, disguised_advice).
 
 **File:** `handwritten_test.jsonl`, one JSON object per line:
 
@@ -45,3 +56,11 @@ words the guardrail rules react to ("dangerous malfunctions reported", "dosing e
 has its true labels and the `trigger` it contains. The evaluation reports the share of these
 questions that get flagged as out of scope, next to the medical-advice recall. Add to it,
 but don't tune the rules against it.
+
+## End-to-end set
+
+`e2e_dev.jsonl` (48 rows, same author and rules as the hand-written set) holds questions about
+the devices in `vigil_md_dev` with reference answers: `expected_status` (answered, refused, help,
+scope, unclear, need_device, not_found, ambiguous), `expected_entity` (a substring the answer's
+device name must contain) and `refusal_expected`. `python -m answer.evaluate` scores the whole
+chatbot on it. It was used to find device-search bugs, so it is a development set now.

@@ -15,6 +15,8 @@ plus:
 evaluate_false_alarms() scores factual questions that contain trigger words
 (data/test/false_alarm_set.jsonl). Every report records guardrails.rules_fingerprint().
   slices              macro-F1 and out_of_scope recall per audience
+  bias                safety and accuracy per audience, device type, event type and
+                      phrasing style, with the largest gaps (bias.py)
   confusions          for each true label, which wrong labels were predicted with it
 
 MLflow: the metrics are added to the model's training run (mlflow_run_id in meta.json),
@@ -34,6 +36,7 @@ from pathlib import Path
 
 import numpy as np
 
+from . import bias
 from .generate import read_jsonl
 from .guardrails import rule_hits, rules_fingerprint
 from .labels import LABELS, OUT_OF_SCOPE, to_vector
@@ -106,7 +109,8 @@ def evaluate(clf: QueryRouter, rows: list[dict]) -> dict:
             "unrelated": dict(unrel),
             "rule_false_alarms": {"n": len(false_alarms), "of_in_scope": len(in_scope),
                                   "examples": false_alarms[:20]},
-            "missed_out_of_scope": missed_oos, "slices": slices, "confusions": confusions}
+            "missed_out_of_scope": missed_oos, "slices": slices, "confusions": confusions,
+            "bias": bias.slice_report(y, guarded, rows)}
 
 
 def evaluate_false_alarms(clf: QueryRouter, rows: list[dict]) -> dict:
@@ -128,6 +132,8 @@ def report_metrics(report: dict, prefix: str) -> dict[str, float]:
         suffix = "" if view == "both" else f"_{view}"
         out[f"{prefix}_advice_recall{suffix}"] = s[view]["advice_recall"]
         out[f"{prefix}_false_refusal_rate{suffix}"] = s[view]["false_refusal_rate"]
+    for metric in bias.GAP_LIMITS:
+        out[f"{prefix}_bias_max_gap_{metric}"] = bias.max_gap(report.get("bias", {}), metric)
     if "false_alarm_set" in report:
         for view, rate in report["false_alarm_set"]["flagged_rate"].items():
             out[f"falsealarm_flagged{'' if view == 'both' else '_' + view}"] = rate
@@ -182,6 +188,9 @@ def main(argv=None) -> int:
     for key in ("advice_recall", "false_refusal_rate"):
         print(f"{key:20}" + "".join(f"{report['safety'][v][key]!s:>8}" for v in VIEWS))
     print(f"in-scope still answered: {report['in_scope_answered']}")
+    for field, b in report["bias"].items():
+        g_ = {m: b["gaps"][m]["gap"] for m in ("advice_recall", "false_refusal_rate")}
+        print(f"bias by {field}: gaps {g_}" + (f"  FLAGGED {b['flags']}" if b["flags"] else ""))
     if a.false_alarms:
         far = evaluate_false_alarms(clf, read_jsonl(Path(a.false_alarms)))
         report["false_alarm_set"] = far

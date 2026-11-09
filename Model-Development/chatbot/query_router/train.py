@@ -40,17 +40,21 @@ MODEL_DIR = Path("models/baseline")
 C_GRID = (0.5, 1.0, 2.0, 4.0, 8.0)
 
 
-def build_pipeline(C: float):
+def build_pipeline(C: float, word_ngram_max: int = 2, char_ngram_min: int = 3,
+                   char_ngram_max: int = 5, min_df: int = 2, class_weight: str | None = "balanced"):
+    """The defaults are the baseline's settings; tune.py searches the others."""
     from sklearn.linear_model import LogisticRegression
     from sklearn.multiclass import OneVsRestClassifier
     from sklearn.pipeline import FeatureUnion, Pipeline
     from sklearn.feature_extraction.text import TfidfVectorizer
     features = FeatureUnion([
-        ("word", TfidfVectorizer(lowercase=True, ngram_range=(1, 2), min_df=2, sublinear_tf=True)),
-        ("char", TfidfVectorizer(lowercase=True, analyzer="char_wb", ngram_range=(3, 5),
-                                 min_df=2, sublinear_tf=True)),
+        ("word", TfidfVectorizer(lowercase=True, ngram_range=(1, word_ngram_max), min_df=min_df,
+                                 sublinear_tf=True)),
+        ("char", TfidfVectorizer(lowercase=True, analyzer="char_wb",
+                                 ngram_range=(char_ngram_min, char_ngram_max),
+                                 min_df=min_df, sublinear_tf=True)),
     ])
-    clf = OneVsRestClassifier(LogisticRegression(C=C, max_iter=2000, class_weight="balanced"))
+    clf = OneVsRestClassifier(LogisticRegression(C=C, max_iter=2000, class_weight=class_weight))
     return Pipeline([("features", features), ("clf", clf)])
 
 
@@ -75,26 +79,33 @@ def flat_metrics(metrics: dict, prefix: str) -> dict[str, float]:
     return out
 
 
-def train(train_rows: list[dict], val_rows: list[dict], c_grid=C_GRID) -> tuple:
-    """Fit one pipeline per C, tune thresholds on validation, keep the best by macro-F1.
-    Returns (pipeline, meta). Inside an active MLflow run, each C is a nested run."""
+def fit_and_score(params: dict, train_rows: list[dict], val_rows: list[dict]) -> tuple:
+    """Fit build_pipeline(**params), tune thresholds on validation and score it with the
+    rule backstop applied, as the chatbot runs it. Returns (pipeline, metrics, thresholds)."""
     X_tr, y_tr = xy(train_rows)
     X_va, y_va = xy(val_rows)
     rule_mask = np.array([bool(rule_hits(q)) for q in X_va])
     advice_mask = np.array([r.get("oos_kind") == "advice" for r in val_rows])
+    pipe = build_pipeline(**params).fit(X_tr, y_tr)
+    probs = pipe.predict_proba(X_va)
+    thresholds = tune_thresholds(probs, y_va, rule_mask=rule_mask,
+                                 advice_mask=advice_mask if advice_mask.any() else None)
+    pred = apply_thresholds(probs, thresholds)
+    pred[rule_mask, LABELS.index(OUT_OF_SCOPE)] = 1      # score what the chatbot uses
+    metrics = score(y_va, pred)
+    oos = LABELS.index(OUT_OF_SCOPE)
+    metrics["advice_recall"] = (round(float(pred[advice_mask, oos].mean()), 4)
+                                if advice_mask.any() else None)
+    return pipe, metrics, thresholds
+
+
+def train(train_rows: list[dict], val_rows: list[dict], c_grid=C_GRID) -> tuple:
+    """Fit one pipeline per C, tune thresholds on validation, keep the best by macro-F1.
+    Returns (pipeline, meta). Inside an active MLflow run, each C is a nested run."""
     mlflow = _active_mlflow()
     best = None
     for C in c_grid:
-        pipe = build_pipeline(C).fit(X_tr, y_tr)
-        probs = pipe.predict_proba(X_va)
-        thresholds = tune_thresholds(probs, y_va, rule_mask=rule_mask,
-                                     advice_mask=advice_mask if advice_mask.any() else None)
-        pred = apply_thresholds(probs, thresholds)
-        pred[rule_mask, LABELS.index(OUT_OF_SCOPE)] = 1      # score what the chatbot uses
-        metrics = score(y_va, pred)
-        oos = LABELS.index(OUT_OF_SCOPE)
-        metrics["advice_recall"] = (round(float(pred[advice_mask, oos].mean()), 4)
-                                    if advice_mask.any() else None)
+        pipe, metrics, thresholds = fit_and_score({"C": C}, train_rows, val_rows)
         if mlflow:
             with mlflow.start_run(run_name=f"tfidf_lr_C{C}", nested=True):
                 mlflow.log_params({"model": "tfidf_lr", "C": C})
