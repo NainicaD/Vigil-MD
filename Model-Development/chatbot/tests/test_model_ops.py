@@ -196,6 +196,48 @@ def test_e2e_summary_groups_by_status_and_lists_wrong_answers():
     assert len(s['wrong']) == 1 and s['billed_gb_total'] == 0.03
 
 
+def _e2e_result(correct, **row):
+    row = {'text': 'q', 'labels': [], 'expected_status': 'answered', **row}
+    return {'row': row, 'status': row['expected_status'], 'billed_gb': 0.0,
+            'seconds': 0.0,
+            'checks': {'status': correct, 'entity': True, 'refusal': True,
+                       'sections': None, 'correct': correct}}
+
+
+def test_e2e_slices_give_accuracy_per_slice_and_the_gap():
+    results = ([_e2e_result(True, device_type='cpap') for _ in range(8)]
+               + [_e2e_result(i < 6, device_type='insulin_pump')
+                  for i in range(8)]
+               + [_e2e_result(False, device_type='app_software')])
+    s = e2e.slices(results)['device_type']
+    assert s['slices']['insulin_pump'] == {'n': 8, 'accuracy': 0.75}
+    # app_software (n 1) is listed but too small to count for the gap.
+    assert s['gap'] == 0.25 and s['gap_between'] == ['cpap', 'insulin_pump']
+
+
+def test_e2e_advice_slice_only_covers_answered_rows():
+    results = [_e2e_result(True, refusal_expected=True),
+               _e2e_result(False),
+               _e2e_result(True, expected_status='refused',
+                           refusal_expected=True)]
+    s = e2e.slices(results, min_n=1)['advice_mixed']
+    assert s['slices'] == {'facts_only': {'n': 1, 'accuracy': 0.0},
+                           'with_advice': {'n': 1, 'accuracy': 1.0}}
+    assert s['gap'] == 1.0
+
+
+def test_e2e_slices_skip_fields_no_row_has():
+    assert 'device_type' not in e2e.slices([_e2e_result(True)])
+
+
+def test_e2e_set_has_slice_fields():
+    rows = [json.loads(l) for l in open('data/test/e2e_dev.jsonl',
+                                         encoding='utf-8')]
+    assert all(r.get('device_type') and r.get('event_type') for r in rows)
+    assert {r['event_type'] for r in rows} <= {'death', 'injury',
+                                               'malfunction', 'none'}
+
+
 def test_reference_files_are_valid():
     for path in ('data/test/handwritten_test.jsonl', 'data/test/e2e_dev.jsonl'):
         for line in open(path, encoding='utf-8'):
