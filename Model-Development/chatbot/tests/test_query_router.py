@@ -458,3 +458,26 @@ def test_a_model_trained_with_other_rules_is_not_loaded(model_dir, tmp_path):
     with pytest.raises(ValueError, match="query_router.train"):
         QueryRouter.load(old)
     QueryRouter.load(model_dir)          # current rules: loads
+
+
+def test_importance_lists_top_features_per_label(model_dir, tmp_path):
+    from query_router import importance
+    report = importance.run(model_dir, tmp_path, top_n=5)
+    assert set(report["features"]) == set(LABELS)
+    for entry in report["features"].values():
+        pos, neg = entry["word_positive"], entry["word_negative"]
+        assert len(pos) == 5 and len(entry["char_positive"]) == 5
+        assert [w for _, w in pos] == sorted((w for _, w in pos), reverse=True)
+        assert pos[0][1] > 0 > neg[0][1]
+    assert any("many" in f for f, _ in report["features"]["counts"]["word_positive"])
+    assert (tmp_path / "router_features.json").exists()
+
+
+def test_importance_flags_device_names_among_top_features():
+    from query_router import importance
+    names = importance.device_name_words()
+    assert {"dreamstation", "impella"} & names or {"minimed", "omnipod"} & names
+    features = {"counts": {"word_positive": [["how many", 3.0], ["omnipod", 2.0]]},
+                "recalls": {"word_positive": [["recalls", 4.0]]}}
+    assert importance.name_features(features, {"omnipod"}) == {"counts": ["omnipod"]}
+
