@@ -31,7 +31,7 @@ from query_router import predict
 HERE = pathlib.Path(__file__).resolve().parent
 RULES_FILE = HERE / 'gate.json'
 CHAMPION_METRICS = HERE / 'champion_metrics.json'
-TEST = pathlib.Path('data/test/handwritten_test.jsonl')
+TEST = pathlib.Path('data/test/handwritten_test_v2.jsonl')  # written after rules rev 3
 FALLBACK = pathlib.Path('data/generated/heldout.jsonl')
 FALSE_ALARMS = pathlib.Path('data/test/false_alarm_set.jsonl')
 
