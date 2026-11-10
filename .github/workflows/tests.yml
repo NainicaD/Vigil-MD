@@ -1,4 +1,5 @@
-# Runs the unit tests on GitHub's servers for every pull request and every push to main.
+# Runs the unit tests on GitHub's servers for every pull request and every push to main:
+# the data pipeline, the chatbot (tests and the model gate) and the website.
 # No GCP credentials: pytest.ini excludes the integration tests (-m "not integration"),
 # the data-contract tests skip without the DVC samples, and the DAG tests skip
 # without Airflow. -rs prints the reason for each skip.
@@ -64,3 +65,38 @@ jobs:
           python -m query_router.generate
           python -m query_router.train
           python -m query_router.gate --candidate models/baseline --regression-only
+
+  # The website (Web-App/frontend/): from a clean checkout, as the Docker image builds it, so a
+  # file that never reached git (as src/lib/ once did) fails here and not only in Docker.
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Web-App/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Web-App/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build (real API, no example data, as in the Docker image)
+        env:
+          VITE_USE_MOCKS: "false"
+          VITE_API_BASE_URL: /api
+        run: npm run build
