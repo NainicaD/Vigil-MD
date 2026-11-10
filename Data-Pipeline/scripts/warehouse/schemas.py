@@ -233,6 +233,29 @@ ENTITY_TYPES = ("device", "product_code", "manufacturer")
 # The prod tables each summary reads (the build is skipped when none changed)
 SUMMARY_SOURCES = ("gudid", "maude", "maude_problems", "recall", "enforcement")
 
+# ── Links (the evidence-linked database: which records describe the same thing) ───────────
+# One table per kind of link, each written only by its producer, so one rebuild never
+# removes another's rows; the view LINKS_VIEW shows them together. The pipeline writes the
+# exact links; the matching model's links (MAUDE to GUDID, method 'model' with a score) are
+# planned as their own table in the same shape.
+LINK_COLUMNS = [
+    ("link_type", "STRING"),      # e.g. enforcement_recall
+    ("left_source", "STRING"), ("left_id", "STRING"),
+    ("right_source", "STRING"), ("right_id", "STRING"),
+    ("link_key", "STRING"),       # what the link rests on, e.g. recall_number
+    ("event_id", "STRING"),       # the recall event both records belong to, if any
+    ("same_event", "BOOL"),       # both sides name the same event (a second check)
+    ("method", "STRING"),         # exact_id now; model later
+    ("score", "FLOAT64"),         # null for exact links
+    ("match_kind", "STRING"),     # null for exact links; for model or UDI-agreement labels
+    ("built_at", "TIMESTAMP"),
+]
+LINK_TABLES = {
+    # link table → (left source, right source), prod tables it is built from
+    "link_enforcement_recall": ("enforcement", "recall"),
+}
+LINKS_VIEW = "links"
+
 # ── Table names ───────────────────────────────────────────────────────────────
 
 def raw_table(project: str, source: str) -> str:
@@ -255,6 +278,13 @@ def summary_table(project: str, name: str, dataset: str | None = None) -> str:
     """A summary table in vigil_md_prod (or another dataset with the same tables, e.g. vigil_md_dev)."""
     if name not in SUMMARY_TABLES:
         raise ValueError(f"unknown summary table {name!r}")
+    return f"{project}.{dataset or DATASETS['prod']}.{name}"
+
+
+def link_table(project: str, name: str, dataset: str | None = None) -> str:
+    """A link table in vigil_md_prod (or another dataset with the same tables, e.g. vigil_md_dev)."""
+    if name not in LINK_TABLES and name != LINKS_VIEW:
+        raise ValueError(f"unknown link table {name!r}")
     return f"{project}.{dataset or DATASETS['prod']}.{name}"
 
 

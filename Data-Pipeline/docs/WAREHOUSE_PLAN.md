@@ -136,6 +136,7 @@ Pending entry:
 | `vigil_md_staging.maude_events_stg` (added 2026-11-07) | `_ingest_date`, expires after 14 days | `mdr_report_key` | `schemas.MAUDE_EVENTS_STAGING_COLUMNS` |
 | `vigil_md_prod.maude_problems`, `vigil_md_prod.maude_text` (added 2026-11-07) | `_part_date` = `COALESCE(date_received, DATE '1900-01-01')` (month) | `mdr_report_key` | `schemas.MAUDE_PROBLEMS_COLUMNS`, `schemas.MAUDE_TEXT_COLUMNS` |
 | `vigil_md_prod.device_catalog`, `entity_reports`, `entity_counts`, `entity_problems`, `entity_recalls`, `entity_catalog` (summary tables, added 2026-11-07) | none | `device_id` / `entity_type, entity_id` | `schemas.SUMMARY_TABLES`; rebuilt by `build_summaries.py`, not by `create_tables.py` |
+| `vigil_md_prod.link_enforcement_recall` and the view `vigil_md_prod.links` (exact links, added 2026-11-10) | none | `link_type, left_id` | `schemas.LINK_COLUMNS`, `schemas.LINK_TABLES`; rebuilt by `build_links.py` |
 
 `{source}` is one of `enforcement`, `recall`, `maude`, `gudid`.
 
@@ -538,6 +539,7 @@ docker compose exec airflow-scheduler airflow dags unpause vigil_md_acquisition
 | Prod looks wrong for a source | Trigger `vigil_md_full_load` with `{"sources": ["<source>"], "rebuild_prod": true}`. This replaces every prod row of that source from all staging history, in one transaction. |
 | GCS is missing raw files | Trigger `vigil_md_full_load` with `"refetch": true` for that source. This downloads the full history again. |
 | The MERGE raises "duplicate merge keys" | Nothing was written (rolled back). Usually `record_date` changed for a key; run the date-stability check and set `PRUNE_BY_DATE` to False for that source. |
+| `build_links` failed | The source tables are fine; only the links may be a day old. Exit 2 = above `--max-gb` (1); exit 3 = a duplicate (left_id, right_id) pair, or no links although both sources have rows: check `link_key` in enforcement and recall before rebuilding. The view `links` is updated only after a successful build. |
 | `build_summaries` failed | The source tables are fine; only the summaries may be a day old. Read the error, fix, clear the task (it rebuilds only what is stale). Exit 2 = above `--max-gb`; exit 3 = duplicate `device_id` in `device_catalog` (two GUDID groups hash the same: investigate before rebuilding). |
 | An `events_*_maude` task failed | PROD `maude` is already merged. Read the error, fix, clear the failed task. Each step replaces its own rows, so re-running is safe. Exit 2 = the dry run was above `--max-gb`. |
 | `events_staging` refuses: ingest date 14+ days old | Its staging partition would expire at once. Build staging for a recent ingest date instead. |

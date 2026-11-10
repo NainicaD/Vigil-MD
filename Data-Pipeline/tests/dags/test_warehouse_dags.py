@@ -467,3 +467,31 @@ def test_trigger_load_date_works_without_logical_date():
     src = (DAGS / "vigil_md_acquisition.py").read_text()
     assert "{{ ds }}" not in src
     assert "ds if ds is defined else dag_run.run_after | ds" in src
+
+
+@pytest.mark.parametrize("dag_id", ["vigil_md_load", "vigil_md_full_load"])
+def test_links_run_after_every_chain_even_if_one_failed(dagbag, dag_id):
+    t = tasks(dagbag.get_dag(dag_id))
+    s = t["build_links"]
+    leaves = {f"load.{chain_steps(src)[-1]}_{src}" for src in SOURCES}
+    assert s.upstream_task_ids == leaves
+    assert "alert_on_failure" in s.downstream_task_ids
+    assert s.pool == "vigil_warehouse"
+    assert str(s.trigger_rule).lower().endswith("all_done")
+
+
+def test_links_args(load, full):
+    from vigil_checks import links_args
+    assert links_args("p") == ["scripts/warehouse/build_links.py", "--project", "p", "--if-changed"]
+    assert "--if-changed" not in links_args("p", if_changed=False)
+    r = run_print_only(links_args("vigil-md-1792696816"))
+    assert r.returncode == 0 and "CREATE OR REPLACE VIEW" in r.stdout, r.stderr[-300:]
+
+
+def test_daily_links_skip_unchanged_sources_and_full_load_always_builds(load, full, monkeypatch):
+    calls = []
+    for mod in (load, full):
+        monkeypatch.setattr(mod, "run_script", lambda *a: calls.append(a))
+    load.build_links()
+    full.build_links()
+    assert "--if-changed" in calls[0] and "--if-changed" not in calls[1]
