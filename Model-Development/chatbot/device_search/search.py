@@ -110,6 +110,17 @@ def device_words(question: str) -> list[str]:
                              and not re.fullmatch(r"(19|20)\d\d", w))]
 
 
+def _same_device_relisted(hit: "Hit", named: "Hit") -> bool:
+    """True when hit is the same device as named listed again with its company's name in front:
+    both devices of one company, and hit's title adds only words of the company's name
+    ("Thoratec HeartMate 3" for "HeartMate 3" by Thoratec). Pure function."""
+    if hit.kind != "device" or named.kind != "device" or hit.company_norm != named.company_norm:
+        return False
+    extra = set(words(hit.title)) - set(words(named.title))
+    company = set(words(hit.company_norm or "")) | set(words(hit.subtitle or ""))
+    return bool(extra) and extra <= company
+
+
 def _matched_only_in_suffix(hit: "Hit", typed: set[str]) -> bool:
     """True for a manufacturer entry "COMPANY - SUFFIX" that shares no typed word with
     COMPANY (the typed words matched its suffix only). Pure function."""
@@ -208,11 +219,21 @@ class DeviceIndex:
             return Resolution("ambiguous", hits[:3], phrase)
         top, rest = hits[0], [h for h in hits[1:] if round(h.score, 2) == round(hits[0].score, 2)]
         # Equal scores: the one entry whose whole name was typed wins ("Natrelle INSPIRA Breast
-        # Implants" over "Natrelle Inspira SoftTouch Breast Implants").
+        # Implants" over "Natrelle Inspira SoftTouch Breast Implants"), unless GUDID lists the
+        # same device again under the company's name plus the typed name, with DOMINANT_RATIO
+        # times the reports ("HeartMate 3" 296 reports, "Thoratec HeartMate 3" 21,203). A
+        # longer name with other words is a different variant ("CoreValve Evolut R") and does
+        # not win. Manufacturer spellings ("TANDEM" vs "TANDEM DIABETES CARE") are left to the
+        # company grouping.
         typed = set(words(phrase))
         whole = [h for h in [top] + rest if set(words(h.title)) <= typed]
         if rest and len(whole) == 1:
-            return Resolution("resolved", whole, phrase)
+            named = whole[0]
+            relisted = [h for h in [top] + rest if h is not named and _same_device_relisted(h, named)]
+            biggest = max(relisted, key=lambda h: h.reports, default=None)
+            if biggest and biggest.reports >= DOMINANT_RATIO * max(1, named.reports):
+                return Resolution("resolved", [biggest], phrase)
+            return Resolution("resolved", [named], phrase)
         # Some manufacturer spellings carry a product after " - " ("MANNKIND CORPORATION -
         # V-GO"). If the typed words match such an entry only in that suffix, it is the
         # product that was asked about: the entry leaves the tie and the devices decide
