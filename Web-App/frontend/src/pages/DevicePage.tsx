@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
-import { SERVICE_UNAVAILABLE_MESSAGE } from "../api/errors";
 import { isEntityKind, type EntityKind, type EntityResponse } from "../api/types";
 import { DataSources } from "../components/device/DataSources";
 import { ProblemsList } from "../components/device/ProblemsList";
@@ -53,7 +52,7 @@ function EntityView({ kind, entityId }: { kind: EntityKind; entityId: string }) 
       {state.status === "not_found" && <PageNotFound inline />}
       {state.status === "error" && (
         <div className="notice" role="alert">
-          <p>{SERVICE_UNAVAILABLE_MESSAGE}</p>
+          <p>{state.message}</p>
           <button type="button" className="btn" onClick={retry}>
             Try again
           </button>

@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHttpApi, entityPath } from "./client";
-import { NotFoundError, SERVICE_UNAVAILABLE_MESSAGE, ServiceUnavailableError, isAbortError } from "./errors";
+import {
+  ApiMessageError,
+  NotFoundError,
+  SERVICE_UNAVAILABLE_MESSAGE,
+  ServiceUnavailableError,
+  failureMessage,
+  isAbortError,
+} from "./errors";
 
 const cfg = { apiBaseUrl: "/api", requestTimeoutMs: 30_000 };
 
@@ -58,6 +65,25 @@ describe("failures (handover §5)", () => {
     const fetchFn = vi.fn(async () => jsonResponse({ detail: "boom" }, 502));
     const error = await createHttpApi(cfg, fetchFn).answer("q", null).catch((e) => e);
     expect(error).toBeInstanceOf(ServiceUnavailableError);
+  });
+
+  it.each([
+    [429, "rate_limited", "Too many questions in a minute. Please wait a moment and try again."],
+    [413, "budget", "That question needs more data than I can read for one question."],
+    [503, "error", "I can't reach the FDA data right now. Please try again in a few minutes."],
+  ])("%i with {status, text} from the API -> ApiMessageError with that text", async (code, status, text) => {
+    const fetchFn = vi.fn(async () => jsonResponse({ status, text }, code));
+    const error = await createHttpApi(cfg, fetchFn).answer("q", null).catch((e) => e);
+    expect(error).toBeInstanceOf(ApiMessageError);
+    expect(failureMessage(error)).toBe(text);
+    expect((error as ApiMessageError).status).toBe(status);
+  });
+
+  it("an error without text (e.g. FastAPI's validation detail) -> the service message", async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ detail: [{ msg: "too long" }] }, 422));
+    const error = await createHttpApi(cfg, fetchFn).answer("q", null).catch((e) => e);
+    expect(error).toBeInstanceOf(ServiceUnavailableError);
+    expect(failureMessage(error)).toBe(SERVICE_UNAVAILABLE_MESSAGE);
   });
 
   it("404 -> NotFoundError", async () => {

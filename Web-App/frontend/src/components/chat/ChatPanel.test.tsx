@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ServiceUnavailableError } from "../../api/errors";
-import type { AnswerResponse } from "../../api/types";
+import { ApiMessageError, ServiceUnavailableError } from "../../api/errors";
+import { MAX_QUESTION_LENGTH, type AnswerResponse } from "../../api/types";
 import { ChatProvider } from "../../chat/ChatProvider";
 import { useChat, type PageEntity } from "../../chat/chatStore";
 import ambiguous from "../../mocks/answers/ambiguous.json";
@@ -148,6 +148,18 @@ describe("statuses from /api/answer (handover §5)", () => {
     expect(answer.mock.calls[1]).toEqual(answer.mock.calls[0]);
   });
 
+  it("an API error with its own text (e.g. rate limit): that text, with Try again", async () => {
+    const text = "Too many questions in a minute. Please wait a moment and try again.";
+    answer.mockImplementationOnce(async () => {
+      throw new ApiMessageError(429, "rate_limited", text);
+    });
+    renderPanel();
+    await ask("Was the AcmeAir CPAP recalled?");
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.queryByText("Can't reach the service, please try again.")).toBeNull();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
   it("network failure or timeout: the short service message, with Try again", async () => {
     answer.mockImplementationOnce(async () => {
       throw new ServiceUnavailableError("timeout");
@@ -171,6 +183,12 @@ describe("chat behaviour (handover §3, §5)", () => {
     expect(screen.getByRole("button", { name: /wait/i })).toBeDisabled();
     resolve(help as AnswerResponse);
     await waitFor(() => expect(screen.queryByText("Looking this up…")).toBeNull());
+  });
+
+  it("limits a question to the API's 1000 characters", () => {
+    renderPanel();
+    expect(MAX_QUESTION_LENGTH).toBe(1000);
+    expect(screen.getByLabelText("Your question")).toHaveAttribute("maxlength", "1000");
   });
 
   it("sends entity: null when no device page is open", async () => {

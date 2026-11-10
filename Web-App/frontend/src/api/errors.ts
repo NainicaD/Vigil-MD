@@ -9,6 +9,26 @@ export class ServiceUnavailableError extends Error {
   }
 }
 
+/**
+ * The API answered with an error that carries its own text, e.g. 429 "Too many questions in a
+ * minute…", 413 (budget) or 503 ("I can't reach the FDA data right now…"). Shown as given.
+ */
+export class ApiMessageError extends Error {
+  constructor(
+    public readonly httpStatus: number,
+    public readonly status: string | null,
+    public readonly text: string,
+  ) {
+    super(text);
+    this.name = "ApiMessageError";
+  }
+}
+
+/** What to show the user for a failed call: the API's own text, or the handover's message. */
+export function failureMessage(error: unknown): string {
+  return error instanceof ApiMessageError ? error.text : SERVICE_UNAVAILABLE_MESSAGE;
+}
+
 /** The API answered 404: no such entry (e.g. a device link that no longer exists). */
 export class NotFoundError extends Error {
   constructor() {

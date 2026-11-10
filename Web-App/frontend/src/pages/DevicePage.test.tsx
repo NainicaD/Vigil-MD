@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NotFoundError, ServiceUnavailableError } from "../api/errors";
+import { ApiMessageError, NotFoundError, ServiceUnavailableError } from "../api/errors";
 import { ChatProvider } from "../chat/ChatProvider";
 import type { EntityResponse } from "../api/types";
 import acmeair from "../mocks/entities/device-acmeair.json";
@@ -107,6 +107,16 @@ describe("DevicePage (handover §3, §4)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(entity).toHaveBeenCalledTimes(2));
     expect(await screen.findByRole("heading", { level: 1, name: "AcmeAir CPAP" })).toBeInTheDocument();
+  });
+
+  it("an API error with its own text (e.g. budget) shows that text", async () => {
+    const text = "That question needs more data than I can read for one question.";
+    entity.mockImplementation(async () => {
+      throw new ApiMessageError(413, "budget", text);
+    });
+    renderAt("/device/device/dev%3A000000acme01");
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
   it("an unknown kind in the address is page not found, without calling the API", () => {
