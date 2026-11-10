@@ -147,3 +147,37 @@ def test_the_built_site_is_served_from_root(tmp_path):
     c = TestClient(api.create_app(bot=bot, web_dist=str(tmp_path)))
     assert "Vigil MD" in c.get("/").text
     assert c.get("/api/health").json()["status"] == "ok"      # the API still wins under /api
+
+
+# ── the container (Dockerfile, ../../.dockerignore) ───────────────────────────
+
+from pathlib import Path  # noqa: E402
+
+CHATBOT = Path(__file__).resolve().parents[1]
+REPO = CHATBOT.parents[1]
+
+
+def test_the_image_copies_every_package_the_api_imports():
+    dockerfile = (CHATBOT / "Dockerfile").read_text()
+    for package in ("answer", "api", "device_search", "query_layer", "query_router"):
+        assert f"COPY Model-Development/chatbot/{package} {package}" in dockerfile, package
+    assert "COPY --from=train /build/models/baseline models/baseline" in dockerfile
+    assert "USER app" in dockerfile                       # not root
+
+
+def test_the_build_context_lets_in_only_what_the_image_needs():
+    lines = [l.strip() for l in (REPO / ".dockerignore").read_text().splitlines()
+             if l.strip() and not l.startswith("#")]
+    assert lines[0] == "*"                                # deny by default
+    allowed = [l[1:] for l in lines if l.startswith("!")]
+    assert not any(".env" in a or "credential" in a or a.startswith("Data-Pipeline")
+                   for a in allowed)
+
+
+def test_serving_versions_match_training_versions():
+    def pins(path):
+        return {l.split("==")[0]: l.split("==")[1].strip() for l in path.read_text().splitlines()
+                if "==" in l and not l.startswith("#")}
+    train, serve = pins(CHATBOT / "requirements.txt"), pins(CHATBOT / "requirements-serve.txt")
+    for lib in ("scikit-learn", "google-cloud-bigquery", "fastapi", "uvicorn"):
+        assert serve[lib] == train[lib], lib
