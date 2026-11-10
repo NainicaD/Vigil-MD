@@ -559,6 +559,37 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
   ("How many deaths…? Should I stop using it?" labelled only `out_of_scope`), only the refusal
   is shown. The router's next model fixes that, not the templates.
 
+## API (`api/app.py`)
+
+The website's HTTP API, the contract in the front-end handover (section 2): FastAPI around the
+device search, the query layer and the chatbot.
+
+| Endpoint | Returns | BigQuery |
+|---|---|---|
+| `GET /api/health` | status, dataset, rules and template fingerprints, index build time | none |
+| `GET /api/search?q=<2-200 chars>&limit=<1-25>` | `{query, hits}`, each hit with `id, kind, entity_id, title, subtitle, reports, deaths, injuries, product_codes` | none (local index) |
+| `GET /api/entity/<kind>/<entity_id>` | `device_summary()` of one entity (device page) | about 40-50 MB billed on PROD |
+| `POST /api/answer` `{"question": "<1-1000 chars>", "entity": null or {"entity_type", "entity_id"}}` | `Chatbot.answer()` without the question echoed back | as the question needs, capped at 0.5 GB |
+
+- **No SQL leaves the API:** every `sources` list is trimmed to `{query, tables}`.
+- **Errors are JSON with a status:** 404 `not_found` (unknown kind), 413 `budget`, 503 `error`
+  (BigQuery unreachable), 422 for bad input, 429 `rate_limited` (questions and device pages,
+  30 a minute per client by default, `VIGIL_RATE_LIMIT_PER_MINUTE`; search is not limited).
+- **Questions are not logged** by the API.
+- `VIGIL_WEB_DIST=<front end dist/>` also serves the website from `/` (one container for both);
+  `VIGIL_CORS_ORIGINS=http://localhost:5173` allows the front end's dev server.
+- The search index connection is shared across the server's threads (read-only;
+  `sqlite3.threadsafety` 3).
+
+```bash
+# from Model-Development/chatbot/, after python -m device_search.build_index
+VIGIL_BQ_DATASET=vigil_md_dev uvicorn api.app:app --port 8000
+curl 'localhost:8000/api/search?q=dreamstation'
+open http://localhost:8000/api/docs          # interactive docs
+```
+
+Tests: `tests/test_api.py` (fake router, index and BigQuery; no network).
+
 ## Handoff: building the answer (step 7)
 
 The pieces for one chatbot turn, in order. Everything returns plain dicts.

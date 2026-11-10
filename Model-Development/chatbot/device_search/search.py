@@ -130,7 +130,9 @@ class DeviceIndex:
         path = p if p.suffix == ".sqlite" else index_path(str(dataset_or_path))
         if not path.exists():
             raise FileNotFoundError(f"{path} not found: run python -m device_search.build_index")
-        return cls(sqlite3.connect(f"file:{path}?mode=ro", uri=True))
+        # Read-only, and SQLite serializes access (sqlite3.threadsafety 3), so the API's worker
+        # threads can share one connection.
+        return cls(sqlite3.connect(f"file:{path}?mode=ro", uri=True, check_same_thread=False))
 
     def _hit(self, row: sqlite3.Row, score: float) -> Hit:
         return Hit(row["id"], row["kind"], row["entity_id"], row["title"], row["subtitle"] or "",
