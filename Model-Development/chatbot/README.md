@@ -580,6 +580,11 @@ device search, the query layer and the chatbot.
   `VIGIL_CORS_ORIGINS=http://localhost:5173` allows the front end's dev server.
 - The search index connection is shared across the server's threads (read-only;
   `sqlite3.threadsafety` 3).
+- **Speed:** the query layer sends a step's dry runs and queries at the same time, and remembers
+  each table's last-modified date for 5 minutes (`backend.py`). Each job's `maximum_bytes_billed`
+  is what is left of the budget minus the other jobs' estimates, so together they stay within
+  it. On `vigil_md_dev` through uvicorn (2026-11-09): device page 1.6-2.8 s, a counts or recall
+  answer 1.3-1.8 s, a narratives answer 4.3 s (two dependent steps), against 7.7-10.5 s before.
 
 ```bash
 # from Model-Development/chatbot/, after python -m device_search.build_index
