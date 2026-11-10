@@ -1,0 +1,14 @@
+model_eq_model,maude_model_eq_gudid_catalog,maude_catalog_eq_gudid_model,catalog_eq_catalog,gudid_model_eq_own_catalog,n_rows,share_of_linked
+True,False,True,False,False,2080313,0.19311
+False,False,True,False,False,1711942,0.158915
+False,False,True,True,True,1545109,0.143429
+True,False,False,False,False,1498244,0.139078
+True,True,True,True,True,1260776,0.117035
+False,False,False,True,False,862572,0.08007
+False,False,False,False,False,658389,0.061117
+True,False,False,True,False,569781,0.052891
+False,True,False,True,False,177845,0.016509
+True,True,False,False,True,171117,0.015884
+False,False,False,False,True,170013,0.015782
+False,True,False,False,False,63591,0.005903
+False,True,True,False,False,2971,0.000276

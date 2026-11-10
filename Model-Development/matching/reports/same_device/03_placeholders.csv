@@ -1,0 +1,151 @@
+field,value,n,share_of_nonnull,is_draft_placeholder
+catalog_number,8100,722626,0.039233,False
+catalog_number,8100 ALARIS LVP MODULE,394554,0.021421,False
+catalog_number,STT-OR-001,292753,0.015894,False
+catalog_number,STP-AT-012,234755,0.012745,False
+catalog_number,MMT-1780KPK,224602,0.012194,False
+catalog_number,STT-OE-002,199999,0.010858,False
+catalog_number,1006402,171631,0.009318,False
+catalog_number,STT-GS-003,153431,0.00833,False
+catalog_number,STT-OM-001,150021,0.008145,False
+catalog_number,8015 ALARIS PCU 1.5 MODULE,141211,0.007667,False
+catalog_number,STS-OR-001,131453,0.007137,False
+catalog_number,MMT-1712K,122769,0.006665,False
+catalog_number,MMT-1884,117295,0.006368,False
+catalog_number,NA,115870,0.006291,True
+catalog_number,1000886,100894,0.005478,False
+catalog_number,MMT-1886,99147,0.005383,False
+catalog_number,1006408,95962,0.00521,False
+catalog_number,MMT-1715K,90409,0.004908,False
+catalog_number,POD-OMNI-I1-6720,88262,0.004792,False
+catalog_number,UNKNOWN,87538,0.004753,True
+catalog_number,MMT-1880,85040,0.004617,False
+catalog_number,STP-AT-013,82946,0.004503,False
+catalog_number,STS-GL-011,82415,0.004474,False
+catalog_number,MMT-1711K,80462,0.004368,False
+catalog_number,MMT-1780KL,78280,0.00425,False
+catalog_number,STT-GF-001,74387,0.004039,False
+catalog_number,SW12300,72507,0.003937,False
+catalog_number,5076-52,69850,0.003792,False
+catalog_number,71938-01,68589,0.003724,False
+catalog_number,MMT-1885,68562,0.003722,False
+catalog_number,1009637,65822,0.003574,False
+catalog_number,STP-GT-002,62813,0.00341,False
+catalog_number,N/A,62507,0.003394,True
+catalog_number,M01A02,61675,0.003348,False
+catalog_number,ZXP425,61391,0.003333,False
+catalog_number,SW10611,54450,0.002956,False
+catalog_number,BLE-I1-529,54407,0.002954,False
+catalog_number,DSX500H11C,53451,0.002902,False
+catalog_number,NI,52442,0.002847,True
+catalog_number,SW12299,52436,0.002847,False
+catalog_number,34131,49730,0.0027,False
+catalog_number,STS-GS-003,49397,0.002682,False
+catalog_number,SEE MODEL NO.,48872,0.002653,False
+catalog_number,SW11677,48853,0.002652,False
+catalog_number,323,48710,0.002645,False
+catalog_number,1006404,47062,0.002555,False
+catalog_number,021.5510,46359,0.002517,False
+catalog_number,POD-BLE-H1-520,46314,0.002514,False
+catalog_number,8015,46300,0.002514,False
+catalog_number,37972,45104,0.002449,False
+catalog_number,1009643,43406,0.002357,False
+catalog_number,8110 ALARIS SYRINGE MODULE,42930,0.002331,False
+catalog_number,021.5310,42489,0.002307,False
+catalog_number,MMT-7841ZN,42313,0.002297,False
+catalog_number,97715,39528,0.002146,False
+catalog_number,DSX500T11C,39045,0.00212,False
+catalog_number,36705,36753,0.001995,False
+catalog_number,MMT-1884L,35243,0.001913,False
+catalog_number,37291,35215,0.001912,False
+catalog_number,MMT-1715KL,35146,0.001908,False
+catalog_number,3058,34139,0.001853,False
+catalog_number,5076-45,33669,0.001828,False
+catalog_number,STP-AT-011,33501,0.001819,False
+catalog_number,34132,33443,0.001816,False
+catalog_number,34125,33435,0.001815,False
+catalog_number,1000885,33415,0.001814,False
+catalog_number,MMT-7841ZW,32388,0.001758,False
+catalog_number,37965,32258,0.001751,False
+catalog_number,1005611,31415,0.001706,False
+catalog_number,UNK,29521,0.001603,True
+catalog_number,34126,29494,0.001601,False
+catalog_number,1013198,29310,0.001591,False
+catalog_number,1005011,29255,0.001588,False
+catalog_number,1010009,29099,0.00158,False
+catalog_number,021.3510,29045,0.001577,False
+model_number,8100,994458,0.063017,False
+model_number,1002717,703704,0.044593,False
+model_number,NA,525440,0.033296,True
+model_number,9445-24,327425,0.020748,False
+model_number,9500-161,312284,0.019789,False
+model_number,1000354,272761,0.017284,False
+model_number,N/A,255429,0.016186,True
+model_number,9445-02,226491,0.014352,False
+model_number,MMT-1780KPK,224611,0.014233,False
+model_number,71992-01,197794,0.012534,False
+model_number,1000096,191614,0.012142,False
+model_number,8015,150783,0.009555,False
+model_number,72081-01,150361,0.009528,False
+model_number,SLACTIVE ROXOLID BL,142903,0.009056,False
+model_number,8100 ALARIS LVP MODULE,123454,0.007823,False
+model_number,9438-06,122840,0.007784,False
+model_number,MMT-1712K,122770,0.00778,False
+model_number,MMT-1884,117357,0.007437,False
+model_number,SLA ROXOLID BL,111019,0.007035,False
+model_number,78768-01,109736,0.006954,False
+model_number,9535-45,100802,0.006388,False
+model_number,MMT-1886,99146,0.006283,False
+model_number,9500-27,94735,0.006003,False
+model_number,MMT-1715K,90407,0.005729,False
+model_number,MMT-1880,85047,0.005389,False
+model_number,MT25042-4,84580,0.00536,False
+model_number,1004000,81759,0.005181,False
+model_number,MMT-1711K,80462,0.005099,False
+model_number,MMT-1780KL,78291,0.004961,False
+model_number,WCD 4000,70025,0.004437,False
+model_number,5076-52,69885,0.004429,False
+model_number,78747-01,69702,0.004417,False
+model_number,MMT-1885,68565,0.004345,False
+model_number,71938-01,67619,0.004285,False
+model_number,M01A02,61676,0.003908,False
+model_number,9445-18,58575,0.003712,False
+model_number,PT-001662,57067,0.003616,False
+model_number,ESS305,56170,0.003559,False
+model_number,NI,56066,0.003553,True
+model_number,18320,54406,0.003448,False
+model_number,BB1001,54168,0.003433,False
+model_number,004628,54023,0.003423,False
+model_number,DSX500H11C,53518,0.003391,False
+model_number,SLA ROXOLID TL,52226,0.003309,False
+model_number,LIFEVEST WCD 4000 SYSTEM,51565,0.003268,False
+model_number,9500-45,49371,0.003129,False
+model_number,9500-160,49165,0.003116,False
+model_number,8110,48099,0.003048,False
+model_number,71940-01,47134,0.002987,False
+model_number,SLA TITANIUM TL,46814,0.002967,False
+model_number,PT-000435,46313,0.002935,False
+model_number,3186,44019,0.002789,False
+model_number,SLA TITANIUM BL,42678,0.002704,False
+model_number,MMT-7841ZN,42330,0.002682,False
+model_number,SLACTIVE ROXOLID TL,41583,0.002635,False
+model_number,97715,39544,0.002506,False
+model_number,DSX500T11C,39092,0.002477,False
+model_number,19191,38490,0.002439,False
+model_number,8015 ALARIS PCU 1.5 MODULE,37160,0.002355,False
+model_number,500001002500,36851,0.002335,False
+model_number,MMT-1884L,35245,0.002233,False
+model_number,4628-003,35159,0.002228,False
+model_number,MMT-1715KL,35149,0.002227,False
+model_number,3058,34172,0.002165,False
+model_number,5076-45,33691,0.002135,False
+model_number,MMT-7841ZW,32390,0.002053,False
+model_number,V60,32383,0.002052,False
+model_number,UNK,30680,0.001944,True
+model_number,MT22719,29768,0.001886,False
+model_number,PT-001446,28302,0.001793,False
+model_number,6935M62,27454,0.00174,False
+model_number,5076-58,27233,0.001726,False
+model_number,8637-40,26711,0.001693,False
+model_number,3660,26370,0.001671,False
+model_number,MMT-332A,25362,0.001607,False

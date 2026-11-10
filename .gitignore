@@ -243,6 +243,20 @@ __marimo__/
 /*.ndjson
 # Per-user Claude Code settings
 .claude/settings.local.json
+# Airflow logs and data written at the repo root by docker compose
+/data/
+/logs/
+# Handovers are sent to a person, not committed: they go stale and contradict the docs
+HANDOFF*
+# Matching workstream local outputs (Model-Development/matching/). Scoped to that folder: as
+# Model-Development/**/... these rules also hid Model-Development/chatbot/data/, where the
+# chatbot's test sets live (the same trap as the website's src/lib/).
+Model-Development/matching/**/data/
+Model-Development/matching/**/*.csv
+Model-Development/matching/**/*.parquet
+Model-Development/**/mlflow.db
+mlruns/
+mlartifacts/
 
 # The website's source is all code: the Python template rules above (lib/, build/, env/,
 # var/, parts/, ...) must not hide any folder under it. Last, so it overrides them.
