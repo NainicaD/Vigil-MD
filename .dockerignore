@@ -9,6 +9,11 @@
 !Model-Development/chatbot/query_layer/
 !Model-Development/chatbot/query_router/
 !Model-Development/chatbot/data/search/
-!Web-App/frontend/dist/
+!Web-App/frontend/
+Web-App/frontend/node_modules
+Web-App/frontend/dist
+Web-App/frontend/coverage
+Web-App/frontend/.env*
+!Web-App/frontend/.env.example
 **/__pycache__
 **/*.pyc
