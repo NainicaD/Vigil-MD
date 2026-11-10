@@ -13,9 +13,13 @@ safe. A model alone cannot guarantee that, so out_of_scope is decided in layers:
   4. The chatbot's output gate (teammate's design) blocks advice wording in drafts.
 
 FROZEN: rules_fingerprint() is recorded with every model and evaluation. Revision 2
-(cf0ad77c93da, 2026-11-08) added "opinion" and "urgent", using held-out misses, so the
-held-out split is no longer unseen: the honest score is the hand-written test set, written
-independently and scored once after this freeze. Changing a pattern makes it stale too.
+(cf0ad77c93da, 2026-11-08) added "opinion" and "urgent", using held-out misses. Revision 3
+(6705cf050941, 2026-11-09) added "decision" and "own_device", extended "opinion",
+"comparison", "best_choice", "can_i" and "safety_judgement", and narrowed "safe_to",
+"dosing" and "safety_judgement" for the three false-alarm-set hits, using the misses of
+handwritten_test.jsonl: that set is a development set now. The honest score is
+handwritten_test_v2.jsonl, written by teammates after this freeze and scored once. Changing a
+pattern makes it stale too.
 
 Fixed replies (never model-written), chosen in route():
   help             "what can you do", "help", "who are you": what the bot answers, no query.
@@ -75,15 +79,27 @@ ADVICE_PATTERNS: tuple[tuple[str, str], ...] = (
     ("safety_judgement", r"\b(?:is|are|was|were)\s+(?!there\b)(?:[\w:.'/-]+\s+){0,6}?(?:a |an )?"
                          + _JUDGE + r"(?:\s+(?:device|devices|choice|option|product|implant|pump|"
                          r"one|enough|anymore|now|still))?\s*(?:$|[?.!,;]|\b(?:to|for|or|and|if|"
-                         r"after|with)\b)"),
-    ("safe_to",          r"\bsafe (?:to|for)\b"),
-    ("comparison",       r"\b(?:safer|better|more reliable|riskier|worse) than\b"),
+                         r"after(?! (?:inspection|testing|evaluation|analysis|investigation|review|"
+                         r"being (?:inspected|tested|returned|evaluated)))|with)\b)"
+                         # "how safe are heart pumps", "how reliable is the G7"
+                         r"|\bhow (?:safe|dangerous|risky|reliable|accurate) (?:is|are|was|were)\b"
+                         r"(?! (?:the |this |that |these |those )?(?:maude |fda )?(?:data|counts?|numbers?|"
+                         r"reports?|database|sources?|figures?|estimates?)\b)"
+                         r"|\b(?:accurate|reliable|safe) enough to (?:dose|use|trust|rely|wear|keep|base|"
+                         r"leave)\b|\b(?:accurate|reliable|safe) enough for (?:me|my|dosing|daily|home)\b"),
+    ("safe_to",          r"^(?!.*\b(?:found|deemed|declared|judged|cleared|rated|said|says|stated|"
+                         r"confirmed)\b[^.?!]{0,30}\bsafe "
+                         r"(?:to|for)\b).*?\bsafe (?:to|for)\b"),
+    ("comparison",       r"\b(?:safer|better|more reliable|riskier|worse) than\b"
+                         r"|\b(?:or|vs\.?|versus) [\w:.'-]+(?: [\w:.'-]+){0,3} (?:better|safer|worse|"
+                         r"more reliable)\b"),
     # "best X on the market / for me", "which is safest" - not "best way to report"
     ("best_choice",      r"\b(?:best|safest|safer|better|most reliable)\b" + _NOT_A_CHOICE +
                          r".{0,40}\b(?:on the market|to (?:buy|use|get|choose|pick)|for (?:me|my|"
                          r"a patient|patients|kids|children|our))\b"
                          r"|\b(?:which|what)(?:'s|(?:\s+[\w:.'-]+){0,3}\s+(?:is|are))\s+(?:the\s+)?"
-                         r"(?:best|safest|safer|better|most reliable)\b" + _NOT_A_CHOICE),
+                         r"(?:best|safest|safer|better|most reliable)\b" + _NOT_A_CHOICE +
+                         r"|\b(?:the )?(?:best|safest|right|better) (?:choice|option|pick|brand|model)\b"),
     # first person only: "should I stop", "I want to switch", "stop using my" - not "replace my"
     ("stop_switch",      r"\b(?:should|can|do|must|could) (?:i|we)(?: still| just)? (?:stop|keep|"
                          r"start|continue|switch|quit|remove|change)\b"
@@ -91,7 +107,8 @@ ADVICE_PATTERNS: tuple[tuple[str, str], ...] = (
                          r"(?: to)? (?:stop|quit|switch|remov|replac)\w*\b"
                          r"|\b(?:stop|quit|keep) (?:using|wearing|taking) (?:my|our|it)\b"),
     # "how much insulin", "how many units … insulin / should I take" - not "units recalled"
-    ("dosing",           r"\bhow (?:much|many units of) insulin\b"
+    ("dosing",           r"\bhow (?:much|many units of) insulin\b(?! (?:was|were|had been|got) "
+                         r"(?:over|under)?-?(?:delivered|given|infused|dosed|administered)\b)"
                          r"|\bhow many units\b.*\b(?:insulin|should i take|do i take)\b"
                          r"|\b(?:what|which) (?:dose|dosage) (?:should|do) (?:i|we|he|she)\b"
                          r"|\bhow much (?:should|do) (?:i|we) (?:take|use|give)\b"),
@@ -103,7 +120,9 @@ ADVICE_PATTERNS: tuple[tuple[str, str], ...] = (
     ("recommend",        r"\b(?:do|would|can|could) you (?:recommend|suggest|advise)\b"
                          r"|\brecommend (?:me|a|an|which|the best)\b|\bmedical advice\b"
                          r"|\b(?:your|any) advice\b"),
-    ("can_i",            r"\bcan i (?:still |keep |safely )?(?:use|wear|take)\b(?!\s+" + _BOT + r")"),
+    ("can_i",            r"\bcan i (?:still |keep |safely )?(?:use|wear|take)\b(?!\s+" + _BOT + r")"
+                         r"|\bcan i (?:go through|travel|fly|swim|shower|exercise|drive|have an mri|"
+                         r"get an mri)\b.{0,40}\b(?:with|wearing|while)\b"),
     # asking the bot's opinion: "do you think X is trustworthy", "would you trust", "…, thoughts?",
     # "is it worth switching", "is that bad", "help me decide"
     ("opinion",          r"\b(?:do|would|did) you (?:think|trust|consider|feel)\b"
@@ -115,7 +134,15 @@ ADVICE_PATTERNS: tuple[tuple[str, str], ...] = (
                          r"|\bis it worth\b|\bworth (?:the risk|switching)\b"
                          r"|\b(?:good|bad|smart) (?:idea|choice|bet)\b|\bcan (?:i|we) trust\b"
                          r"|\bhow (?:worried|concerned|scared) should\b"
-                         r"|\bhelp (?:me|us) (?:decide|choose|pick)\b"),
+                         r"|\bhelp (?:me|us) (?:decide|choose|pick)\b"
+                         r"|\bwould you (?:personally )?(?:rather|prefer|be comfortable|say we should)\b"
+                         r"|\b(?:like|want|need|get) your (?:view|views|verdict|recommendation)\b"
+                         r"|\byour (?:personal|honest|professional|clinical|expert) (?:view|verdict)\b"
+                         r"|\bbe (?:straight|honest) with me\b"
+                         r"|\bwould it be (?:reasonable|wise|smart|better|ok|okay) (?:for (?:me|us) )?to "
+                         r"(?:ask|get|keep|stop|switch|use|have|request|choose|replace|remove|wait)\b"
+                         r"|\b(?:a )?(?:good|bad|right) (?:option|choice|fit|candidate) for (?!(?:my|our|a|"
+                         r"the) (?:research|study|thesis|paper|report|project|analysis|case study)\b)"),
     # the user's own device in trouble now, or an urgent state: "my pump says error 47 and I'm
     # low", "my CPAP keeps alarming", "do I need to go to the ER"
     ("urgent",           r"\bmy (?:(?!(?:is|was|are|on|about)\b)[\w'-]+ ){0,2}?(?:pump|cgm|sensor|"
@@ -127,6 +154,31 @@ ADVICE_PATTERNS: tuple[tuple[str, str], ...] = (
                          r"|\bi(?:'m| am) (?:low|high|bleeding|dizzy|in pain|passing out|"
                          r"short of breath|having chest pain)\b"
                          r"|\b(?:go to|call) (?:the )?(?:er|911|hospital|ambulance|emergency)\b"),
+)
+ADVICE_PATTERNS += (
+    # a decision the user or their institution is making: "should our hospital switch", "we
+    # should buy", "deciding whether to keep mine", "supposed to get one", "want to back out"
+    ("decision",         r"\bshould (?:our|the|my) (?:hospital|clinic|practice|lab|team|unit|department|"
+                         r"cath lab|doctor|surgeon|cardiologist)\b"
+                         r"|\b(?:i|we) should (?:still )?(?:be )?(?:using|use|buy|get|keep|stop|switch|"
+                         r"choose|pick|stock|order|wear)\b(?! (?:these|those|this data|the data|the reports|"
+                         r"them)\b)"
+                         r"|\b(?:i|we|i'?m|i am|we're|we are|trying to)(?: \w+)? (?:decid\w*|figur\w* out|"
+                         r"choos\w*) (?:whether|if)\b"
+                         r"|\b(?:i'?m|i am|we're|we are|i was|(?:my|our) \w+ (?:is|are|was)|he's|she's) "
+                         r"(?:supposed|scheduled|due) to (?:get|have|receive)\b"
+                         r"|\b(?:i'?m|i am|(?:my|our) " + _RELATIVE + r" (?:is|are)) getting (?:one|it|a|an|"
+                         r"the)\b"
+                         r"|\bwants? to back out\b"
+                         r"|\b(?:if|whether) (?:he|she|i|they|we)(?:'ll| will) be (?:ok|okay|fine|alright|"
+                         r"safe)\b"),
+    # the user's own device or body now: "mine feels loose", "keep mine", "I feel shaky",
+    # "my sensor is reading wrong"
+    ("own_device",       r"(?<!said )(?<!says )(?<!wrote )\bmine (?:feels|is|seems|looks|might|may|has|"
+                         r"keeps|started|was)\b"
+                         r"|\b(?:keep|keeping|using|wearing|replace|remove) mine\b"
+                         r"|\bi feel (?:shaky|sick|faint|weak|dizzy|off|unwell|bad|funny)\b"
+                         r"|\bmy \w+ (?:is|are|seems?) (?:reading|giving) (?:wrong|off|high|low|weird)\b"),
 )
 _COMPILED = tuple((name, re.compile(pat)) for name, pat in ADVICE_PATTERNS)
 
