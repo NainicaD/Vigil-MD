@@ -576,8 +576,13 @@ device search, the query layer and the chatbot.
   (BigQuery unreachable), 422 for bad input, 429 `rate_limited` (questions and device pages,
   30 a minute per client by default, `VIGIL_RATE_LIMIT_PER_MINUTE`; search is not limited).
 - **Questions are not logged** by the API.
-- `VIGIL_WEB_DIST=<front end dist/>` also serves the website from `/` (one container for both);
-  `VIGIL_CORS_ORIGINS=http://localhost:5173` allows the front end's dev server.
+- `VIGIL_WEB_DIST=<front end dist/>` also serves the website from `/` (one container for both):
+  files in `dist/` as files, any other non-API path as `index.html`, so device links work when
+  opened directly or reloaded; unknown `/api/...` paths stay JSON 404s, and nothing outside
+  `dist/` is read. `VIGIL_CORS_ORIGINS=http://localhost:5173` allows the front end's dev server.
+- **Rate limit behind Cloud Run:** uvicorn trusts the proxy's `X-Forwarded-For`
+  (`--forwarded-allow-ips` in the Dockerfile), so the limit is per visitor. A visitor can forge
+  that header to get a fresh limit; the per-question cost cap and the daily quota still hold.
 - The search index connection is shared across the server's threads (read-only;
   `sqlite3.threadsafety` 3).
 - **Speed:** the query layer sends a step's dry runs and queries at the same time, and remembers
@@ -611,10 +616,11 @@ curl localhost:8080/api/health
   `python -m device_search.build_index --dataset <name>`), and runs as a non-root user.
 - No credentials in the image: locally, mount gcloud application-default credentials
   read-only (above); on Cloud Run the service account is used.
-- The front end's build goes in with the two commented lines near the end of the Dockerfile,
-  once `Web-App/frontend/dist/` exists.
-- Checked 2026-11-09: build 2.4 min, image 674 MB with the dev index (the PROD index adds
-  712 MB); health, search and an answer correct through the container.
+- A `node:22` stage builds the website from `Web-App/frontend/` (`npm ci`, then `npm run build`
+  with `VITE_USE_MOCKS=false`), so a clean clone builds without a `dist/` on disk.
+- Checked 2026-11-10 with the website: image 675 MB with the dev index (the PROD index adds
+  712 MB); `/` and a directly opened device link return the page, assets load, the bundle has
+  no example data, and health, a device page and an answer work through the container.
 
 ## Handoff: building the answer (step 7)
 
