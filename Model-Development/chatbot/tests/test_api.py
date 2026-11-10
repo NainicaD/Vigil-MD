@@ -140,13 +140,43 @@ def test_public_removes_sql_everywhere():
                    "nested": [{"sources": [{"query": "q", "tables": []}]}]}
 
 
-def test_the_built_site_is_served_from_root(tmp_path):
-    (tmp_path / "index.html").write_text("<!doctype html><title>Vigil MD</title>")
+@pytest.fixture
+def site(tmp_path):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<!doctype html><title>Vigil MD</title>")
+    (dist / "assets" / "app.js").write_text("console.log(1)")
+    (dist / "favicon.svg").write_text("<svg/>")
+    (tmp_path / "secret.txt").write_text("not public")
     bot, _, _ = test_answer.make_bot(["counts"])
     bot.index = FakeSearchIndex(search.Resolution("resolved", [test_answer.hit()], "x"))
-    c = TestClient(api.create_app(bot=bot, web_dist=str(tmp_path)))
-    assert "Vigil MD" in c.get("/").text
-    assert c.get("/api/health").json()["status"] == "ok"      # the API still wins under /api
+    return TestClient(api.create_app(bot=bot, web_dist=str(dist)))
+
+
+def test_the_built_site_is_served_from_root(site):
+    assert "Vigil MD" in site.get("/").text
+    assert site.get("/api/health").json()["status"] == "ok"   # the API still wins under /api
+
+
+def test_a_device_link_opened_or_reloaded_gets_the_page(site):
+    # a single-page-app path is not a file: index.html, and the page's router shows it
+    r = site.get(f"/device/device/{DEV}")
+    assert r.status_code == 200 and "Vigil MD" in r.text
+
+
+def test_real_files_are_served_as_files(site):
+    assert site.get("/assets/app.js").text == "console.log(1)"
+    assert site.get("/favicon.svg").text == "<svg/>"
+
+
+def test_unknown_api_paths_stay_json_404s(site):
+    r = site.get("/api/nothing-here")
+    assert r.status_code == 404 and r.json()["status"] == "not_found"
+
+
+def test_nothing_outside_the_build_can_be_read(site):
+    for path in ("/../secret.txt", "/%2e%2e/secret.txt", "/assets/../../secret.txt"):
+        assert "not public" not in site.get(path).text, path
 
 
 # ── the container (Dockerfile, ../../.dockerignore) ───────────────────────────
@@ -162,6 +192,9 @@ def test_the_image_copies_every_package_the_api_imports():
     for package in ("answer", "api", "device_search", "query_layer", "query_router"):
         assert f"COPY Model-Development/chatbot/{package} {package}" in dockerfile, package
     assert "COPY --from=train /build/models/baseline models/baseline" in dockerfile
+    assert "COPY --from=web /web/dist web" in dockerfile    # the website, built in the image
+    assert "VITE_USE_MOCKS=false" in dockerfile
+    assert "--forwarded-allow-ips" in dockerfile           # per-visitor rate limit on Cloud Run
     assert "USER app" in dockerfile                       # not root
 
 
@@ -170,8 +203,11 @@ def test_the_build_context_lets_in_only_what_the_image_needs():
              if l.strip() and not l.startswith("#")]
     assert lines[0] == "*"                                # deny by default
     allowed = [l[1:] for l in lines if l.startswith("!")]
-    assert not any(".env" in a or "credential" in a or a.startswith("Data-Pipeline")
-                   for a in allowed)
+    assert not any((".env" in a and not a.endswith(".env.example")) or "credential" in a
+                   or a.startswith("Data-Pipeline") for a in allowed)
+    for kept_out in ("Web-App/frontend/node_modules", "Web-App/frontend/dist",
+                     "Web-App/frontend/.env*"):
+        assert kept_out in lines, kept_out
 
 
 def test_serving_versions_match_training_versions():

@@ -1,0 +1,29 @@
+{
+  "entity": {
+    "type": "device",
+    "id": "dev:000000acme04",
+    "found": false,
+    "title": "Acme Legacy Nebulizer",
+    "subtitle": "Example Medical Inc.",
+    "product_codes": [
+      "ZZU"
+    ]
+  },
+  "counts": {
+    "total_reports": 0,
+    "by_event_type": {},
+    "by_year": {}
+  },
+  "counts_note": "Reports linked to this device by UDI. Reports without a UDI are not counted.",
+  "problems": {
+    "device": [],
+    "patient": [],
+    "no_harm_reports": null
+  },
+  "recalls": {
+    "total": 0,
+    "shown": []
+  },
+  "data_as_of": {},
+  "sources": []
+}

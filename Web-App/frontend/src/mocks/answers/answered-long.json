@@ -1,0 +1,56 @@
+{
+  "status": "answered",
+  "text": "**Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations)** (Acme Diabetes Care Holdings, Incorporated, a subsidiary of Example Medical Technologies International): 98,765 reports linked by UDI in FDA MAUDE (2016–2025).\n\n**Who makes it:** Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations) is listed in FDA GUDID by Acme Diabetes Care Holdings, Incorporated, a subsidiary of Example Medical Technologies International. Models include AX-2000; AX-2000P; AX-2000-EXT; AX-2001 (rev B); AX-2002 (14 in total). Product codes: ZZX, ZZW, ZZV.\n\n**Reports by event type:** 52 deaths, 8,000 injuries, 90,012 malfunctions and 701 other or not stated.\nReports per year (latest 5 years with reports): 2021: 10,880, 2022: 11,840, 2023: 9,800, 2024: 10,760, 2025: 11,720.\n\n**Recalls:** 57 found whose product description names this device. Newest first:\n- Class I, 2025-08-19 (ongoing): \"Example recall reason (mock data). The firm identified that under certain conditions the infusion set connector may separate from the reservoir during extended wear, which could interrupt delivery…\" Action: \"Example action (mock data). The firm sent an urgent notice to customers with inspection instructions, a replacement schedule for affected lots, and a software update procedure to be completed by the…\"\n- Class II, 2021-03-30 (terminated): \"Example recall reason (mock data).\"\n- …and 55 more.\n\n**What the reports describe** (5, newest first, one event type at a time):\n- *Death, received 2025-10-02* (report 9000001): \"Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Exampl…\"\n- *Injury, received 2025-09-28* (report 9000002): \"Example report text (mock data) containing characters that must show as text: <script>alert('x')</script> <b>not bold</b> & [a link](https://example.org) # not a heading `not code` (b)(6).\"\n- *Malfunction, received 2025-09-20* (report 9000003): \"Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Example report text (mock\"\n- *Death, received 2025-08-11* (report 9000004): \"(b)(4). Example report text (mock data) where the manufacturer withheld details.\"\n- *Injury, received 2025-07-30* (report 9000005): \"Short example text (mock data).\"\n(b)(4) and (b)(6) mark text the FDA withheld (confidential or personal).\n\nMAUDE reports are sent in by manufacturers, health professionals and patients. A report does not prove that the device caused the event, and report counts are not failure rates.\nReports without a UDI are not linked to a device, so the real number can be higher.\n**Sources:** FDA MAUDE and GUDID, FDA MAUDE reports, MAUDE problem codes, FDA recalls and enforcement, FDA GUDID, MAUDE report text (BigQuery, data as of 2026-11-08).",
+  "sections": [
+    {
+      "kind": "headline",
+      "entity": "dev:000000acme03",
+      "text": "**Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations)** (Acme Diabetes Care Holdings, Incorporated, a subsidiary of Example Medical Technologies International): 98,765 reports linked by UDI in FDA MAUDE (2016–2025)."
+    },
+    {
+      "kind": "identity",
+      "entity": "dev:000000acme03",
+      "text": "**Who makes it:** Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations) is listed in FDA GUDID by Acme Diabetes Care Holdings, Incorporated, a subsidiary of Example Medical Technologies International. Models include AX-2000; AX-2000P; AX-2000-EXT; AX-2001 (rev B); AX-2002 (14 in total). Product codes: ZZX, ZZW, ZZV."
+    },
+    {
+      "kind": "counts",
+      "entity": "dev:000000acme03",
+      "text": "**Reports by event type:** 52 deaths, 8,000 injuries, 90,012 malfunctions and 701 other or not stated.\nReports per year (latest 5 years with reports): 2021: 10,880, 2022: 11,840, 2023: 9,800, 2024: 10,760, 2025: 11,720."
+    },
+    {
+      "kind": "recalls",
+      "entity": "dev:000000acme03",
+      "text": "**Recalls:** 57 found whose product description names this device. Newest first:\n- Class I, 2025-08-19 (ongoing): \"Example recall reason (mock data). The firm identified that under certain conditions the infusion set connector may separate from the reservoir during extended wear, which could interrupt delivery…\" Action: \"Example action (mock data). The firm sent an urgent notice to customers with inspection instructions, a replacement schedule for affected lots, and a software update procedure to be completed by the…\"\n- Class II, 2021-03-30 (terminated): \"Example recall reason (mock data).\"\n- …and 55 more."
+    },
+    {
+      "kind": "narratives",
+      "entity": "dev:000000acme03",
+      "text": "**What the reports describe** (5, newest first, one event type at a time):\n- *Death, received 2025-10-02* (report 9000001): \"Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Exampl…\"\n- *Injury, received 2025-09-28* (report 9000002): \"Example report text (mock data) containing characters that must show as text: <script>alert('x')</script> <b>not bold</b> & [a link](https://example.org) # not a heading `not code` (b)(6).\"\n- *Malfunction, received 2025-09-20* (report 9000003): \"Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Example report text (mock data). It was reported that the device displayed an error during use and the user switched to a backup device. The device was returned to the manufacturer for evaluation. Example report text (mock\"\n- *Death, received 2025-08-11* (report 9000004): \"(b)(4). Example report text (mock data) where the manufacturer withheld details.\"\n- *Injury, received 2025-07-30* (report 9000005): \"Short example text (mock data).\"\n(b)(4) and (b)(6) mark text the FDA withheld (confidential or personal)."
+    },
+    {
+      "kind": "footer",
+      "text": "MAUDE reports are sent in by manufacturers, health professionals and patients. A report does not prove that the device caused the event, and report counts are not failure rates.\nReports without a UDI are not linked to a device, so the real number can be higher.\n**Sources:** FDA MAUDE and GUDID, FDA MAUDE reports, MAUDE problem codes, FDA recalls and enforcement, FDA GUDID, MAUDE report text (BigQuery, data as of 2026-11-08)."
+    }
+  ],
+  "search": {
+    "status": "resolved",
+    "phrase": "glucosense",
+    "matches": [
+      {
+        "type": "device",
+        "id": "dev:000000acme03",
+        "title": "Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations)",
+        "score": 1.0
+      }
+    ]
+  },
+  "entities": [
+    {
+      "type": "device",
+      "id": "dev:000000acme03",
+      "title": "Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations)",
+      "found": true,
+      "total_reports": 98765
+    }
+  ]
+}

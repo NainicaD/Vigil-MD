@@ -1,0 +1,16 @@
+{
+  "status": "not_found",
+  "text": "I couldn't find \"xyz\" in the FDA device list. Try the brand name, the company, or the 3-letter FDA product code.",
+  "sections": [
+    {
+      "kind": "not_found",
+      "text": "I couldn't find \"xyz\" in the FDA device list. Try the brand name, the company, or the 3-letter FDA product code."
+    }
+  ],
+  "search": {
+    "status": "none",
+    "phrase": "xyz",
+    "matches": []
+  },
+  "entities": []
+}

@@ -1,0 +1,16 @@
+{
+  "status": "need_device",
+  "text": "Which device do you mean? Give its brand name (for example \"DreamStation\"), the company, or its 3-letter FDA product code.",
+  "sections": [
+    {
+      "kind": "need_device",
+      "text": "Which device do you mean? Give its brand name (for example \"DreamStation\"), the company, or its 3-letter FDA product code."
+    }
+  ],
+  "search": {
+    "status": "none",
+    "phrase": "",
+    "matches": []
+  },
+  "entities": []
+}
