@@ -79,6 +79,10 @@ SOURCE_NAMES = {
     'device_catalog': 'FDA GUDID',
 }
 
+# Before the summary shown when no part of the question was recognised but the device was.
+SUMMARY_FALLBACK_NOTE = ("I wasn't sure which part you wanted, so here is a summary of what "
+                         'FDA reports and recalls say.')
+
 # Replies when there is nothing to look up or something went wrong.
 UNCLEAR = ("I'm not sure what you're asking. I can tell you how many reports "
            'a device has (deaths, injuries, malfunctions), what problems are '
