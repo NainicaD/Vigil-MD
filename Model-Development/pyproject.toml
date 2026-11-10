@@ -1,5 +1,0 @@
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-# replaces the sys.path hack conftest.py used to do; lets tests import
-# vigil_model.* and pipeline.* from any working directory
-pythonpath = ["."]

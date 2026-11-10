@@ -15,7 +15,7 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /gcloud/application_default_credentials.json
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-mlops-lab-511420}
     volumes:
-      - ./Model-Development:/mlflow  # holds mlflow.db, the run index the scripts also write directly
+      - ./Model-Development/matching:/mlflow  # holds mlflow.db, the run index the scripts also write directly
       - ${GCLOUD_CONFIG_DIR:?set GCLOUD_CONFIG_DIR in .env to your gcloud config dir}:/gcloud:ro
     command: >
       mlflow server --host 0.0.0.0 --port 5000
