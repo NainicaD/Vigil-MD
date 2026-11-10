@@ -90,6 +90,15 @@ def summary_args(project: str, if_changed: bool = True) -> list[str]:
     return [SUMMARY_SCRIPT, "--project", project] + (["--if-changed"] if if_changed else [])
 
 
+LINKS_TASK = "build_links"
+LINKS_SCRIPT = "scripts/warehouse/build_links.py"
+
+
+def links_args(project: str, if_changed: bool = True) -> list[str]:
+    """CLI args for the exact link tables (after every source's chain). Pure function."""
+    return [LINKS_SCRIPT, "--project", project] + (["--if-changed"] if if_changed else [])
+
+
 def events_args(step: str, project: str, ingest_date: str) -> list[str]:
     """CLI args for one MAUDE event step. Pure function."""
     return [EVENTS_SCRIPT, "--project", project, "--ingest-date", ingest_date,
