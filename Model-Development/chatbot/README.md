@@ -668,9 +668,12 @@ gcloud run deploy vigil-md --image $IMG --region us-central1 --project vigil-md-
   --memory 2Gi --cpu 1 --cpu-boost --concurrency 20 --timeout 60 --set-env-vars VIGIL_BQ_DATASET=vigil_md_prod
 ```
 
-`--cpu-boost` gives the container extra CPU while it starts (no charge), which shortens the
-first request after a quiet spell; on 2026-11-10 a fresh revision took 10-18 s for its first
-requests (start plus the first read of the 712 MB index), then 0.3-3.4 s.
+`--cpu-boost` gives the container extra CPU while it starts (no charge). It did not shorten the
+cold start here: on 2026-11-10 a fresh revision took 10-18 s without it and 22-24 s with it for
+its first requests, then 0.1-4.9 s. The likely cause is Cloud Run loading the image's files on
+demand (the first searches read the 712 MB index for the first time) plus the first BigQuery
+connection, not CPU. A warm-up at startup (read the index once, one cheap BigQuery call) is a
+possible free fix, not yet tried.
 
 **Check it privately:**
 
