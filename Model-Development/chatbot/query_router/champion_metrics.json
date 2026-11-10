@@ -1,21 +1,21 @@
 {
   "metrics": {
-    "macro_f1": 0.7844,
-    "exact_match": 0.6435,
+    "macro_f1": 0.788,
+    "exact_match": 0.6522,
     "answered_facts_with_refusal": 0.9494,
-    "advice_recall_rules": 0.6724,
+    "advice_recall_rules": 1.0,
     "false_refusal_rate_rules": 0.0,
     "advice_recall_model": 0.9483,
     "false_refusal_rate_model": 0.1329,
-    "advice_recall": 0.9483,
+    "advice_recall": 1.0,
     "false_refusal_rate": 0.1329,
-    "bias_max_gap_advice_recall": 0.25,
+    "bias_max_gap_advice_recall": 0.0,
     "bias_max_gap_false_refusal_rate": 0.25,
-    "falsealarm_flagged": 0.3571
+    "falsealarm_flagged": 0.2857
   },
-  "rules_fingerprint": "cf0ad77c93da",
+  "rules_fingerprint": "6705cf050941",
   "data": "data/test/handwritten_test.jsonl",
-  "model": "1",
+  "model": "4",
   "params": {
     "C": 1.0
   }

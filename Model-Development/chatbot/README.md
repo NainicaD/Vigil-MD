@@ -64,8 +64,32 @@ trustworthy", "would you trust…", "…, thoughts?", "is it worth switching", "
 `urgent` ("my pump says error 47 and I'm low", "my CPAP keeps alarming", "do I need to go to the
 ER"). Those patterns came from held-out misses, so **the held-out split is no longer unseen**: the
 honest score is the hand-written test set, written independently of the rules and templates and
-scored once after this freeze. The three false-alarm-set rule hits were left as they are, because
-the rules must not be tuned against that set. Any further rule change needs a new test set.
+scored once after this freeze. Any further rule change needs a new test set.
+
+**Revision 3** (`6705cf050941`, 2026-11-09) adds `decision` (the user or their institution
+deciding: "should our hospital switch", "we should buy", "I'm deciding whether to keep mine",
+"I'm supposed to get one", "want to back out") and `own_device` ("mine feels loose", "keep
+mine", "I feel shaky", "my sensor is reading wrong"), and extends `opinion` ("would you rather",
+"your view", "be straight with me", "would it be reasonable to ask my cardiologist"),
+`comparison` ("natrelle or mentor better"), `best_choice` ("the best choice"), `can_i` ("can I
+go through airport security with my…") and `safety_judgement` ("how safe are…", "accurate
+enough to dose"). It narrows three patterns so reported findings are not refused ("was okay
+after inspection", "found the device safe to continue", "how much insulin was over-delivered").
+
+| Rules alone | rev 2 `cf0ad77c93da` | rev 3 `6705cf050941` |
+|---|---|---|
+| Advice caught: generated train / val / held-out | 63% / 80% / 66% | 72% / 91% / 76% |
+| Normal generated questions flagged | 0 | 0 |
+| False-alarm set flagged (42) | 3 | 0 |
+| End-to-end questions (dev + PROD) wrongly flagged | 0 | 0 |
+| Factual probes with the new trigger words (39) | 6 | 3 (all three from rev 2) |
+
+The new patterns were written from the 19 rule misses in `handwritten_test.jsonl`, so **that set
+is a development set now** (rules alone catch 58 of 58 there, which says nothing). The probes
+and the new advice examples are tests in `tests/test_query_router.py`. The honest score comes
+from `data/test/handwritten_test_v2.jsonl`, written by teammates after this freeze and scored
+once. Until then `champion_metrics.json` holds the TF-IDF model retrained under revision 3,
+scored on the old set (development numbers, for CI only).
 
 ### Data
 
@@ -235,10 +259,10 @@ Follows the shared conventions in [`../MLFLOW.md`](../MLFLOW.md); the code is in
 
 ### Next steps
 
-- **Next rule revision** (then a new test set, since this one will have been seen): disguised
-  advice in the injury slice and the three misses above; the three false-alarm-set rule hits
-  ("was okay after inspection", "found the device safe to continue using", "how much insulin was
-  over-delivered").
+- **Fresh test set** (`handwritten_test_v2.jsonl`, teammates who have not seen the rules), then
+  score the champion and the challengers once and run the gate.
+- Compare other scikit-learn model types (linear SVM, naive Bayes) with the logistic regression
+  on the same splits.
 - Small transformer (e.g. DistilBERT) fine-tuned for multi-label, compared on the same sets:
   goals are fewer false refusals, more labels right on real phrasing, and the injury gap.
 - DVC stages (generate → train → evaluate → gate).
