@@ -88,8 +88,7 @@ The new patterns were written from the 19 rule misses in `handwritten_test.jsonl
 is a development set now** (rules alone catch 58 of 58 there, which says nothing). The probes
 and the new advice examples are tests in `tests/test_query_router.py`. The honest score comes
 from `data/test/handwritten_test_v2.jsonl`, written by teammates after this freeze and scored
-once. Until then `champion_metrics.json` holds the TF-IDF model retrained under revision 3,
-scored on the old set (development numbers, for CI only).
+once (results below); `champion_metrics.json`, the CI gate and `sensitivity.py` use it.
 
 ### Data
 
@@ -113,7 +112,38 @@ Fixed sets in [`data/test/`](data/test/README.md), written without seeing the ru
 | `false_alarm_set.jsonl` | 42 | factual questions with trigger words: how often they are flagged |
 | `e2e_dev.jsonl` | 48 | the whole chatbot on `vigil_md_dev`, with reference answers |
 
-### Results (hand-written test set, rules `cf0ad77c93da`, 2026-11-08)
+### Results (fresh test set `handwritten_test_v2.jsonl`, rules `6705cf050941`, 2026-11-09)
+
+242 questions written by teammates who had not seen the rules, templates or generated data,
+after revision 3 was frozen: 67 medical-advice questions (39 disguised), 14 unrelated, 43
+multi-label, 37 about injuries; no overlap with any other set. Each candidate was chosen on
+train/val (`compare.py`) and scored here once.
+
+| | **LR, C = 1 (champion)** | Linear SVM, C = 4 | Naive Bayes, alpha = 1 |
+|---|---|---|---|
+| Advice recall (67) | **1.000** | 0.970 (2 missed) | 0.985 |
+| False refusals (161 in-scope) | 16.2% | 13.0% | 12.4% |
+| Macro-F1 / exact match | 0.761 / 0.599 | 0.761 / 0.632 | 0.736 / 0.624 |
+| Normal questions answered (facts_with_refusal) | **88.2%** | 82.6% | 79.5% |
+| False-alarm set flagged (42) | 28.6% | 28.6% | 28.6% |
+| Bias gap: advice recall / false refusals | 0.00 / 0.585 | 0.07 / 0.625 | 0.07 / 0.50 |
+| Validation (for comparison): false refusals / macro-F1 | 10.5% / 0.825 | 6.7% / 0.822 | 11.9% / 0.757 |
+
+- **Gate: the champion stays.** The SVM refuses fewer normal questions, but it misses 2 advice
+  questions (tolerance 0.01) and answers 5.6 points fewer normal questions; its validation lead
+  did not hold on real phrasing.
+- **Rules alone** catch 62.7% of the new advice questions (revision 2 caught 67.2% of the old
+  set's), so the model still carries most of the safety.
+- **Injury gap: closed.** All 14 injury advice questions are refused and none of the 23 injury
+  questions is refused by mistake (the old set's 0.25 gap came from 8 questions).
+- **New flag: false refusals by style and audience.** Long questions 5 of 8 refused (gap 0.585,
+  limit 0.25; CI only warns), procurement 9 of 28, hip/knee implants 4 of 12. Small slices, but
+  they match the feature importance: wordy questions carry more of the generic words that push
+  `out_of_scope` ("is", "my", "should").
+- **Sensitivity:** a threshold of 0.55 would keep 98% advice recall here with 13.7% false
+  refusals; it stays at 0.50, because choosing it from this set would be tuning on it.
+
+### Earlier results (230-question set, rules `cf0ad77c93da`, 2026-11-08; a development set now)
 
 Champion: TF-IDF (words + characters) + one logistic regression per label, C = 1
 (registry `chatbot-query-router` version 1, alias `champion`).
@@ -259,10 +289,9 @@ Follows the shared conventions in [`../MLFLOW.md`](../MLFLOW.md); the code is in
 
 ### Next steps
 
-- **Fresh test set** (`handwritten_test_v2.jsonl`, teammates who have not seen the rules), then
-  score the champion and the challengers once and run the gate.
-- Compare other scikit-learn model types (linear SVM, naive Bayes) with the logistic regression
-  on the same splits.
+- **False refusals on long and procurement questions:** the next router model or training data
+  with more long, factual phrasings (the generated questions are short); then a new test set,
+  since this one has now been scored.
 - Small transformer (e.g. DistilBERT) fine-tuned for multi-label, compared on the same sets:
   goals are fewer false refusals, more labels right on real phrasing, and the injury gap.
 - DVC stages (generate → train → evaluate → gate).

@@ -7,11 +7,12 @@ training or tuning**.
 **Who writes it:** someone who has **not** read `query_router/templates.py` or the rules.
 Write questions the way real people would ask them.
 
-**Status (2026-11-08):** `handwritten_test.jsonl` has 230 rows, written by a separate agent
-session that was given only this README and `labels.py` (no access to the templates, the rules
-or the generated data). The rules were frozen at `cf0ad77c93da` before it was written, and it
-was scored once. Teammates should add their own rows: a second, human-written set is the
-stronger check, and after the next rule revision this one counts as seen.
+**Status (2026-11-09):** `handwritten_test_v2.jsonl` (242 rows) is the test set. Teammates
+who had not seen the rules, templates or generated data wrote it after rule revision 3
+(`6705cf050941`) was frozen, and it was scored once (results in `../../README.md`). The gate
+and CI use it. `handwritten_test.jsonl` (230 rows, written by a separate agent session before
+revision 3) is a development set now: revision 3 was written from its misses. The next rule
+revision or model change that uses this set's misses needs a new set again.
 
 Extra fields used by the bias slices: `device_type` (insulin_pump, cpap, heart_pump,
 breast_implant, pacemaker_icd, glucose_monitor, infusion_pump, hip_knee_implant, app_software,
