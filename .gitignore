@@ -245,7 +245,7 @@ __marimo__/
 # Handovers are sent to a person, not committed: they go stale and contradict the docs
 HANDOFF*
 # Model development local outputs
-Model-Development/data/
+Model-Development/**/data/
 Model-Development/**/*.csv
 Model-Development/**/mlflow.db
 mlruns/
