@@ -421,6 +421,11 @@ device_summary(backend, **index.query_key(r.matches[0]), budget=budget)
   typed words match only in that suffix leaves a tie, so "V-Go" resolves to the device;
   plain company names ("MENTOR TEXAS", "OMNIPOD") and a typed company ("mannkind") are
   unchanged (2026-11-09).
+- **Added 2026-11-10:** the typed whole name yields only to the same device listed again with
+  its company's name in front and 3x the reports ("HeartMate 3", 296 reports, resolves to
+  "Thoratec HeartMate 3", 21,203). A longer name with other words is a different variant and
+  does not win ("CoreValve Evolut" stays, not "CoreValve Evolut R"); manufacturer spellings
+  ("TANDEM" vs "TANDEM DIABETES CARE") are left to the company grouping.
 - **Report counts for devices are exact UDI links only.** Many reports have no UDI:
   DreamStation has 30,356 linked reports in `vigil_md_prod`, while product code BZD has many
   more. Answers should say "reports linked by UDI". The matching team's predicted links will add
@@ -660,8 +665,12 @@ Wait for the push to finish before deploying, or the deploy fails with "image no
 gcloud run deploy vigil-md --image $IMG --region us-central1 --project vigil-md-1792696816 \
   --service-account vigil-md-chatbot@vigil-md-1792696816.iam.gserviceaccount.com \
   --no-allow-unauthenticated --min-instances 0 --max-instances 2 \
-  --memory 2Gi --cpu 1 --concurrency 20 --timeout 60 --set-env-vars VIGIL_BQ_DATASET=vigil_md_prod
+  --memory 2Gi --cpu 1 --cpu-boost --concurrency 20 --timeout 60 --set-env-vars VIGIL_BQ_DATASET=vigil_md_prod
 ```
+
+`--cpu-boost` gives the container extra CPU while it starts (no charge), which shortens the
+first request after a quiet spell; on 2026-11-10 a fresh revision took 10-18 s for its first
+requests (start plus the first read of the 712 MB index), then 0.3-3.4 s.
 
 **Check it privately:**
 
@@ -684,7 +693,8 @@ vigil-md-1792696816 --member=allUsers --role=roles/run.invoker` (undo with
 `remove-iam-policy-binding`).
 
 **Cost:** the service scales to zero (nothing billed when idle; the first request after a quiet
-spell takes about 8 s), and course traffic stays in Cloud Run's free tier. The image storage is
+spell takes about 8-18 s; keeping one instance warm with `--min-instances 1` avoids that but
+costs about $10-20 a month), and course traffic stays in Cloud Run's free tier. The image storage is
 about $0.05 a month after the free 0.5 GB. BigQuery reads per question are the real cost, the
 same wherever the app runs.
 
