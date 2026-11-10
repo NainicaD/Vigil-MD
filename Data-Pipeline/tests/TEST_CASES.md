@@ -43,6 +43,7 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `dags/test_vigil_helpers.py` | Shared DAG helpers: live logs, kill on stop, alert names failed tasks | 23 | pass |
 | `test_build_maude_events.py` | MAUDE event tables: staging, problems, text (SQL, cost guard, filter) | 31 | pass |
 | `test_build_summaries.py` | Daily summary tables: SQL, partitioning, build order, rebuild only what changed, cost guard | 55 | pass |
+| `test_build_links.py` | Exact link tables and the `links` view: SQL, allowed datasets, checks, rebuild only what changed, cost guard | 23 | pass |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 
@@ -346,6 +347,19 @@ The SQL is checked as text; `run()` uses a `FakeClient` that returns canned rows
 | `test_build_creates_every_table_in_order`, `test_if_changed_*` (3), `test_stops_before_passing_the_budget`, `test_duplicate_device_ids_stop_the_build`, `test_estimate_only_creates_nothing`, `test_print_only_makes_no_gcp_call` | `main()`: order, skips, budget stop (exit 2), duplicate-id stop (exit 3), no writes in estimate and print modes |
 
 Plus 4 DAG tests in `dags/test_warehouse_dags.py`: `build_summaries` runs after every chain with trigger rule `all_done` in the warehouse pool, feeds the alert, and uses `--if-changed` daily but not in the full load.
+
+## 24. `test_build_links.py`: exact link tables (fake BigQuery client)
+
+| Test | What it checks |
+|---|---|
+| `test_select_has_exactly_the_link_columns_in_order`, `test_link_columns_and_tables_are_declared_once` | The SELECT gives exactly `LINK_COLUMNS`, in order (the view needs one shape) |
+| `test_enforcement_recall_joins_on_the_recall_number_only` | Joined on `link_key` (the recall number); the event match is a second check, never a join condition |
+| `test_create_writes_only_its_link_table_in_the_dataset`, `test_unknown_or_protected_targets_are_refused` | Only a link table is written, never DELETE/INSERT/MERGE; RAW, staging and ops are refused |
+| `test_view_shows_every_link_table_with_the_same_columns`, `test_check_counts_both_sides_and_duplicates`, `test_check_problems` (4) | The view unions every link table; the check counts links, duplicates and unlinked records on both sides |
+| `test_only_link_tables_older_than_a_source_are_rebuilt` (4) | `--if-changed`: rebuilt when enforcement or recall is newer, or the table is missing |
+| `test_build_creates_the_table_then_the_view`, `test_if_changed_*` (2), `test_stops_before_passing_the_budget`, `test_every_job_has_a_billing_cap`, `test_a_failed_check_stops_before_the_view`, `test_estimate_only_creates_nothing`, `test_print_only_makes_no_gcp_call` | `main()`: order, skips, budget stop (exit 2), check stop before the view (exit 3), no writes in estimate and print modes |
+
+Plus 4 DAG tests in `dags/test_warehouse_dags.py`: `build_links` runs after every chain with trigger rule `all_done` in the warehouse pool, feeds the alert, and uses `--if-changed` daily but not in the full load.
 
 ## Manual checks (real BigQuery, not in pytest)
 

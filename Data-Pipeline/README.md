@@ -122,7 +122,7 @@ Full design and decisions: [`docs/WAREHOUSE_PLAN.md`](docs/WAREHOUSE_PLAN.md).
 | DAG | Schedule | What it does |
 |---|---|---|
 | `vigil_md_acquisition` | daily 06:00 UTC | Checks the FDA manifests and fetches **only the sources that changed** to GCS. Validates GCS, logs a summary, then `trigger_load` starts `vigil_md_load` with the same date. |
-| `vigil_md_load` | none (triggered) | Per source: unzip → load RAW → build STAGING → **validate** → **check** → MERGE into PROD. MAUDE then builds its [event tables](#maude-event-tables-problems-and-narrative-text) (problem terms, narrative text). A source with nothing pending does nothing. After all sources: [`build_summaries`](#daily-summary-tables) rebuilds the summary tables whose inputs changed. |
+| `vigil_md_load` | none (triggered) | Per source: unzip → load RAW → build STAGING → **validate** → **check** → MERGE into PROD. MAUDE then builds its [event tables](#maude-event-tables-problems-and-narrative-text) (problem terms, narrative text). A source with nothing pending does nothing. After all sources: [`build_summaries`](#daily-summary-tables) rebuilds the summary tables whose inputs changed, and [`build_links`](#exact-links) the exact link tables. |
 | `vigil_md_full_load` | none (manual) | First load, backfill, rebuild or recovery: the same six steps per source. Params: `sources`, `refetch`, `rebuild_prod`. Refuses to run while a daily DAG has a run in progress. |
 
 ```
@@ -131,7 +131,7 @@ check_manifest ─┬─ fetch.<changed sources> ─ validate_gcs ─ log_summar
                 ├─ (pending files only) ─────────────────────────────────┴─ trigger_load ──▶ load.<source>:
                 └─ no_update (nothing to do: no loading run)                  unzip → load_raw → staging → validate → check → merge
                                                                               MAUDE only, after merge: events_staging → events_problems → events_text
-                                                                            after every source: build_summaries (only tables whose inputs changed)
+                                                                            after every source: build_summaries, build_links (only tables whose inputs changed)
 ```
 
 When does `vigil_md_load` run?
@@ -325,6 +325,40 @@ python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --if-c
 python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --dataset vigil_md_dev
 # after a layout change (partitioning, clustering): drops and rebuilds the six summary tables only
 python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --recreate --yes-recreate
+```
+
+### Exact links
+
+Which records in two sources describe the same thing, by a shared identifier (no ML). Built by
+[`scripts/warehouse/build_links.py`](scripts/warehouse/build_links.py) in `vigil_md_prod`; column
+list: `schemas.LINK_COLUMNS`. This is the warehouse version of the DVC sample stage
+`exact_linking` (`scripts/matching/exact_linking.py`, 200-record samples).
+
+| Table or view | One row per | How |
+|---|---|---|
+| `link_enforcement_recall` | enforcement action × recall product | enforcement `recall_number` = recall `product_res_number` (the `link_key` of both). `event_id` and `res_event_number` are compared as a second check (`same_event`) |
+| `links` (view) | link | every link table, in one shape: `link_type`, `left_source`/`left_id`, `right_source`/`right_id`, `link_key`, `event_id`, `same_event`, `method` (`exact_id`), `score` and `match_kind` (null for exact links), `built_at` |
+
+- **One table per kind of link, each written only by its producer:** a rebuild replaces only its
+  own table, never another producer's rows. The matching model's MAUDE ↔ GUDID links are planned
+  as their own table in the same shape (`method = 'model'` with a score); the view then adds it.
+  The table and the view may be written only to `vigil_md_prod` or a `vigil_md_dev*` dataset.
+- **PROD (2026-11-10):** 40,447 links; 2 of 40,449 enforcement records and 19,256 of 59,703
+  recall products have no partner (recall products not, or not yet, in the enforcement
+  reports); every link's events agree. Building it read about 2 MB (billed 0.021 GB).
+- **Checked on `vigil_md_dev`:** 139 links, the same rows as a plain join of the two tables
+  (0 in one but not the other), all `exact_id`, every pair with the same manufacturer.
+- **Daily:** the `build_links` task of `vigil_md_load` runs after every source's chain (also when
+  one failed) with `--if-changed`: it rebuilds only when enforcement or recall changed since the
+  link table was built. The full load always rebuilds.
+- **Checks:** a duplicate (left_id, right_id) pair, or no links while both sources have rows,
+  stops the build before the view is updated (exit 3); above `--max-gb` (1) it stops with exit 2.
+
+```bash
+python scripts/warehouse/build_links.py --project vigil-md-1792696816 --print-only
+python scripts/warehouse/build_links.py --project vigil-md-1792696816 --estimate-only
+python scripts/warehouse/build_links.py --project vigil-md-1792696816 --if-changed
+python scripts/warehouse/build_links.py --project vigil-md-1792696816 --dataset vigil_md_dev
 ```
 
 ### Querying
@@ -629,6 +663,11 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ---
 
 ## Changes
+
+### 2026-11-10 — Exact links (enforcement ↔ recall)
+
+- **New table** `vigil_md_prod.link_enforcement_recall` (40,447 links) and **view** `vigil_md_prod.links`: which enforcement action and recall product describe the same recall, by the FDA recall number. See [Exact links](#exact-links).
+- **DAGs:** a `build_links` task after every source in `vigil_md_load` (only when enforcement or recall changed) and `vigil_md_full_load` (always). This brings linking, run so far only on the DVC samples (`scripts/matching/exact_linking.py`), into Airflow.
 
 ### 2026-11-07 — Daily summary tables
 
