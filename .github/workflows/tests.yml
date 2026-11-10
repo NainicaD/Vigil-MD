@@ -29,3 +29,38 @@ jobs:
       - name: Run the tests
         working-directory: Data-Pipeline
         run: pytest -q -rs
+
+  chatbot-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Model-Development/chatbot/requirements.txt
+
+      - name: Install dependencies
+        working-directory: Model-Development/chatbot
+        run: pip install -r requirements.txt
+
+      - name: Run the tests
+        working-directory: Model-Development/chatbot
+        run: pytest -q -rs
+
+      # Model gate: retrain the router from the code in this commit and compare it with the
+      # champion's numbers in git (query_router/champion_metrics.json) on the hand-written test
+      # set. Fails if safety or accuracy got worse beyond gate.json's tolerances, so a change
+      # that makes the router worse cannot merge and the champion stays. MLflow writes to a
+      # throwaway store on the runner.
+      - name: Retrain the router and run the model gate
+        working-directory: Model-Development/chatbot
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///${{ runner.temp }}/mlflow.db
+          VIGIL_MLFLOW_ARTIFACTS: ${{ runner.temp }}/mlflow-artifacts
+        run: |
+          python -m query_router.generate
+          python -m query_router.train
+          python -m query_router.gate --candidate models/baseline --regression-only

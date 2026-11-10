@@ -1,0 +1,32 @@
+{
+  "_note": "Starting values. Replace device, company, generic and code with values from the warehouse tables (maude, gudid) so questions name devices the bot will see. device, company and code are split into train/validation pools by the generator; generic is shared (it is everyday vocabulary).",
+  "device": [
+    "MiniMed 780G", "MiniMed 670G", "t:slim X2", "Omnipod 5", "Omnipod DASH", "Dexcom G6",
+    "Dexcom G7", "FreeStyle Libre 2", "FreeStyle Libre 3", "Guardian 4 sensor",
+    "da Vinci Xi", "Impella CP", "DreamStation", "AirSense 10", "AirSense 11", "SAPIEN 3",
+    "WATCHMAN FLX", "Micra AV", "Azure XT pacemaker", "Evera MRI ICD", "LifeVest",
+    "Alaris infusion pump", "Sigma Spectrum pump", "Baxter Spectrum IQ", "BD Insyte catheter",
+    "PowerPICC", "Medfusion 4000", "Infinity ventilator", "Trilogy Evo", "Astral 150",
+    "Essure", "Mirena", "Paragard", "CardioMEMS sensor", "HeartMate 3", "Inspire implant",
+    "Nucleus 8 processor", "Insignia knee", "Persona knee", "Triathlon hip"
+  ],
+  "company": [
+    "Medtronic", "Abbott", "Boston Scientific", "Baxter", "Becton Dickinson", "Dexcom",
+    "Insulet", "Tandem Diabetes Care", "Philips", "ResMed", "Stryker", "Zimmer Biomet",
+    "Edwards Lifesciences", "Intuitive Surgical", "Abiomed", "Smith and Nephew", "Olympus",
+    "GE Healthcare", "Siemens Healthineers", "Hologic", "Cook Medical", "Teleflex",
+    "B. Braun", "Fresenius"
+  ],
+  "generic": [
+    "insulin pump", "glucose monitor", "pacemaker", "defibrillator", "infusion pump",
+    "ventilator", "cpap machine", "heart valve", "stent", "catheter", "hip implant",
+    "knee implant", "breast implant", "surgical robot", "hearing implant", "iud",
+    "dialysis machine", "blood pressure monitor", "pulse oximeter", "wheelchair"
+  ],
+  "code": [
+    "LZG", "OZP", "FRN", "QBJ", "MDS", "DXY", "NIQ", "LWS", "DQY", "MAF", "KZE", "HSB",
+    "JWH", "LPH", "MNT", "NOH", "QFG", "DTB", "FPA", "KGO"
+  ],
+  "event": ["death", "injury", "malfunction", "serious injury", "adverse event"],
+  "year": ["2016", "2017", "2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025"]
+}

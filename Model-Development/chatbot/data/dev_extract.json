@@ -1,0 +1,14 @@
+{
+  "_note": "What scripts/build_dev_extract.py copies from vigil_md_prod into the development dataset. Change it here (and bump version), then rebuild.",
+  "version": 1,
+  "source_dataset": "vigil_md_prod",
+  "target_dataset": "vigil_md_dev",
+  "from_date": "2023-01-01",
+  "product_codes": {
+    "LZG": "insulin pump (Omnipod DASH): mostly malfunctions",
+    "BZD": "CPAP (Philips DreamStation): well-known Class I recall, many deaths and injuries",
+    "OZD": "heart pump (Impella CP): death-heavy",
+    "FTR": "breast implant (Mentor MemoryGel): almost all injuries, rich patient terms",
+    "PKU": "pump phone app: no recalls, no deaths (empty paths)"
+  }
+}
