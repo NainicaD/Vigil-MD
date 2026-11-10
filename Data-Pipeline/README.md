@@ -348,7 +348,7 @@ SELECT COUNT(*) FROM `vigil-md-1792696816.vigil_md_staging.maude_stg`
 WHERE _ingest_date >= '1900-01-01';
 
 -- What was loaded, per source
-SELECT source, COUNT(*) AS files, SUM(row_count) AS rows, MAX(loaded_at) AS last_load
+SELECT source, COUNT(*) AS files, SUM(row_count) AS row_total, MAX(loaded_at) AS last_load
 FROM `vigil-md-1792696816.vigil_md_ops.load_log`
 GROUP BY source;
 ```

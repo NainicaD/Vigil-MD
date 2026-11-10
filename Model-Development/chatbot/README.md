@@ -559,6 +559,63 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
   ("How many deaths…? Should I stop using it?" labelled only `out_of_scope`), only the refusal
   is shown. The router's next model fixes that, not the templates.
 
+## API (`api/app.py`)
+
+The website's HTTP API, the contract in the front-end handover (section 2): FastAPI around the
+device search, the query layer and the chatbot.
+
+| Endpoint | Returns | BigQuery |
+|---|---|---|
+| `GET /api/health` | status, dataset, rules and template fingerprints, index build time | none |
+| `GET /api/search?q=<2-200 chars>&limit=<1-25>` | `{query, hits}`, each hit with `id, kind, entity_id, title, subtitle, reports, deaths, injuries, product_codes` | none (local index) |
+| `GET /api/entity/<kind>/<entity_id>` | `device_summary()` of one entity (device page) | about 40-50 MB billed on PROD |
+| `POST /api/answer` `{"question": "<1-1000 chars>", "entity": null or {"entity_type", "entity_id"}}` | `Chatbot.answer()` without the question echoed back | as the question needs, capped at 0.5 GB |
+
+- **No SQL leaves the API:** every `sources` list is trimmed to `{query, tables}`.
+- **Errors are JSON with a status:** 404 `not_found` (unknown kind), 413 `budget`, 503 `error`
+  (BigQuery unreachable), 422 for bad input, 429 `rate_limited` (questions and device pages,
+  30 a minute per client by default, `VIGIL_RATE_LIMIT_PER_MINUTE`; search is not limited).
+- **Questions are not logged** by the API.
+- `VIGIL_WEB_DIST=<front end dist/>` also serves the website from `/` (one container for both);
+  `VIGIL_CORS_ORIGINS=http://localhost:5173` allows the front end's dev server.
+- The search index connection is shared across the server's threads (read-only;
+  `sqlite3.threadsafety` 3).
+- **Speed:** the query layer sends a step's dry runs and queries at the same time, and remembers
+  each table's last-modified date for 5 minutes (`backend.py`). Each job's `maximum_bytes_billed`
+  is what is left of the budget minus the other jobs' estimates, so together they stay within
+  it. On `vigil_md_dev` through uvicorn (2026-11-09): device page 1.6-2.8 s, a counts or recall
+  answer 1.3-1.8 s, a narratives answer 4.3 s (two dependent steps), against 7.7-10.5 s before.
+
+```bash
+# from Model-Development/chatbot/, after python -m device_search.build_index
+VIGIL_BQ_DATASET=vigil_md_dev uvicorn api.app:app --port 8000
+curl 'localhost:8000/api/search?q=dreamstation'
+open http://localhost:8000/api/docs          # interactive docs
+```
+
+Tests: `tests/test_api.py` (fake router, index and BigQuery; no network).
+
+**Container** (`Dockerfile`; build from the repository root, whose `.dockerignore` lets in
+only the files the image copies):
+
+```bash
+docker build -f Model-Development/chatbot/Dockerfile --build-arg DATASET=vigil_md_dev -t vigil-md-api:dev .
+docker run --rm -p 8080:8080 -v "$HOME/.config/gcloud:/home/app/.config/gcloud:ro" vigil-md-api:dev
+curl localhost:8080/api/health
+```
+
+- Stage 1 trains the router with `requirements.txt`'s pinned versions (as CI does; same
+  validation numbers and thresholds as the champion), so model and scikit-learn always match.
+- Stage 2 installs `requirements-serve.txt` only (no MLflow, Optuna or matplotlib), copies the
+  code, the trained model and the search index of `DATASET` (build it first with
+  `python -m device_search.build_index --dataset <name>`), and runs as a non-root user.
+- No credentials in the image: locally, mount gcloud application-default credentials
+  read-only (above); on Cloud Run the service account is used.
+- The front end's build goes in with the two commented lines near the end of the Dockerfile,
+  once `Web-App/frontend/dist/` exists.
+- Checked 2026-11-09: build 2.4 min, image 674 MB with the dev index (the PROD index adds
+  712 MB); health, search and an answer correct through the container.
+
 ## Handoff: building the answer (step 7)
 
 The pieces for one chatbot turn, in order. Everything returns plain dicts.

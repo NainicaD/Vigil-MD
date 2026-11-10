@@ -1,0 +1,14 @@
+# Only what Model-Development/chatbot/Dockerfile copies. Everything else (including .env,
+# credentials, data and logs) stays out of the build context.
+*
+!Model-Development/chatbot/requirements.txt
+!Model-Development/chatbot/requirements-serve.txt
+!Model-Development/chatbot/answer/
+!Model-Development/chatbot/api/
+!Model-Development/chatbot/device_search/
+!Model-Development/chatbot/query_layer/
+!Model-Development/chatbot/query_router/
+!Model-Development/chatbot/data/search/
+!Web-App/frontend/dist/
+**/__pycache__
+**/*.pyc

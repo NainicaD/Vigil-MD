@@ -295,3 +295,58 @@ def test_estimate_plan_covers_every_query():
     assert names == ["catalog", "counts", "problems", "recalls", "narrative_candidates",
                      "narrative_texts", "device_details"]
     assert "device_details" not in [q.name for q in plan(backend(FakeClient()), "product_code", "LZG", 2)]
+
+
+# ── parallel runs and remembered table dates (API speed) ──────────────────────
+
+def test_parallel_runs_keep_the_order_and_add_up_the_bill():
+    rows = {"counts": [{"year": 2024, "event_type": "Death", "reports": 1}],
+            "catalog": [{"entity_type": "device", "entity_id": "dev:f0cdc15b4d63", "title": "X"}]}
+    client = FakeClient(rows=rows, billed={"counts": 20_000_000, "catalog": 10_485_760})
+    b, budget = backend(client), Budget(max_gb=0.5)
+    qs = [queries.counts(b.table, "device", "dev:f0cdc15b4d63"),
+          queries.catalog(b.table, "device", "dev:f0cdc15b4d63")]
+    (cnt, cat), records = b.run(qs, budget)
+    assert cnt == rows["counts"] and cat == rows["catalog"]
+    assert [r.name for r in records] == ["counts", "catalog"]
+    assert budget.spent_gb == pytest.approx((20_000_000 + 10_485_760) / 1e9)
+
+
+def test_each_parallel_job_is_capped_so_together_they_fit_the_budget():
+    client = FakeClient(estimates={"counts": 100_000_000, "catalog": 50_000_000})
+    b, budget = backend(client), Budget(max_gb=0.5)
+    qs = [queries.counts(b.table, "device", "dev:f0cdc15b4d63"),
+          queries.catalog(b.table, "device", "dev:f0cdc15b4d63")]
+    b.run(qs, budget)
+    caps = {n: c.maximum_bytes_billed for n, c in client.real_runs()}
+    # each job: what is left minus the other job's estimate
+    assert caps == {"counts": 500_000_000 - 50_000_000, "catalog": 500_000_000 - 100_000_000}
+    est = {"counts": 100_000_000, "catalog": 50_000_000}
+    # any one job billing up to its cap, the others their estimates: still within the budget
+    for name, cap in caps.items():
+        assert cap + sum(v for k, v in est.items() if k != name) <= 500_000_000
+
+
+def test_table_dates_are_remembered_then_refreshed():
+    now = [0.0]
+
+    class Counting(FakeClient):
+        def __init__(self):
+            super().__init__()
+            self.table_calls = 0
+
+        def get_table(self, table_id):
+            self.table_calls += 1
+            return super().get_table(table_id)
+
+    client = Counting()
+    b = BigQueryBackend(project="p", dataset="d", client=client, clock=lambda: now[0])
+    first = b.data_as_of(["entity_counts", "entity_catalog"])
+    b.data_as_of(["entity_counts", "entity_catalog"])
+    assert client.table_calls == 2 and first["entity_counts"].startswith("2026-11-07")
+    now[0] = 299.0
+    b.data_as_of(["entity_counts"])
+    assert client.table_calls == 2                  # still within 5 minutes
+    now[0] = 300.0
+    b.data_as_of(["entity_counts"])
+    assert client.table_calls == 3                  # refreshed
