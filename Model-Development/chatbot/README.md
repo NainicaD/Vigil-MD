@@ -203,7 +203,9 @@ only estimate them). `reports/importance/router_features.json` (also on the MLfl
 the strongest positive and negative word and character n-grams per label, and flags device or
 company names (from `slots.json`) among the top features.
 
-Champion (C = 1, rules `cf0ad77c93da`), top word features:
+Champion (C = 1; rules `cf0ad77c93da`, re-run 2026-11-09 for the revision 3 retrain, `6705cf050941`:
+the same top features, because the rules change the thresholds, not the training), top word
+features:
 
 | Label | Pushed up by |
 |---|---|
@@ -263,6 +265,7 @@ python -m query_router.evaluate --test data/test/handwritten_test.jsonl --prefix
 python -m query_router.sensitivity       # threshold sweep: reports/sensitivity/
 python -m query_router.importance        # top features per label: reports/importance/
 python -m query_router.tune --trials 30  # Optuna; models/optuna, alias challenger
+python -m query_router.compare           # lr vs linear SVM vs naive Bayes on val; models/<type>/
 python -m query_router.gate --candidate models/optuna --champion models/baseline   # [--promote]
 pytest -q                                # logs to a temporary MLflow store only
 ```
