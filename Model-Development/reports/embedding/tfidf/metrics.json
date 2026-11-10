@@ -1,0 +1,24 @@
+{
+  "run_name": "tfidf",
+  "data": "data/embedding/vigil-emb-v1",
+  "fields": [
+    "mfr",
+    "name",
+    "model",
+    "catalog",
+    "pc"
+  ],
+  "results": {
+    "tfidf": {
+      "recall@1": 0.9087,
+      "recall@5": 0.9599,
+      "recall@10": 0.9707,
+      "recall@50": 0.98365,
+      "mrr": 0.931216265094874,
+      "n_queries": 20000,
+      "n_index": 254369,
+      "encode_seconds": 45.8,
+      "search_seconds": 285.0
+    }
+  }
+}
