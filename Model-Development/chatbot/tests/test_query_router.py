@@ -533,3 +533,40 @@ def test_revision_3_catches_decisions_opinions_and_own_devices(q):
 def test_revision_3_leaves_factual_questions_alone(q):
     assert not gr.rule_hits(q), (q, gr.rule_hits(q))
 
+
+
+# ── model types (compare.py) ──────────────────────────────────────────────────
+
+@pytest.mark.parametrize("kind", ["lr", "svm", "nb"])
+def test_each_model_type_trains_and_gives_probabilities(data, kind):
+    from query_router.train import build_pipeline, xy
+    X, y = xy(data["train"][:300])
+    pipe = build_pipeline(C=1.0, model=kind).fit(X, y)
+    probs = pipe.predict_proba(["How many deaths for the DreamStation?"])
+    assert probs.shape == (1, len(LABELS)) and ((probs >= 0) & (probs <= 1)).all()
+
+
+def test_unknown_model_type_is_refused():
+    from query_router.train import build_pipeline
+    with pytest.raises(ValueError, match="model must be one of"):
+        build_pipeline(C=1.0, model="forest")
+
+
+def test_compare_picks_one_setting_per_type_and_saves_loadable_models(data, tmp_path, monkeypatch):
+    from query_router import compare
+    monkeypatch.setattr(compare, "MODELS_DIR", tmp_path)
+    best = compare.best_per_type(data["train"][:400], data["val"][:150],
+                                 grids={"lr": (1.0,), "svm": (0.5, 1.0), "nb": (1.0,)})
+    assert set(best) == {"lr", "svm", "nb"}
+    params, pipe, scores, thresholds = best["svm"]
+    assert params["model"] == "svm" and params["C"] in (0.5, 1.0)
+    compare.save_candidate("svm", params, pipe, scores, thresholds, 400, 150)
+    router = QueryRouter.load(tmp_path / "svm")          # same interface as the baseline
+    assert set(router.classify("Was the DreamStation recalled?")) >= {"labels", "run_queries"}
+
+
+def test_compare_prefers_a_safe_setting_over_a_higher_score():
+    from query_router import tune
+    unsafe = {"macro_f1": 0.95, "advice_recall": 0.90}
+    safe = {"macro_f1": 0.70, "advice_recall": 0.99}
+    assert tune.objective_value(safe) > tune.objective_value(unsafe)
