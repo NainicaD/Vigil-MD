@@ -9,18 +9,18 @@
 #
 # GCP access is keyless (Workload Identity Federation): no service-account key is stored in GitHub.
 # Pull requests never get it, so a fork cannot spend the team's query budget. One-time setup and
-# costs: Model-Development/docs/CI_CD.md.
+# costs: Model-Development/matching/docs/CI_CD.md.
 name: model-training
 
 on:
   push:
     branches: [main, same-device-profiling]
     paths:
-      - "Model-Development/**"
+      - "Model-Development/matching/**"
       - ".github/workflows/model-training.yml"
   pull_request:
     paths:
-      - "Model-Development/**"
+      - "Model-Development/matching/**"
       - ".github/workflows/model-training.yml"
   workflow_dispatch:
     inputs:
@@ -42,7 +42,7 @@ permissions:
 
 defaults:
   run:
-    working-directory: Model-Development
+    working-directory: Model-Development/matching
 
 env:
   PYTHON_VERSION: "3.12"
@@ -57,7 +57,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: Model-Development/requirements*.txt
+          cache-dependency-path: Model-Development/matching/requirements*.txt
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-ml.txt
       - name: Run the tests (mocked; none of them talk to GCP)
@@ -73,15 +73,15 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: Model-Development/requirements*.txt
+          cache-dependency-path: Model-Development/matching/requirements*.txt
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-ml.txt
       - name: Make a synthetic feature table
         run: python ci/make_ci_feature_table.py --out data/ci/features.csv
       - name: Hand-sheet features (s05, from the committed sheet)
-        run: python pipeline/s05_build_hand_features.py
+        run: python scripts/s05_build_hand_features.py
       - name: Train on the synthetic table (s06, 1 trial, no MLflow)
-        run: python pipeline/s06_train_models.py --data data/ci/features.csv --trials 1 --no-mlflow
+        run: python scripts/s06_train_models.py --data data/ci/features.csv --trials 1 --no-mlflow
       - name: Check the outputs
         run: python ci/check_training_outputs.py --title "Smoke training (synthetic data, numbers mean nothing)" --summary "$GITHUB_STEP_SUMMARY"
 
@@ -106,7 +106,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: Model-Development/requirements*.txt
+          cache-dependency-path: Model-Development/matching/requirements*.txt
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-ml.txt
 
@@ -124,24 +124,24 @@ jobs:
         id: data-cache
         with:
           path: |
-            Model-Development/data/label_set_v1.parquet
-            Model-Development/data/sibling_keys.csv
-            Model-Development/data/mfr_rank.csv
-          key: label-data-${{ hashFiles('Model-Development/labels/label_set_v1.manifest.json', 'Model-Development/pipeline/s04_build_feature_table.py') }}
+            Model-Development/matching/data/label_set_v1.parquet
+            Model-Development/matching/data/sibling_keys.csv
+            Model-Development/matching/data/mfr_rank.csv
+          key: label-data-${{ hashFiles('Model-Development/matching/labels/label_set_v1.manifest.json', 'Model-Development/matching/scripts/s04_build_feature_table.py') }}
 
       - name: s03 download the label set (free, no query)
         if: steps.data-cache.outputs.cache-hit != 'true'
-        run: python pipeline/s03_export_label_set.py --project "$PROJECT" --overwrite
+        run: python scripts/s03_export_label_set.py --project "$PROJECT" --overwrite
 
       - name: s04 dry run (free; stops here if over budget)
-        run: python pipeline/s04_build_feature_table.py --project "$PROJECT" --estimate-only --max-gb 2
+        run: python scripts/s04_build_feature_table.py --project "$PROJECT" --estimate-only --max-gb 2
 
       - name: s04 build the feature table (about 0.3 GB the first time, then cached)
         run: |
           if [ "$REFRESH" = "true" ]; then
-            python pipeline/s04_build_feature_table.py --project "$PROJECT" --max-gb 2 --refresh
+            python scripts/s04_build_feature_table.py --project "$PROJECT" --max-gb 2 --refresh
           else
-            python pipeline/s04_build_feature_table.py --project "$PROJECT" --max-gb 2
+            python scripts/s04_build_feature_table.py --project "$PROJECT" --max-gb 2
           fi
 
       - name: Save the query caches
@@ -149,16 +149,16 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: |
-            Model-Development/data/label_set_v1.parquet
-            Model-Development/data/sibling_keys.csv
-            Model-Development/data/mfr_rank.csv
-          key: label-data-${{ hashFiles('Model-Development/labels/label_set_v1.manifest.json', 'Model-Development/pipeline/s04_build_feature_table.py') }}
+            Model-Development/matching/data/label_set_v1.parquet
+            Model-Development/matching/data/sibling_keys.csv
+            Model-Development/matching/data/mfr_rank.csv
+          key: label-data-${{ hashFiles('Model-Development/matching/labels/label_set_v1.manifest.json', 'Model-Development/matching/scripts/s04_build_feature_table.py') }}
 
       - name: s05 hand-sheet features
-        run: python pipeline/s05_build_hand_features.py
+        run: python scripts/s05_build_hand_features.py
 
       - name: s06 train logistic regression and XGBoost (logged to MLflow)
-        run: python pipeline/s06_train_models.py --trials "$TRIALS"
+        run: python scripts/s06_train_models.py --trials "$TRIALS"
 
       - name: s08 score every model on the hand labels at its validation cutoff
         run: |
@@ -170,7 +170,7 @@ jobs:
                   print(f"{name}: no 99%-precision cutoff on validation; not scored on the hand labels")
                   continue
               track = "baseline" if name.startswith("logreg") else "xgb"
-              cmd = [sys.executable, "pipeline/s08_evaluate_hand.py", "--scores",
+              cmd = [sys.executable, "eval/s08_evaluate_hand.py", "--scores",
                      f"data/scores/{name}_hand_scores.csv", "--cutoff", str(cutoff), "--track", track]
               print("+", " ".join(cmd), flush=True)
               subprocess.run(cmd, check=True)
@@ -187,9 +187,9 @@ jobs:
           retention-days: 30
           if-no-files-found: warn
           path: |
-            Model-Development/mlflow.db
-            Model-Development/mlruns/
-            Model-Development/mlartifacts/
-            Model-Development/data/cutoffs.json
-            Model-Development/data/scores/
-            Model-Development/data/label_set_v1_features.manifest.json
+            Model-Development/matching/mlflow.db
+            Model-Development/matching/mlruns/
+            Model-Development/matching/mlartifacts/
+            Model-Development/matching/data/cutoffs.json
+            Model-Development/matching/data/scores/
+            Model-Development/matching/data/label_set_v1_features.manifest.json
