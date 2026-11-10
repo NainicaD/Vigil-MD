@@ -282,6 +282,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--easy-pool", type=int, default=20000, help="GUDID records per split for easy negatives")
     ap.add_argument("--agree-neg-per-anchor", type=int, default=0,
                     help="E1 agree-region negatives per anchor (04b); 0 = none, as in label_set_v1")
+    ap.add_argument("--placeholder-neg-per-anchor", type=int, default=0,
+                    help="E3 placeholder-model negatives per anchor (04c); 0 = none, as in label_set_v1")
     ap.add_argument("--label-set", default=BASE_LABEL_SET,
                     help="table name and manifest name of this label set, e.g. label_set_v2_e1")
     args = ap.parse_args(argv)
@@ -297,16 +299,18 @@ def main(argv: list[str] | None = None) -> int:
     params ={"__MAX_PER_DEVICE__": args.max_per_device, "__NEG_PER_ANCHOR__": args.neg_per_anchor,
               "__CAND_POOL__": args.cand_pool, "__EASY_ANCHOR_PCT__": args.easy_anchor_pct,
               "__EASY_POOL__": args.easy_pool}
-    if min(params.values()) < 1 or args.easy_anchor_pct > 100 or args.agree_neg_per_anchor < 0:
-        log.error("caps must be positive, --agree-neg-per-anchor at least 0 and --easy-anchor-pct at most 100")
+    optional = (args.agree_neg_per_anchor, args.placeholder_neg_per_anchor)
+    if min(params.values()) < 1 or args.easy_anchor_pct > 100 or min(optional) < 0:
+        log.error("caps must be positive, the agree/placeholder caps at least 0 and --easy-anchor-pct at most 100")
         return EXIT_BAD_SQL
     if not re.fullmatch(r"label_set_v\d+\w*", args.label_set):
         log.error("--label-set must look like label_set_v2_e1, got %r", args.label_set)
         return EXIT_BAD_SQL
-    if args.label_set == BASE_LABEL_SET and args.agree_neg_per_anchor:
-        log.error("%s is the baseline: give a new --label-set for agree-region negatives", BASE_LABEL_SET)
+    if args.label_set == BASE_LABEL_SET and any(optional):
+        log.error("%s is the baseline: give a new --label-set for agree or placeholder negatives", BASE_LABEL_SET)
         return EXIT_BAD_SQL
     params["__AGREE_NEG_PER_ANCHOR__"] = args.agree_neg_per_anchor
+    params["__PLACEHOLDER_NEG_PER_ANCHOR__"] = args.placeholder_neg_per_anchor
     params["__LABEL_SET__"] = args.label_set
     manifest_path = LABELS_DIR / f"{args.label_set}.manifest.json"
     try:

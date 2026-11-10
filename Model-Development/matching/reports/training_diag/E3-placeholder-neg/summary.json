@@ -1,0 +1,452 @@
+{
+  "tags": {
+    "exp": "E3-placeholder-neg",
+    "git_commit": "170c0c1",
+    "label_set_manifest_sha256": "88f4885f8fc892f2b42840d118b47d9c2bf634d099fad209b5743aef7eaa3560",
+    "caps_agree_neg_per_anchor": "2",
+    "caps_cand_pool": "50",
+    "caps_easy_anchor_pct": "25",
+    "caps_easy_pool": "20000",
+    "caps_label_set": "label_set_v2",
+    "caps_max_gb": "25.0",
+    "caps_max_per_device": "200",
+    "caps_neg_per_anchor": "2",
+    "caps_placeholder_neg_per_anchor": "2",
+    "feature_set": "fs2",
+    "diag_version": "d2",
+    "training_data_sha256": "9292c041962ff191b5e33d8995472cdcfc25a12b95c1c1c3e4747a0043d90d32",
+    "constants_sha256": "3eb8385ec6b5f256954788701c8f79a001a66b33419c1738024d280931ece92e",
+    "alias_table_sha256": "d5fd4ba984a05f6eeeb5b27205f9c1d07322702a3e36971a10e66b56b9125ee8",
+    "snapshot_date": "2026-11-07",
+    "d10_reproduced": "true"
+  },
+  "d1": {
+    "share_train_rows_pure_kind": 0.49099120758957593,
+    "pure_match_kinds": [],
+    "pure_non_match_kinds": [
+      "conflict"
+    ],
+    "mixed_kinds": [
+      "catalog_eq_catalog",
+      "contains",
+      "maude_catalog_eq_gudid_model",
+      "maude_model_eq_gudid_catalog",
+      "maude_model_missing_or_placeholder",
+      "prefix_related",
+      "same_model_key"
+    ]
+  },
+  "d2": {
+    "rule": {
+      "n": 132866,
+      "precision": NaN,
+      "recall": 0.0,
+      "accuracy": 0.6053467403248386
+    },
+    "models": {
+      "logreg_v1": {
+        "test_precision": 0.9932673755080258,
+        "test_recall": 0.9228392707300328,
+        "test_average_precision": 0.9953929164129234,
+        "rule_minus_model_precision": NaN
+      },
+      "xgb_all": {
+        "test_precision": 0.993031700853862,
+        "test_recall": 0.9647951788847356,
+        "test_average_precision": 0.9982529056239616,
+        "rule_minus_model_precision": NaN
+      },
+      "xgb_no_match_kind": {
+        "test_precision": 0.9925102444954218,
+        "test_recall": 0.9653863757723701,
+        "test_average_precision": 0.9981991192567132,
+        "rule_minus_model_precision": NaN
+      },
+      "xgb_no_kind_derived": {
+        "test_precision": 0.9916054772772376,
+        "test_recall": 0.9529140285300175,
+        "test_average_precision": 0.9963504149239053,
+        "rule_minus_model_precision": NaN
+      }
+    }
+  },
+  "d3": {
+    "depth": 4,
+    "n_features": 16,
+    "train_rows": 200000,
+    "test_rows": 132866,
+    "feat_match_kind_acc": 0.9396459590865985,
+    "feat_match_kind_majority_acc": 0.5021977029488357,
+    "label_acc": 0.957739376514684,
+    "label_majority_acc": 0.6053467403248386
+  },
+  "d4": {
+    "logreg_v1": {
+      "cutoff": 0.7940450534431901,
+      "ie_accepted": 42,
+      "ie_n": 48,
+      "match_accepted": 67,
+      "match_n": 71,
+      "non_match_accepted": 3,
+      "non_match_n": 83,
+      "placeholder_accepted": 3,
+      "placeholder_n": 5
+    },
+    "xgb_all": {
+      "cutoff": 0.6447353363037109,
+      "ie_accepted": 44,
+      "ie_n": 48,
+      "match_accepted": 71,
+      "match_n": 71,
+      "non_match_accepted": 11,
+      "non_match_n": 83,
+      "placeholder_accepted": 3,
+      "placeholder_n": 5
+    },
+    "xgb_no_match_kind": {
+      "cutoff": 0.6179018616676331,
+      "ie_accepted": 44,
+      "ie_n": 48,
+      "match_accepted": 71,
+      "match_n": 71,
+      "non_match_accepted": 6,
+      "non_match_n": 83,
+      "placeholder_accepted": 3,
+      "placeholder_n": 5
+    },
+    "xgb_no_kind_derived": {
+      "cutoff": 0.6368112564086914,
+      "ie_accepted": 27,
+      "ie_n": 48,
+      "match_accepted": 71,
+      "match_n": 71,
+      "non_match_accepted": 4,
+      "non_match_n": 83,
+      "placeholder_accepted": 3,
+      "placeholder_n": 5
+    }
+  },
+  "d5": {
+    "target_prevalence": 0.48525926872348607,
+    "models": {
+      "logreg_v1": {
+        "test_precision": 0.9932673755080258,
+        "prior_corrected_precision": 0.9953343367486516
+      },
+      "xgb_all": {
+        "test_precision": 0.993031700853862,
+        "prior_corrected_precision": 0.995170664017945
+      },
+      "xgb_no_match_kind": {
+        "test_precision": 0.9925102444954218,
+        "prior_corrected_precision": 0.9948084351466094
+      },
+      "xgb_no_kind_derived": {
+        "test_precision": 0.9916054772772376,
+        "prior_corrected_precision": 0.9941796627650371
+      }
+    },
+    "test_prevalence": 0.39465325967516146
+  },
+  "d6": {
+    "n_rows": 202,
+    "mismatch": {
+      "feat_match_kind": 0,
+      "feat_identifier_exact": 0,
+      "feat_identifier_cross_field": 0,
+      "feat_raw_identifier_equal": 0,
+      "feat_token_contains": 0,
+      "feat_prefix_related": 0,
+      "feat_conflicting_identifier": 2,
+      "feat_distinctive": 0,
+      "feat_n_dis_for_model": 0,
+      "feat_labeler_equal": 0,
+      "feat_labeler_alias_equal": 0,
+      "feat_labeler_missing": 0,
+      "feat_product_code_agree": 0,
+      "feat_maude_model_missing": 0,
+      "feat_maude_catalog_missing": 0,
+      "feat_gudid_model_missing": 0,
+      "feat_device_name_token_overlap": 0,
+      "feat_maude_name_has_kit_word": 0,
+      "feat_gudid_name_has_kit_word": 0,
+      "feat_contains_extra_len": 0,
+      "feat_contains_at_end": 0
+    }
+  },
+  "d7": {
+    "n_unseen": 0,
+    "kinds": []
+  },
+  "d8": {
+    "n_decided": 154,
+    "n_disagree": 0,
+    "agree_rate": 1.0,
+    "n_ie": 48,
+    "ie_rules_accept_rate": 0.0625,
+    "models": {
+      "logreg_v1": {
+        "precision": NaN,
+        "accepted": 0
+      },
+      "xgb_all": {
+        "precision": NaN,
+        "accepted": 0
+      },
+      "xgb_no_match_kind": {
+        "precision": NaN,
+        "accepted": 0
+      },
+      "xgb_no_kind_derived": {
+        "precision": NaN,
+        "accepted": 0
+      }
+    }
+  },
+  "d9": {
+    "logreg_v1": -0.0006673099323786236,
+    "xgb_all": -0.00014890846971971072,
+    "xgb_no_match_kind": -0.00012622344745139014,
+    "xgb_no_kind_derived": 0.0002758252722961929
+  },
+  "d10": {
+    "reproduced": true,
+    "models": {
+      "logreg_v1": {
+        "repro_max_abs_diff": 4.961470004838375e-07,
+        "reproduced": true,
+        "n_false_pos": 3,
+        "top": [
+          {
+            "feature": "kind_conflict",
+            "test_mean_abs": 3.0603439926828613,
+            "hand_mean_abs": 3.0303143525419918,
+            "false_pos_mean_push": 3.012399332883746
+          },
+          {
+            "feature": "cross_identifier_and_labeler",
+            "test_mean_abs": 2.575990366493092,
+            "hand_mean_abs": 2.611244872855728,
+            "false_pos_mean_push": -1.8999537460358538
+          },
+          {
+            "feature": "feat_text_cosine",
+            "test_mean_abs": 1.7106532653698756,
+            "hand_mean_abs": 2.2447144157057326,
+            "false_pos_mean_push": 3.106759699702497
+          },
+          {
+            "feature": "feat_token_contains",
+            "test_mean_abs": 1.1444621092377407,
+            "hand_mean_abs": 1.180994734543712,
+            "false_pos_mean_push": -0.9686007394947843
+          },
+          {
+            "feature": "feat_labeler_equal",
+            "test_mean_abs": 0.5308265270965751,
+            "hand_mean_abs": 0.6633450115667915,
+            "false_pos_mean_push": -0.7427050817239241
+          },
+          {
+            "feature": "feat_conflicting_identifier",
+            "test_mean_abs": 0.4162470441143241,
+            "hand_mean_abs": 0.5692698883447423,
+            "false_pos_mean_push": 0.18923728009492802
+          },
+          {
+            "feature": "feat_prefix_related",
+            "test_mean_abs": 0.17115199960227992,
+            "hand_mean_abs": 0.548969012172831,
+            "false_pos_mean_push": 2.1019985270883774
+          },
+          {
+            "feature": "kind_prefix_related",
+            "test_mean_abs": 0.17115199960227992,
+            "hand_mean_abs": 0.548969012172831,
+            "false_pos_mean_push": 2.1019985270883774
+          }
+        ]
+      },
+      "xgb_all": {
+        "repro_max_abs_diff": 5.287475586257528e-07,
+        "reproduced": true,
+        "n_false_pos": 11,
+        "top": [
+          {
+            "feature": "feat_match_kind",
+            "test_mean_abs": 6.091032981872559,
+            "hand_mean_abs": 3.7706961631774902,
+            "false_pos_mean_push": 2.2242603302001953
+          },
+          {
+            "feature": "feat_text_cosine",
+            "test_mean_abs": 1.31936776638031,
+            "hand_mean_abs": 1.3396588563919067,
+            "false_pos_mean_push": 0.008768471889197826
+          },
+          {
+            "feature": "feat_raw_identifier_equal",
+            "test_mean_abs": 1.3948099613189697,
+            "hand_mean_abs": 1.1592100858688354,
+            "false_pos_mean_push": -0.7165073156356812
+          },
+          {
+            "feature": "feat_maude_model_missing",
+            "test_mean_abs": 0.871466875076294,
+            "hand_mean_abs": 0.7555519342422485,
+            "false_pos_mean_push": -0.48423030972480774
+          },
+          {
+            "feature": "feat_product_code_agree",
+            "test_mean_abs": 0.3931490480899811,
+            "hand_mean_abs": 0.7133035063743591,
+            "false_pos_mean_push": 3.3292620182037354
+          },
+          {
+            "feature": "feat_conflicting_identifier",
+            "test_mean_abs": 0.32286685705184937,
+            "hand_mean_abs": 0.6728264689445496,
+            "false_pos_mean_push": 0.7936294078826904
+          },
+          {
+            "feature": "feat_labeler_alias_equal",
+            "test_mean_abs": 0.5185989737510681,
+            "hand_mean_abs": 0.5760015845298767,
+            "false_pos_mean_push": -0.529808521270752
+          },
+          {
+            "feature": "feat_maude_catalog_missing",
+            "test_mean_abs": 0.25424960255622864,
+            "hand_mean_abs": 0.44277507066726685,
+            "false_pos_mean_push": 0.24173451960086823
+          }
+        ]
+      },
+      "xgb_no_match_kind": {
+        "repro_max_abs_diff": 5.282783508420152e-07,
+        "reproduced": true,
+        "n_false_pos": 6,
+        "top": [
+          {
+            "feature": "feat_raw_identifier_equal",
+            "test_mean_abs": 2.246227264404297,
+            "hand_mean_abs": 2.02071213722229,
+            "false_pos_mean_push": -1.5107698440551758
+          },
+          {
+            "feature": "feat_maude_model_missing",
+            "test_mean_abs": 2.4869167804718018,
+            "hand_mean_abs": 1.8773126602172852,
+            "false_pos_mean_push": -1.0827349424362183
+          },
+          {
+            "feature": "feat_text_cosine",
+            "test_mean_abs": 1.7919148206710815,
+            "hand_mean_abs": 1.7149317264556885,
+            "false_pos_mean_push": 0.8402401804924011
+          },
+          {
+            "feature": "feat_prefix_related",
+            "test_mean_abs": 0.5738141536712646,
+            "hand_mean_abs": 1.2619050741195679,
+            "false_pos_mean_push": 2.061711311340332
+          },
+          {
+            "feature": "feat_identifier_exact",
+            "test_mean_abs": 1.1855896711349487,
+            "hand_mean_abs": 1.0380221605300903,
+            "false_pos_mean_push": -0.44498762488365173
+          },
+          {
+            "feature": "feat_conflicting_identifier",
+            "test_mean_abs": 0.26944077014923096,
+            "hand_mean_abs": 0.7670949697494507,
+            "false_pos_mean_push": 1.786337971687317
+          },
+          {
+            "feature": "feat_product_code_agree",
+            "test_mean_abs": 0.37064164876937866,
+            "hand_mean_abs": 0.556169867515564,
+            "false_pos_mean_push": 1.5427747964859009
+          },
+          {
+            "feature": "feat_token_contains",
+            "test_mean_abs": 0.561327338218689,
+            "hand_mean_abs": 0.5005377531051636,
+            "false_pos_mean_push": -0.1557982861995697
+          }
+        ]
+      },
+      "xgb_no_kind_derived": {
+        "repro_max_abs_diff": 5.041885375867139e-07,
+        "reproduced": true,
+        "n_false_pos": 4,
+        "top": [
+          {
+            "feature": "feat_raw_identifier_equal",
+            "test_mean_abs": 2.410512924194336,
+            "hand_mean_abs": 2.1480698585510254,
+            "false_pos_mean_push": -1.9106979370117188
+          },
+          {
+            "feature": "feat_text_cosine",
+            "test_mean_abs": 2.070937156677246,
+            "hand_mean_abs": 1.9555970430374146,
+            "false_pos_mean_push": 1.8025691509246826
+          },
+          {
+            "feature": "feat_maude_model_missing",
+            "test_mean_abs": 1.728203535079956,
+            "hand_mean_abs": 1.4254646301269531,
+            "false_pos_mean_push": -0.8659736514091492
+          },
+          {
+            "feature": "feat_token_contains",
+            "test_mean_abs": 0.9774748086929321,
+            "hand_mean_abs": 0.91243976354599,
+            "false_pos_mean_push": -0.3009362518787384
+          },
+          {
+            "feature": "feat_product_code_agree",
+            "test_mean_abs": 0.3483808934688568,
+            "hand_mean_abs": 0.5973795652389526,
+            "false_pos_mean_push": 3.4533162117004395
+          },
+          {
+            "feature": "feat_labeler_alias_equal",
+            "test_mean_abs": 0.3835461139678955,
+            "hand_mean_abs": 0.37471047043800354,
+            "false_pos_mean_push": -0.2597566246986389
+          },
+          {
+            "feature": "feat_maude_catalog_missing",
+            "test_mean_abs": 0.163457453250885,
+            "hand_mean_abs": 0.23494932055473328,
+            "false_pos_mean_push": 0.061516620218753815
+          },
+          {
+            "feature": "feat_conflicting_identifier",
+            "test_mean_abs": 0.10541240125894547,
+            "hand_mean_abs": 0.21112129092216492,
+            "false_pos_mean_push": 0.8621141314506531
+          }
+        ]
+      }
+    }
+  },
+  "d11": {
+    "n_index_texts": 230668,
+    "auc_all": 0.7174613948752757,
+    "auc_ids_agree": 0.9976525821596244,
+    "n_ids_agree": 113,
+    "mean_cosine_by_label": {
+      "INSUFFICIENT_EVIDENCE": 0.7354767322540283,
+      "MATCH": 0.7648948431015015,
+      "NON_MATCH": 0.5372782945632935
+    }
+  },
+  "notes": [
+    "label_set_v1 was built with easy_anchor_pct=25; the s01 default is 10, so a rebuild with defaults gives a different label set.",
+    "D11 uses TF-IDF only; sentence-transformers models were not run (no downloads in this check)."
+  ]
+}

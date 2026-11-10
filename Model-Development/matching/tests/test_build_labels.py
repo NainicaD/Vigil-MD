@@ -9,7 +9,7 @@ from scripts import s01_build_label_set as bl
 
 PROJECT = "test-project"
 PARAMS = {"__MAX_PER_DEVICE__": 200, "__NEG_PER_ANCHOR__": 2, "__CAND_POOL__": 50,
-          "__EASY_ANCHOR_PCT__": 10, "__EASY_POOL__": 20000, "__AGREE_NEG_PER_ANCHOR__": 0,
+          "__EASY_ANCHOR_PCT__": 10, "__EASY_POOL__": 20000, "__AGREE_NEG_PER_ANCHOR__": 0, "__PLACEHOLDER_NEG_PER_ANCHOR__": 0,
           "__LABEL_SET__": "label_set_v1"}
 ALIAS_ROWS = [{"maude_mfr": "a", "gudid_mfr": "b", "n_dis": 3}]
 
@@ -177,3 +177,16 @@ def test_seed_manifest_copies_the_baseline_alias_hash(tmp_path):
     new.write_text(json.dumps({"alias_table_sha256": "keep"}))
     bl.seed_manifest(new, base)                                        # an existing manifest is never touched
     assert json.loads(new.read_text()) == {"alias_table_sha256": "keep"}
+
+
+def test_print_only_renders_the_placeholder_negatives_into_label_set_v2(capsys):
+    argv = ["--project", PROJECT, "--print-only", "--only", "04c", "05", "--label-set", "label_set_v2",
+            "--agree-neg-per-anchor", "2", "--placeholder-neg-per-anchor", "2"]
+    assert bl.main(argv) == bl.EXIT_OK
+    out = capsys.readouterr().out
+    assert "CREATE OR REPLACE TABLE `test-project.vigil_md_model.negatives_placeholder`" in out
+    assert "WHERE rn <= 2" in out and "`test-project.vigil_md_model.label_set_v2` AS" in out
+
+
+def test_placeholder_negatives_cannot_go_into_the_baseline():
+    assert bl.main(["--project", PROJECT, "--print-only", "--placeholder-neg-per-anchor", "1"]) == bl.EXIT_BAD_SQL

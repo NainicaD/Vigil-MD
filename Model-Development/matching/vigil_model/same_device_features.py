@@ -63,16 +63,20 @@ _FS1: tuple[str, ...] = (
     "feat_maude_name_has_kit_word",
     "feat_gudid_name_has_kit_word",
 )
-FEATURE_COLUMNS: tuple[str, ...] = _FS1 + (
+_FS2: tuple[str, ...] = _FS1 + (
     "feat_contains_extra_len",       # F2: characters the longer model key adds; None unless kind is contains
     "feat_contains_at_end",          # F2: the shorter key ends the longer one; None unless kind is contains
     "feat_text_cosine",              # F1: TF-IDF cosine of the two record texts (vigil_model/text_cosine.py)
 )
+FEATURE_COLUMNS: tuple[str, ...] = _FS2 + (
+    "feat_labeler_sim",              # F3: character-trigram Jaccard of the two labeler names; None if one is missing
+)
 FEATURE_SETS: dict[str, tuple[str, ...]] = {
     "fs1": _FS1,                     # baseline: P0-rerun, E4, E1-agree-neg
-    "fs2": FEATURE_COLUMNS,          # fs1 + F2 contains + F1 text cosine: F1F2-text-contains
+    "fs2": _FS2,                     # fs1 + F2 contains + F1 text cosine: F1F2-text-contains, E3
+    "fs3": FEATURE_COLUMNS,          # fs2 + F3 labeler similarity: F3-labeler-sim (dropped, no gain)
 }
-DEFAULT_FEATURE_SET = "fs2"
+DEFAULT_FEATURE_SET = "fs2"          # the set kept by the experiments (docs/EXPERIMENTS.md)
 
 
 def feature_set(name: str) -> tuple[str, ...]:
@@ -275,6 +279,22 @@ def _words(name: str | None) -> set[str]:
     return set(_WORD.findall((name or "").upper()))
 
 
+def _trigrams(name: str) -> set[str]:
+    words = " ".join(re.findall(r"[a-z0-9]+", name.lower()))
+    padded = f" {words} "
+    return {padded[i:i + 3] for i in range(len(padded) - 2)}
+
+
+def labeler_similarity(a: str | None, b: str | None) -> float | None:
+    """F3. Character-trigram Jaccard of two labeler names, so 'carefusion sd' vs 'carefusion 303' or
+    'sistema de implante nacional' vs 's.i.n. implant system' score between 'equal' (1.0) and 'unrelated'
+    (near 0), where feat_labeler_equal and the alias table only say yes or no. None if one is missing."""
+    if not a or not b:
+        return None
+    ta, tb = _trigrams(a), _trigrams(b)
+    return round(len(ta & tb) / len(ta | tb), 6) if ta and tb else None
+
+
 def _is_kit(name: str | None) -> bool:
     return _KIT.search((name or "").upper()) is not None
 
@@ -319,6 +339,7 @@ def pair_features(maude: DeviceSide, gudid: DeviceSide, ctx: MatchContext) -> di
         "feat_contains_extra_len": len(long_) - len(short) if contains else None,
         "feat_contains_at_end": long_.endswith(short) if contains else None,
         "feat_text_cosine": ctx.text_cosine,
+        "feat_labeler_sim": labeler_similarity(m_mfr, g_mfr),
     }
 
 

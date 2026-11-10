@@ -184,9 +184,22 @@ def test_feature_sets_are_ordered_subsets_and_named_back():
     for name, cols in f.FEATURE_SETS.items():
         assert f.feature_columns_in(cols) == list(cols), name        # subset of FEATURE_COLUMNS, canonical order
         assert f.feature_set_name(cols) == name
-    assert f.FEATURE_SETS[f.DEFAULT_FEATURE_SET] == f.FEATURE_COLUMNS
+    assert f.DEFAULT_FEATURE_SET in f.FEATURE_SETS
+    assert f.FEATURE_SETS["fs3"] == f.FEATURE_COLUMNS                   # the newest set holds every column
     assert f.feature_set_name(["feat_match_kind"]) == "custom"
     with pytest.raises(ValueError):
         f.feature_set("fs99")
     assert f.feature_columns_in(["pair_id", "feat_text_cosine", "feat_match_kind"]) == ["feat_match_kind",
                                                                                         "feat_text_cosine"]
+
+
+def test_labeler_similarity_ranks_spelling_variants_above_unrelated_labelers():
+    sim = f.labeler_similarity
+    assert sim("acme", "acme") == 1.0 and sim(None, "acme") is None and sim("", "acme") is None
+    same_company = sim("s.i.n. implant system sin", "sistema de implante nacional s/a")   # logreg's missed match
+    renamed = sim("carefusion sd", "carefusion 303")
+    unrelated = sim("dentsply sirona", "resmed")                                       # a cross-labeler collision
+    assert renamed > same_company > unrelated
+    feats = f.pair_features(side(model="X1", mfr="carefusion sd"), side(model="X1", mfr="carefusion 303"),
+                            MatchContext(frozenset(), 3))
+    assert feats["feat_labeler_sim"] == renamed

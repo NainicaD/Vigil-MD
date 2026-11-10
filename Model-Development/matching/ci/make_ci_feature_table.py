@@ -74,6 +74,7 @@ def make(n_devices: int = 600, rows_per_device: int = 5, seed: int = 7) -> pd.Da
         "feat_contains_at_end": np.where(kind == MatchKind.CONTAINS.value,
                                          np.where(rng.random(n) < 0.5, "True", "False"), ""),
         "feat_text_cosine": np.round(np.where(match, rng.beta(5, 2, n), rng.beta(2, 5, n)), 4),
+        "feat_labeler_sim": np.round(np.where(match, rng.beta(4, 2, n), rng.beta(1, 4, n)), 4),
     }
     unknown = [c for c in FEATURE_COLUMNS if c not in values]
     if unknown:
