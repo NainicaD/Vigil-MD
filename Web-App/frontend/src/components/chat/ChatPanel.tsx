@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { MAX_QUESTION_LENGTH } from "../../api/types";
 import { useChat } from "../../chat/chatStore";
 import { BotReply } from "./BotReply";
 
@@ -120,7 +121,7 @@ export function ChatPanel() {
           className="chat-input"
           rows={2}
           value={text}
-          maxLength={2000}
+          maxLength={MAX_QUESTION_LENGTH}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onInputKeyDown}
           placeholder={pageEntity ? `Ask about ${pageEntity.title}` : "Ask a question"}

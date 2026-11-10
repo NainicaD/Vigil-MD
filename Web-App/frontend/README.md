@@ -113,6 +113,7 @@ Assistant replies, by `status` (handover §5):
 | `not_found` | The text and a link to the search page |
 | `ambiguous` | The whole text, and one button per `search.matches` entry; a click sends the same question with `{entity_type: match.type, entity_id: match.id}` |
 | `error` | The text and a **Try again** button (same question, same entity) |
+| HTTP error with `{status, text}` (e.g. 429 rate limit) | That `text`, as given, and **Try again** |
 | no answer in 30 s / network failure | *"Can't reach the service, please try again."* and **Try again** |
 
 While an answer is awaited the reply shows *"Looking this up…"* and a second question can't be
@@ -173,8 +174,11 @@ call goes through `src/api/client.ts`.
 | `GET {base}/entity/<kind>/<entity_id>` | `kind`: `device`, `manufacturer`, `product_code`; both parts URL-encoded (`dev:…` → `dev%3A…`) | Device page |
 | `POST {base}/answer` | `{"question": "...", "entity": null}` or `{"question": "...", "entity": {"entity_type": "...", "entity_id": "..."}}` | Assistant |
 
-Errors: HTTP 404 → "Page not found" on a device page. Network failure, a 5xx, an unreadable
-response or no response in 30 s → *"Can't reach the service, please try again."*
+Errors: HTTP 404 → "Page not found" on a device page. Any other error whose JSON body has a
+`text` (the API sends `{status, text}` for 429 rate limit, 413 budget and 503 data down) → that
+text, as given. Network failure, other errors, an unreadable response or no response in 30 s →
+*"Can't reach the service, please try again."* Questions are limited to 1,000 characters, the
+API's limit (`MAX_QUESTION_LENGTH`).
 
 ## Rules the code follows
 
@@ -254,5 +258,8 @@ Tests sit next to the code they test (`*.test.ts(x)`).
 | Footer, disclaimer, UDI note and sources always shown; no judgement wording, ratings or danger colours | [Rules](#rules-the-code-follows) |
 | Safe Markdown rendering (test included); no raw HTML from responses | `SafeText.test.tsx`, ESLint rule |
 | No secrets, no analytics, no storage of questions | [Rules](#rules-the-code-follows), ESLint rules |
-| Works at phone width and by keyboard | [Rules](#rules-the-code-follows) |
+| Works at phone width and by keyboard | Checked by hand in the browser (2026-11-09): keyboard use works; phone width works, layout to be refined later |
 | README; lint and tests pass | this file, [Checks](#checks) |
+
+**Later:** polish the layout at phone width (it works, but has not been designed in detail),
+and replace `src/mocks/` with the real example responses when the team sends them.

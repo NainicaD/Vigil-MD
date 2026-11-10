@@ -5,7 +5,7 @@
  */
 import { createContext, useCallback, useContext, useRef, useState } from "react";
 import { api } from "../api/client";
-import { SERVICE_UNAVAILABLE_MESSAGE } from "../api/errors";
+import { failureMessage } from "../api/errors";
 import { matchToEntity, type AnswerEntity, type AnswerResponse, type SearchMatch } from "../api/types";
 
 export interface TurnBase {
@@ -69,8 +69,8 @@ export function useChatController(): ChatController {
     api
       .answer(q, entity)
       .then((response) => settle({ id, question: q, entity, about, state: "done", response }))
-      // Network failure or no answer within 30 s: the handover's own short message.
-      .catch(() => settle({ id, question: q, entity, about, state: "failed", message: SERVICE_UNAVAILABLE_MESSAGE }))
+      // The API's own error text (rate limit, budget…), else the handover's short message.
+      .catch((error: unknown) => settle({ id, question: q, entity, about, state: "failed", message: failureMessage(error) }))
       .finally(() => {
         busy.current = false;
       });

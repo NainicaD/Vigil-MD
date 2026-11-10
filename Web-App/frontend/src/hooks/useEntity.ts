@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
-import { NotFoundError, isAbortError } from "../api/errors";
+import { NotFoundError, failureMessage, isAbortError } from "../api/errors";
 import type { EntityKind, EntityResponse } from "../api/types";
 
 export type EntityState =
   | { status: "loading" }
   | { status: "done"; data: EntityResponse }
   | { status: "not_found" }
-  | { status: "error" };
+  | { status: "error"; message: string };
 
-type Result = { key: string; attempt: number } & (
-  | { status: "done"; data: EntityResponse }
-  | { status: "not_found" }
-  | { status: "error" }
-);
+type Result = { key: string; attempt: number } & Exclude<EntityState, { status: "loading" }>;
 
 /** Loads one entity page. `retry()` loads it again after an error. */
 export function useEntity(kind: EntityKind, entityId: string): { state: EntityState; retry: () => void } {
@@ -28,7 +24,11 @@ export function useEntity(kind: EntityKind, entityId: string): { state: EntitySt
       .then((data) => setResult({ key, attempt, status: "done", data }))
       .catch((error: unknown) => {
         if (isAbortError(error)) return;
-        setResult({ key, attempt, status: error instanceof NotFoundError ? "not_found" : "error" });
+        setResult(
+          error instanceof NotFoundError
+            ? { key, attempt, status: "not_found" }
+            : { key, attempt, status: "error", message: failureMessage(error) },
+        );
       });
     return () => ctrl.abort();
   }, [kind, entityId, key, attempt]);
@@ -37,5 +37,6 @@ export function useEntity(kind: EntityKind, entityId: string): { state: EntitySt
 
   if (!result || result.key !== key || result.attempt !== attempt) return { state: { status: "loading" }, retry };
   if (result.status === "done") return { state: { status: "done", data: result.data }, retry };
-  return { state: { status: result.status }, retry };
+  if (result.status === "error") return { state: { status: "error", message: result.message }, retry };
+  return { state: { status: "not_found" }, retry };
 }

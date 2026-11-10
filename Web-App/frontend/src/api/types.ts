@@ -107,6 +107,9 @@ export interface AnswerEntity {
   entity_id: string;
 }
 
+/** The API rejects longer questions (api/app.py MAX_QUESTION_CHARS). */
+export const MAX_QUESTION_LENGTH = 1000;
+
 export interface AnswerRequest {
   question: string;
   entity: AnswerEntity | null;

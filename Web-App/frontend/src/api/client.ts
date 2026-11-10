@@ -4,7 +4,7 @@
  * else is ever contacted from the browser (handover §1).
  */
 import { config, type AppConfig } from "../config";
-import { NotFoundError, ServiceUnavailableError } from "./errors";
+import { ApiMessageError, NotFoundError, ServiceUnavailableError } from "./errors";
 import type {
   AnswerEntity,
   AnswerRequest,
@@ -63,7 +63,17 @@ export function createHttpApi(cfg: Pick<AppConfig, "apiBaseUrl" | "requestTimeou
         throw new ServiceUnavailableError("network", error);
       }
       if (res.status === 404) throw new NotFoundError();
-      if (!res.ok) throw new ServiceUnavailableError("server");
+      if (!res.ok) {
+        // The API sends {status, text} for errors it expects (rate limit, budget, data down).
+        const body: unknown = await res.json().catch(() => null);
+        if (timedOut) throw new ServiceUnavailableError("timeout");
+        if (caller?.aborted) throw new DOMException("Aborted", "AbortError");
+        if (body && typeof body === "object" && "text" in body && typeof body.text === "string" && body.text.trim()) {
+          const status = "status" in body && typeof body.status === "string" ? body.status : null;
+          throw new ApiMessageError(res.status, status, body.text);
+        }
+        throw new ServiceUnavailableError("server");
+      }
       try {
         return (await res.json()) as T;
       } catch (error) {
