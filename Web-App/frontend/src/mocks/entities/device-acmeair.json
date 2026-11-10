@@ -1,0 +1,136 @@
+{
+  "entity": {
+    "type": "device",
+    "id": "dev:000000acme01",
+    "found": true,
+    "title": "AcmeAir CPAP",
+    "subtitle": "Example Medical Inc.",
+    "product_codes": [
+      "ZZZ"
+    ]
+  },
+  "counts": {
+    "total_reports": 1234,
+    "by_event_type": {
+      "Malfunction": 1111,
+      "Injury": 120,
+      "Death": 3
+    },
+    "by_year": {
+      "2021": {
+        "Malfunction": 160,
+        "Injury": 19,
+        "Death": 1
+      },
+      "2022": {
+        "Malfunction": 235,
+        "Injury": 25
+      },
+      "2023": {
+        "Malfunction": 280,
+        "Injury": 29,
+        "Death": 1
+      },
+      "2024": {
+        "Malfunction": 250,
+        "Injury": 29,
+        "Death": 1
+      },
+      "2025": {
+        "Malfunction": 186,
+        "Injury": 18
+      }
+    }
+  },
+  "counts_note": "Reports linked to this device by UDI. Reports without a UDI are not counted.",
+  "problems": {
+    "device": [
+      {
+        "term": "Example Problem A",
+        "reports": 410
+      },
+      {
+        "term": "Example Problem B",
+        "reports": 220
+      },
+      {
+        "term": "Example Problem C",
+        "reports": 95
+      }
+    ],
+    "patient": [
+      {
+        "term": "Example Symptom X",
+        "reports": 60
+      },
+      {
+        "term": "Example Symptom Y",
+        "reports": 31
+      },
+      {
+        "term": "Example Symptom Z",
+        "reports": 12
+      }
+    ],
+    "no_harm_reports": 900
+  },
+  "recalls": {
+    "total": 2,
+    "shown": [
+      {
+        "recall_number": "Z-0001-2024",
+        "recall_class": "Class II",
+        "record_date": "2024-05-02",
+        "recall_status": "Ongoing",
+        "product": "Example product description (mock data)",
+        "firm": "Example Medical Inc.",
+        "reason_text": "Example recall reason (mock data).",
+        "root_cause": "Example root cause (mock data).",
+        "action": "Example corrective action (mock data)."
+      },
+      {
+        "recall_number": "Z-0002-2022",
+        "recall_class": "Class III",
+        "record_date": "2022-09-14",
+        "recall_status": "Terminated",
+        "product": "Example product description (mock data)",
+        "firm": "Example Medical Inc.",
+        "reason_text": "Another example recall reason (mock data).",
+        "root_cause": "Example root cause (mock data).",
+        "action": null
+      }
+    ]
+  },
+  "data_as_of": {
+    "entity_catalog": "2026-11-08T06:30:00",
+    "entity_counts": "2026-11-08T06:30:00",
+    "entity_problems": "2026-11-08T06:30:00",
+    "entity_recalls": "2026-11-08T06:30:00"
+  },
+  "sources": [
+    {
+      "query": "catalog",
+      "tables": [
+        "entity_catalog"
+      ]
+    },
+    {
+      "query": "counts",
+      "tables": [
+        "entity_counts"
+      ]
+    },
+    {
+      "query": "problems",
+      "tables": [
+        "entity_problems"
+      ]
+    },
+    {
+      "query": "recalls",
+      "tables": [
+        "entity_recalls"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "entity": {
+    "type": "device",
+    "id": "dev:000000acme02",
+    "found": true,
+    "title": "Acme Infusion Pump",
+    "subtitle": null,
+    "product_codes": []
+  },
+  "counts": {
+    "total_reports": 0,
+    "by_event_type": {},
+    "by_year": {}
+  },
+  "counts_note": "Reports linked to this device by UDI. Reports without a UDI are not counted.",
+  "problems": {
+    "device": [],
+    "patient": [],
+    "no_harm_reports": null
+  },
+  "recalls": {
+    "total": 0,
+    "shown": []
+  },
+  "data_as_of": {
+    "entity_catalog": "2026-11-08T06:30:00",
+    "entity_counts": "2026-11-08T06:30:00",
+    "entity_problems": "2026-11-08T06:30:00",
+    "entity_recalls": "2026-11-08T06:30:00"
+  },
+  "sources": [
+    {
+      "query": "catalog",
+      "tables": [
+        "entity_catalog"
+      ]
+    },
+    {
+      "query": "counts",
+      "tables": [
+        "entity_counts"
+      ]
+    },
+    {
+      "query": "problems",
+      "tables": [
+        "entity_problems"
+      ]
+    },
+    {
+      "query": "recalls",
+      "tables": [
+        "entity_recalls"
+      ]
+    }
+  ]
+}

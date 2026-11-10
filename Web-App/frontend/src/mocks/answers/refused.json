@@ -1,0 +1,12 @@
+{
+  "status": "refused",
+  "text": "I can't give medical advice or judge whether a device is safe for you. If this is an emergency, call 911 or your local emergency number. Please talk to your doctor or another qualified health professional about your situation. If you think a device has harmed someone, you can report it to the FDA through MedWatch. I can share what FDA reports and recalls say about a device, for example how many reports it has or whether it has been recalled.",
+  "sections": [
+    {
+      "kind": "medical_refusal",
+      "text": "I can't give medical advice or judge whether a device is safe for you. If this is an emergency, call 911 or your local emergency number. Please talk to your doctor or another qualified health professional about your situation. If you think a device has harmed someone, you can report it to the FDA through MedWatch. I can share what FDA reports and recalls say about a device, for example how many reports it has or whether it has been recalled."
+    }
+  ],
+  "search": null,
+  "entities": []
+}

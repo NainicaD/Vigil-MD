@@ -1,0 +1,223 @@
+{
+  "entity": {
+    "type": "device",
+    "id": "dev:000000acme03",
+    "found": true,
+    "title": "Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations)",
+    "subtitle": "Acme Diabetes Care Holdings, Incorporated, a subsidiary of Example Medical Technologies International",
+    "product_codes": [
+      "ZZX",
+      "ZZW",
+      "ZZV"
+    ]
+  },
+  "counts": {
+    "total_reports": 98765,
+    "by_event_type": {
+      "Malfunction": 90012,
+      "Injury": 8000,
+      "Death": 52,
+      "Other": 701
+    },
+    "by_year": {
+      "2016": {
+        "Malfunction": 9000,
+        "Injury": 860
+      },
+      "2017": {
+        "Malfunction": 9900,
+        "Injury": 920
+      },
+      "2018": {
+        "Malfunction": 10800,
+        "Injury": 980
+      },
+      "2019": {
+        "Malfunction": 11700,
+        "Injury": 1040
+      },
+      "2020": {
+        "Malfunction": 12600,
+        "Injury": 800
+      },
+      "2021": {
+        "Malfunction": 13500,
+        "Injury": 860
+      },
+      "2022": {
+        "Malfunction": 14400,
+        "Injury": 920
+      },
+      "2023": {
+        "Malfunction": 9000,
+        "Injury": 980
+      },
+      "2024": {
+        "Malfunction": 9900,
+        "Injury": 1040
+      },
+      "2025": {
+        "Malfunction": 10800,
+        "Injury": 800
+      }
+    }
+  },
+  "counts_note": "Reports linked to this device by UDI. Reports without a UDI are not counted.",
+  "problems": {
+    "device": [
+      {
+        "term": "Example Device Problem With A Very Long Name That Wraps Across Lines (mock)",
+        "reports": 12345
+      },
+      {
+        "term": "Example Device Problem 1",
+        "reports": 920
+      },
+      {
+        "term": "Example Device Problem 2",
+        "reports": 840
+      },
+      {
+        "term": "Example Device Problem 3",
+        "reports": 760
+      },
+      {
+        "term": "Example Device Problem 4",
+        "reports": 680
+      },
+      {
+        "term": "Example Device Problem 5",
+        "reports": 600
+      },
+      {
+        "term": "Example Device Problem 6",
+        "reports": 520
+      },
+      {
+        "term": "Example Device Problem 7",
+        "reports": 440
+      },
+      {
+        "term": "Example Device Problem 8",
+        "reports": 360
+      },
+      {
+        "term": "Example Device Problem 9",
+        "reports": 280
+      }
+    ],
+    "patient": [
+      {
+        "term": "Example Patient Problem 1",
+        "reports": 460
+      },
+      {
+        "term": "Example Patient Problem 2",
+        "reports": 420
+      },
+      {
+        "term": "Example Patient Problem 3",
+        "reports": 380
+      },
+      {
+        "term": "Example Patient Problem 4",
+        "reports": 340
+      },
+      {
+        "term": "Example Patient Problem 5",
+        "reports": 300
+      },
+      {
+        "term": "Example Patient Problem 6",
+        "reports": 260
+      },
+      {
+        "term": "Example Patient Problem 7",
+        "reports": 220
+      },
+      {
+        "term": "Example Patient Problem 8",
+        "reports": 180
+      },
+      {
+        "term": "Example Patient Problem 9",
+        "reports": 140
+      },
+      {
+        "term": "Example Patient Problem 10",
+        "reports": 100
+      }
+    ],
+    "no_harm_reports": 70000
+  },
+  "recalls": {
+    "total": 57,
+    "shown": [
+      {
+        "recall_number": "Z-0101-2025",
+        "recall_class": "Class I",
+        "record_date": "2025-08-19",
+        "recall_status": "Ongoing",
+        "product": "Example product description (mock data)",
+        "firm": "Example Medical Inc.",
+        "reason_text": "Example recall reason (mock data). The firm identified that under certain conditions the infusion set connector may separate from the reservoir during extended wear, which could interrupt delivery without an alarm. The firm also identified that the labeling did not describe the inspection steps clearly enough for users of the pediatric configuration, and that some units shipped with an earlier software version that does not include the updated occlusion detection settings described in the revised instructions for use.",
+        "root_cause": "Example root cause (mock data).",
+        "action": "Example action (mock data). The firm sent an urgent notice to customers with inspection instructions, a replacement schedule for affected lots, and a software update procedure to be completed by the next scheduled visit."
+      },
+      {
+        "recall_number": "Z-0102-2023",
+        "recall_class": null,
+        "record_date": null,
+        "recall_status": null,
+        "product": null,
+        "firm": null,
+        "reason_text": null,
+        "root_cause": null,
+        "action": null
+      },
+      {
+        "recall_number": "Z-0103-2021",
+        "recall_class": "Class II",
+        "record_date": "2021-03-30",
+        "recall_status": "Terminated",
+        "product": "Example product description (mock data)",
+        "firm": "Example Medical Inc.",
+        "reason_text": "Example recall reason (mock data).",
+        "root_cause": "Example root cause (mock data).",
+        "action": null
+      }
+    ]
+  },
+  "data_as_of": {
+    "entity_catalog": "2026-11-08T06:30:00",
+    "entity_counts": "2026-11-08T06:30:00",
+    "entity_problems": "2026-11-08T06:30:00",
+    "entity_recalls": "2026-11-08T06:30:00"
+  },
+  "sources": [
+    {
+      "query": "catalog",
+      "tables": [
+        "entity_catalog"
+      ]
+    },
+    {
+      "query": "counts",
+      "tables": [
+        "entity_counts"
+      ]
+    },
+    {
+      "query": "problems",
+      "tables": [
+        "entity_problems"
+      ]
+    },
+    {
+      "query": "recalls",
+      "tables": [
+        "entity_recalls"
+      ]
+    }
+  ]
+}

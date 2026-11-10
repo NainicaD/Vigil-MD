@@ -1,0 +1,81 @@
+{
+  "entity": {
+    "type": "manufacturer",
+    "id": "example medical",
+    "found": true,
+    "title": "Example Medical Inc.",
+    "subtitle": null,
+    "product_codes": [
+      "ZZZ",
+      "ZZY",
+      "ZZU"
+    ]
+  },
+  "counts": {
+    "total_reports": 2046,
+    "by_event_type": {
+      "Malfunction": 1800,
+      "Injury": 242,
+      "Death": 4
+    },
+    "by_year": {
+      "2024": {
+        "Malfunction": 900,
+        "Injury": 120,
+        "Death": 2
+      },
+      "2025": {
+        "Malfunction": 900,
+        "Injury": 122,
+        "Death": 2
+      }
+    }
+  },
+  "counts_note": "Reports where this manufacturer name appears, as normalized in MAUDE.",
+  "problems": {
+    "device": [
+      {
+        "term": "Example Problem A",
+        "reports": 600
+      }
+    ],
+    "patient": [],
+    "no_harm_reports": 1500
+  },
+  "recalls": {
+    "total": 0,
+    "shown": []
+  },
+  "data_as_of": {
+    "entity_catalog": "2026-11-08T06:30:00",
+    "entity_counts": "2026-11-08T06:30:00",
+    "entity_problems": "2026-11-08T06:30:00",
+    "entity_recalls": "2026-11-08T06:30:00"
+  },
+  "sources": [
+    {
+      "query": "catalog",
+      "tables": [
+        "entity_catalog"
+      ]
+    },
+    {
+      "query": "counts",
+      "tables": [
+        "entity_counts"
+      ]
+    },
+    {
+      "query": "problems",
+      "tables": [
+        "entity_problems"
+      ]
+    },
+    {
+      "query": "recalls",
+      "tables": [
+        "entity_recalls"
+      ]
+    }
+  ]
+}
