@@ -30,7 +30,7 @@ GRID = tuple(round(t, 2) for t in np.arange(0.05, 0.96, 0.05))
 DATA_SETS = {
     'val': 'data/generated/val.jsonl',
     'heldout': 'data/generated/heldout.jsonl',
-    'test': 'data/test/handwritten_test.jsonl',
+    'test': 'data/test/handwritten_test_v2.jsonl',
     'false_alarm': 'data/test/false_alarm_set.jsonl',
 }
 OOS = labels.LABELS.index(labels.OUT_OF_SCOPE)

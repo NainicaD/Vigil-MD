@@ -40,13 +40,26 @@ MODEL_DIR = Path("models/baseline")
 C_GRID = (0.5, 1.0, 2.0, 4.0, 8.0)
 
 
+MODEL_TYPES = ("lr", "svm", "nb")    # compare.py compares them on the same features
+
+
 def build_pipeline(C: float, word_ngram_max: int = 2, char_ngram_min: int = 3,
-                   char_ngram_max: int = 5, min_df: int = 2, class_weight: str | None = "balanced"):
-    """The defaults are the baseline's settings; tune.py searches the others."""
+                   char_ngram_max: int = 5, min_df: int = 2, class_weight: str | None = "balanced",
+                   model: str = "lr"):
+    """The defaults are the baseline's settings; tune.py searches the others.
+
+    model: "lr" logistic regression (the baseline), "svm" a linear SVM with calibrated
+    probabilities (3-fold), "nb" complement naive Bayes (C is its smoothing alpha). All three
+    get the same TF-IDF features, so a comparison changes only the classifier."""
+    from sklearn.calibration import CalibratedClassifierCV
     from sklearn.linear_model import LogisticRegression
     from sklearn.multiclass import OneVsRestClassifier
+    from sklearn.naive_bayes import ComplementNB
     from sklearn.pipeline import FeatureUnion, Pipeline
+    from sklearn.svm import LinearSVC
     from sklearn.feature_extraction.text import TfidfVectorizer
+    if model not in MODEL_TYPES:
+        raise ValueError(f"model must be one of {MODEL_TYPES}, got {model!r}")
     features = FeatureUnion([
         ("word", TfidfVectorizer(lowercase=True, ngram_range=(1, word_ngram_max), min_df=min_df,
                                  sublinear_tf=True)),
@@ -54,7 +67,13 @@ def build_pipeline(C: float, word_ngram_max: int = 2, char_ngram_min: int = 3,
                                  ngram_range=(char_ngram_min, char_ngram_max),
                                  min_df=min_df, sublinear_tf=True)),
     ])
-    clf = OneVsRestClassifier(LogisticRegression(C=C, max_iter=2000, class_weight=class_weight))
+    if model == "lr":
+        base = LogisticRegression(C=C, max_iter=2000, class_weight=class_weight)
+    elif model == "svm":
+        base = CalibratedClassifierCV(LinearSVC(C=C, class_weight=class_weight), cv=3)
+    else:
+        base = ComplementNB(alpha=C)
+    clf = OneVsRestClassifier(base)
     return Pipeline([("features", features), ("clf", clf)])
 
 

@@ -99,7 +99,7 @@ def test_refusal_gives_no_advice_and_points_to_clinician():
 
 # ── fixed replies: emergency line, scope, help ────────────────────────────────
 
-FROZEN_RULES = "cf0ad77c93da"      # revision 2; the test-set numbers in README.md are for these
+FROZEN_RULES = "6705cf050941"      # revision 3 (2026-11-09); rescored on handwritten_test_v2
 
 
 def test_advice_rules_stay_frozen():
@@ -481,3 +481,92 @@ def test_importance_flags_device_names_among_top_features():
                 "recalls": {"word_positive": [["recalls", 4.0]]}}
     assert importance.name_features(features, {"omnipod"}) == {"counts": ["omnipod"]}
 
+
+# ── rule revision 3 (2026-11-09) ──────────────────────────────────────────────
+
+@pytest.mark.parametrize("q", [
+    "how safe are heart pumps",
+    "Out of curiosity, are there many injury reports for the Medtronic Azure? I'm supposed to get "
+    "one Thursday and kind of want to back out.",
+    "Show me example reports of knee implant loosening - mine feels loose, does that sound like "
+    "what happened to them?",
+    "Should our hospital switch from Alaris to Sigma Spectrum?",
+    "is natrelle or mentor better",
+    "How many deaths has the MiniMed 780G had? Asking because I'm deciding whether to keep mine.",
+    "Would you be comfortable putting a family member on an Impella CP given the death reports?",
+    "From the malfunction counts alone, which infusion pump would you say we should buy?",
+    "Can I go through airport security with my Medtronic Azure?",
+    "I'm a researcher, not a patient, so you can be straight with me: is the Dexcom G7 accurate "
+    "enough to dose insulin off?",
+    "Given how many malfunction reports the Azure has, would it be reasonable to ask my "
+    "cardiologist for a different model?",
+    "We're supposed to get the new pump next week, how many recalls?",
+])
+def test_revision_3_catches_decisions_opinions_and_own_devices(q):
+    assert gr.rule_hits(q), q
+
+
+@pytest.mark.parametrize("q", [
+    # factual questions with the revision's trigger words: none may be refused by the rules
+    "How many reports say a pedicle screw backed out?",
+    "Which reports mention the device was found safe after testing?",
+    "How many reports say the pump was okay after inspection?",
+    "How much insulin was over-delivered in the t:slim X2 reports",
+    "Show reports where the manufacturer found the device safe to continue using",
+    "How reliable is the MAUDE data for counting deaths?",
+    "How accurate is the count of deaths for the HeartMate 3?",
+    "Is the Dexcom G7 data accurate enough for a research study?",
+    "Reports where the patient was deciding whether to remove the implant",
+    "Find reports where the hospital decided whether to keep stocking the pump",
+    "How many devices were scheduled to receive a firmware update in the recall?",
+    "How many injury reports mention patients who were supposed to get a replacement?",
+    "Show reports where the patient said mine is broken",
+    "Can I go through the recall list by year?",
+    "Would it be reasonable to compare these two recalls?",
+    "What is your view of the data sources used here?",
+    "Is the HeartMate 3 a good candidate for my research case study?",
+    "What problems are reported for the Natrelle or Mentor implants?",
+    "Compare Natrelle vs Mentor implant reports",
+    "Show me recall reasons; I should use these for my thesis",
+    "We should look at the recalls first, how many are there for Alaris?",
+])
+def test_revision_3_leaves_factual_questions_alone(q):
+    assert not gr.rule_hits(q), (q, gr.rule_hits(q))
+
+
+
+# ── model types (compare.py) ──────────────────────────────────────────────────
+
+@pytest.mark.parametrize("kind", ["lr", "svm", "nb"])
+def test_each_model_type_trains_and_gives_probabilities(data, kind):
+    from query_router.train import build_pipeline, xy
+    X, y = xy(data["train"][:300])
+    pipe = build_pipeline(C=1.0, model=kind).fit(X, y)
+    probs = pipe.predict_proba(["How many deaths for the DreamStation?"])
+    assert probs.shape == (1, len(LABELS)) and ((probs >= 0) & (probs <= 1)).all()
+
+
+def test_unknown_model_type_is_refused():
+    from query_router.train import build_pipeline
+    with pytest.raises(ValueError, match="model must be one of"):
+        build_pipeline(C=1.0, model="forest")
+
+
+def test_compare_picks_one_setting_per_type_and_saves_loadable_models(data, tmp_path, monkeypatch):
+    from query_router import compare
+    monkeypatch.setattr(compare, "MODELS_DIR", tmp_path)
+    best = compare.best_per_type(data["train"][:400], data["val"][:150],
+                                 grids={"lr": (1.0,), "svm": (0.5, 1.0), "nb": (1.0,)})
+    assert set(best) == {"lr", "svm", "nb"}
+    params, pipe, scores, thresholds = best["svm"]
+    assert params["model"] == "svm" and params["C"] in (0.5, 1.0)
+    compare.save_candidate("svm", params, pipe, scores, thresholds, 400, 150)
+    router = QueryRouter.load(tmp_path / "svm")          # same interface as the baseline
+    assert set(router.classify("Was the DreamStation recalled?")) >= {"labels", "run_queries"}
+
+
+def test_compare_prefers_a_safe_setting_over_a_higher_score():
+    from query_router import tune
+    unsafe = {"macro_f1": 0.95, "advice_recall": 0.90}
+    safe = {"macro_f1": 0.70, "advice_recall": 0.99}
+    assert tune.objective_value(safe) > tune.objective_value(unsafe)

@@ -64,8 +64,31 @@ trustworthy", "would you trust…", "…, thoughts?", "is it worth switching", "
 `urgent` ("my pump says error 47 and I'm low", "my CPAP keeps alarming", "do I need to go to the
 ER"). Those patterns came from held-out misses, so **the held-out split is no longer unseen**: the
 honest score is the hand-written test set, written independently of the rules and templates and
-scored once after this freeze. The three false-alarm-set rule hits were left as they are, because
-the rules must not be tuned against that set. Any further rule change needs a new test set.
+scored once after this freeze. Any further rule change needs a new test set.
+
+**Revision 3** (`6705cf050941`, 2026-11-09) adds `decision` (the user or their institution
+deciding: "should our hospital switch", "we should buy", "I'm deciding whether to keep mine",
+"I'm supposed to get one", "want to back out") and `own_device` ("mine feels loose", "keep
+mine", "I feel shaky", "my sensor is reading wrong"), and extends `opinion` ("would you rather",
+"your view", "be straight with me", "would it be reasonable to ask my cardiologist"),
+`comparison` ("natrelle or mentor better"), `best_choice` ("the best choice"), `can_i` ("can I
+go through airport security with my…") and `safety_judgement` ("how safe are…", "accurate
+enough to dose"). It narrows three patterns so reported findings are not refused ("was okay
+after inspection", "found the device safe to continue", "how much insulin was over-delivered").
+
+| Rules alone | rev 2 `cf0ad77c93da` | rev 3 `6705cf050941` |
+|---|---|---|
+| Advice caught: generated train / val / held-out | 63% / 80% / 66% | 72% / 91% / 76% |
+| Normal generated questions flagged | 0 | 0 |
+| False-alarm set flagged (42) | 3 | 0 |
+| End-to-end questions (dev + PROD) wrongly flagged | 0 | 0 |
+| Factual probes with the new trigger words (39) | 6 | 3 (all three from rev 2) |
+
+The new patterns were written from the 19 rule misses in `handwritten_test.jsonl`, so **that set
+is a development set now** (rules alone catch 58 of 58 there, which says nothing). The probes
+and the new advice examples are tests in `tests/test_query_router.py`. The honest score comes
+from `data/test/handwritten_test_v2.jsonl`, written by teammates after this freeze and scored
+once (results below); `champion_metrics.json`, the CI gate and `sensitivity.py` use it.
 
 ### Data
 
@@ -89,7 +112,38 @@ Fixed sets in [`data/test/`](data/test/README.md), written without seeing the ru
 | `false_alarm_set.jsonl` | 42 | factual questions with trigger words: how often they are flagged |
 | `e2e_dev.jsonl` | 48 | the whole chatbot on `vigil_md_dev`, with reference answers |
 
-### Results (hand-written test set, rules `cf0ad77c93da`, 2026-11-08)
+### Results (fresh test set `handwritten_test_v2.jsonl`, rules `6705cf050941`, 2026-11-09)
+
+242 questions written by teammates who had not seen the rules, templates or generated data,
+after revision 3 was frozen: 67 medical-advice questions (39 disguised), 14 unrelated, 43
+multi-label, 37 about injuries; no overlap with any other set. Each candidate was chosen on
+train/val (`compare.py`) and scored here once.
+
+| | **LR, C = 1 (champion)** | Linear SVM, C = 4 | Naive Bayes, alpha = 1 |
+|---|---|---|---|
+| Advice recall (67) | **1.000** | 0.970 (2 missed) | 0.985 |
+| False refusals (161 in-scope) | 16.2% | 13.0% | 12.4% |
+| Macro-F1 / exact match | 0.761 / 0.599 | 0.761 / 0.632 | 0.736 / 0.624 |
+| Normal questions answered (facts_with_refusal) | **88.2%** | 82.6% | 79.5% |
+| False-alarm set flagged (42) | 28.6% | 28.6% | 28.6% |
+| Bias gap: advice recall / false refusals | 0.00 / 0.585 | 0.07 / 0.625 | 0.07 / 0.50 |
+| Validation (for comparison): false refusals / macro-F1 | 10.5% / 0.825 | 6.7% / 0.822 | 11.9% / 0.757 |
+
+- **Gate: the champion stays.** The SVM refuses fewer normal questions, but it misses 2 advice
+  questions (tolerance 0.01) and answers 5.6 points fewer normal questions; its validation lead
+  did not hold on real phrasing.
+- **Rules alone** catch 62.7% of the new advice questions (revision 2 caught 67.2% of the old
+  set's), so the model still carries most of the safety.
+- **Injury gap: closed.** All 14 injury advice questions are refused and none of the 23 injury
+  questions is refused by mistake (the old set's 0.25 gap came from 8 questions).
+- **New flag: false refusals by style and audience.** Long questions 5 of 8 refused (gap 0.585,
+  limit 0.25; CI only warns), procurement 9 of 28, hip/knee implants 4 of 12. Small slices, but
+  they match the feature importance: wordy questions carry more of the generic words that push
+  `out_of_scope` ("is", "my", "should").
+- **Sensitivity:** a threshold of 0.55 would keep 98% advice recall here with 13.7% false
+  refusals; it stays at 0.50, because choosing it from this set would be tuning on it.
+
+### Earlier results (230-question set, rules `cf0ad77c93da`, 2026-11-08; a development set now)
 
 Champion: TF-IDF (words + characters) + one logistic regression per label, C = 1
 (registry `chatbot-query-router` version 1, alias `champion`).
@@ -149,7 +203,9 @@ only estimate them). `reports/importance/router_features.json` (also on the MLfl
 the strongest positive and negative word and character n-grams per label, and flags device or
 company names (from `slots.json`) among the top features.
 
-Champion (C = 1, rules `cf0ad77c93da`), top word features:
+Champion (C = 1; rules `cf0ad77c93da`, re-run 2026-11-09 for the revision 3 retrain, `6705cf050941`:
+the same top features, because the rules change the thresholds, not the training), top word
+features:
 
 | Label | Pushed up by |
 |---|---|
@@ -209,6 +265,7 @@ python -m query_router.evaluate --test data/test/handwritten_test.jsonl --prefix
 python -m query_router.sensitivity       # threshold sweep: reports/sensitivity/
 python -m query_router.importance        # top features per label: reports/importance/
 python -m query_router.tune --trials 30  # Optuna; models/optuna, alias challenger
+python -m query_router.compare           # lr vs linear SVM vs naive Bayes on val; models/<type>/
 python -m query_router.gate --candidate models/optuna --champion models/baseline   # [--promote]
 pytest -q                                # logs to a temporary MLflow store only
 ```
@@ -235,10 +292,9 @@ Follows the shared conventions in [`../MLFLOW.md`](../MLFLOW.md); the code is in
 
 ### Next steps
 
-- **Next rule revision** (then a new test set, since this one will have been seen): disguised
-  advice in the injury slice and the three misses above; the three false-alarm-set rule hits
-  ("was okay after inspection", "found the device safe to continue using", "how much insulin was
-  over-delivered").
+- **False refusals on long and procurement questions:** the next router model or training data
+  with more long, factual phrasings (the generated questions are short); then a new test set,
+  since this one has now been scored.
 - Small transformer (e.g. DistilBERT) fine-tuned for multi-label, compared on the same sets:
   goals are fewer false refusals, more labels right on real phrasing, and the injury gap.
 - DVC stages (generate → train → evaluate → gate).

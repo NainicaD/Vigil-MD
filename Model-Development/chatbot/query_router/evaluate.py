@@ -25,7 +25,7 @@ report as an artifact. --no-log skips this.
 
 Usage (from Model-Development/chatbot/):
     python -m query_router.evaluate                 # heldout + false-alarm set
-    python -m query_router.evaluate --test data/test/handwritten_test.jsonl
+    python -m query_router.evaluate --test data/test/handwritten_test_v2.jsonl
 """
 from __future__ import annotations
 
