@@ -35,6 +35,9 @@ from query_router import guardrails
 from query_router import predict
 
 SECTION_ORDER = ('identity', 'counts', 'problems', 'recalls', 'narratives')
+# No label passed its threshold, no advice, but the question names one device clearly (or comes
+# from a device page): its summary is shown instead of "unclear" (the design always fetches it).
+SUMMARY_FALLBACK = ('counts', 'problems', 'recalls')
 # Event types named in a question: narratives then show only those ("describe the death
 # reports"). Counts, problems and recalls are not filtered. "dead" is left out on purpose:
 # "the pump went dead" is a malfunction, not a death.
@@ -135,9 +138,14 @@ class Chatbot:
 
         if route['reply_kind'] in ('help', 'scope'):
             return done(route['reply_kind'])
-        if not route['run_queries']:
-            if route['reply_kind'] == 'medical_refusal':
-                return done('refused')
+        # No label passed its threshold ("How many deaths has the HeartMate 3 had?" scored
+        # 0.768 for counts against 0.77). Refusals and fixed replies are settled above, so the
+        # summary fallback below only ever answers a factual question.
+        fallback = not route['run_queries']
+        if fallback and route['reply_kind'] == 'medical_refusal':
+            return done('refused')
+
+        def unclear() -> dict:
             sections.append({'kind': 'unclear', 'text': templates.UNCLEAR})
             return done('unclear')
 
@@ -150,6 +158,8 @@ class Chatbot:
                 'matches': [{'type': h.kind, 'id': h.entity_id,
                              'title': h.title, 'score': h.score}
                             for h in res.matches]}
+            if fallback and res.status not in ('resolved', 'several'):
+                return unclear()        # no clear device either: ask to rephrase
             if res.status == 'none':
                 if res.phrase:
                     sections.append({'kind': 'not_found',
@@ -171,9 +181,12 @@ class Chatbot:
                                  templates.TOO_MANY.format(n=MAX_ENTITIES)})
                 keys = keys[:MAX_ENTITIES]
 
+        if fallback:
+            sections.append({'kind': 'note', 'text': templates.SUMMARY_FALLBACK_NOTE})
+            out['run_queries'] = list(SUMMARY_FALLBACK)
         budget = (ql_backend.Budget() if self.max_gb is None
                   else ql_backend.Budget(max_gb=self.max_gb))
-        asked = set(route['run_queries'])
+        asked = set(out['run_queries'])
         try:
             for key in keys:
                 sections.extend(self._entity_sections(key, asked, budget, out))

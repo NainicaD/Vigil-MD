@@ -467,6 +467,11 @@ VIGIL_BQ_DATASET=vigil_md_dev python -m answer "Was the DreamStation recalled, a
   and the empty, not-found and ambiguous paths) and checks the text `render.py` adds around the
   templates. Report text and recall reasons are quoted from the FDA as they are. Changing a
   template changes `templates_fingerprint()`.
+- **No label, but a clear device:** when no label passes its threshold and there is no advice,
+  but the question names one device (or comes from a device page), the device's summary (counts,
+  problems, recalls) is shown after a short note, instead of "unclear" (2026-11-10). "How many
+  deaths has the HeartMate 3 had?" scored 0.768 for counts against 0.77. Junk ("asdfgh") and
+  several close matches still get "unclear".
 - **Edge cases**, each a fixed reply: no device words (asks which device), device not found,
   several close matches (lists them), comparisons (one block per device, at most 3, no ranking),
   found but no reports, over the cost cap, BigQuery unreachable (no traceback shown).
@@ -621,6 +626,81 @@ curl localhost:8080/api/health
 - Checked 2026-11-10 with the website: image 675 MB with the dev index (the PROD index adds
   712 MB); `/` and a directly opened device link return the page, assets load, the bundle has
   no example data, and health, a device page and an answer work through the container.
+
+## Deploy to Cloud Run
+
+The website and API run as one Cloud Run service from the image above. Deployed 2026-11-10,
+**private** (only people with access can open it); going public is a later, separate step.
+
+| What | Name | Notes |
+|---|---|---|
+| Project, region | `vigil-md-1792696816`, `us-central1` | Same multi-region (US) as BigQuery and the bucket, so no transfer cost |
+| Image repository | Artifact Registry `vigil-md` (Docker) | Images tagged by git commit, e.g. `app:05f38eb`; about 1 GB each with the PROD index |
+| Service | Cloud Run `vigil-md` | `https://vigil-md-292904548224.us-central1.run.app`; min 0 / max 2 instances, 2 GiB, 1 CPU, 20 requests per instance, 60 s timeout |
+| Service account | `vigil-md-chatbot@vigil-md-1792696816.iam.gserviceaccount.com` | `roles/bigquery.jobUser` on the project and READER on dataset `vigil_md_prod` only: no RAW, staging, ops tables or GCS |
+
+**Build and push** (from the repository root; the Mac is ARM and Cloud Run is `linux/amd64`, so
+the build is emulated, about 10-20 minutes including the push):
+
+```bash
+gcloud auth configure-docker us-central1-docker.pkg.dev --quiet      # once per machine
+TAG=$(git rev-parse --short HEAD)
+IMG=us-central1-docker.pkg.dev/vigil-md-1792696816/vigil-md/app:$TAG
+docker buildx build --platform linux/amd64 -f Model-Development/chatbot/Dockerfile \
+  --build-arg DATASET=vigil_md_prod -t $IMG --push .
+```
+
+The search index is copied from `data/search/vigil_md_prod.sqlite` (rebuild it first with
+`python -m device_search.build_index --dataset vigil_md_prod`, 0.15 GB, for current names).
+Wait for the push to finish before deploying, or the deploy fails with "image not found".
+
+**Deploy** (a new revision; the previous one stays available):
+
+```bash
+gcloud run deploy vigil-md --image $IMG --region us-central1 --project vigil-md-1792696816 \
+  --service-account vigil-md-chatbot@vigil-md-1792696816.iam.gserviceaccount.com \
+  --no-allow-unauthenticated --min-instances 0 --max-instances 2 \
+  --memory 2Gi --cpu 1 --concurrency 20 --timeout 60 --set-env-vars VIGIL_BQ_DATASET=vigil_md_prod
+```
+
+**Check it privately:**
+
+```bash
+U=https://vigil-md-292904548224.us-central1.run.app
+curl -H "Authorization: Bearer $(gcloud auth print-identity-token)" $U/api/health
+gcloud run services proxy vigil-md --region us-central1 --project vigil-md-1792696816 --port 8091
+# then open http://localhost:8091 (the private service through your login)
+```
+
+**Roll back** to an earlier image (each is kept in the repository under its commit tag):
+`gcloud run deploy vigil-md --image us-central1-docker.pkg.dev/vigil-md-1792696816/vigil-md/app:<older tag> ...`
+with the same flags, or move traffic to an earlier revision in the console.
+
+**Before making it public:** set the BigQuery quota "Query usage per day" (about 50 GB) and
+budget alerts. A public site lets anyone ask questions (40-50 MB billed each); the per-question
+cap, the rate limit and the 2-instance maximum bound the damage, only the daily quota stops it.
+Then `gcloud run services add-iam-policy-binding vigil-md --region us-central1 --project
+vigil-md-1792696816 --member=allUsers --role=roles/run.invoker` (undo with
+`remove-iam-policy-binding`).
+
+**Cost:** the service scales to zero (nothing billed when idle; the first request after a quiet
+spell takes about 8 s), and course traffic stays in Cloud Run's free tier. The image storage is
+about $0.05 a month after the free 0.5 GB. BigQuery reads per question are the real cost, the
+same wherever the app runs.
+
+**Remove everything** (when the final hosting is decided):
+
+```bash
+gcloud run services delete vigil-md --region us-central1 --project vigil-md-1792696816
+gcloud artifacts repositories delete vigil-md --location us-central1 --project vigil-md-1792696816
+gcloud projects remove-iam-policy-binding vigil-md-1792696816 \
+  --member=serviceAccount:vigil-md-chatbot@vigil-md-1792696816.iam.gserviceaccount.com --role=roles/bigquery.jobUser
+# remove the account's READER entry from vigil_md_prod (console: dataset > Sharing > Permissions), then:
+gcloud iam service-accounts delete vigil-md-chatbot@vigil-md-1792696816.iam.gserviceaccount.com --project vigil-md-1792696816
+```
+
+The container runs anywhere Docker does (Render, Fly.io, a VM): give it a key file for the same
+read-only account as a secret, never in git or the image.
 
 ## Handoff: building the answer (step 7)
 
