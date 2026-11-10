@@ -487,7 +487,7 @@ UNION ALL SELECT 'staging', COUNT(*) FROM `vigil-md-1792696816.vigil_md_staging.
 UNION ALL SELECT 'prod', COUNT(*) FROM `vigil-md-1792696816.vigil_md_prod.enforcement`;
 
 -- one load_log row per loaded file
-SELECT source, COUNT(*) AS files, SUM(row_count) AS rows
+SELECT source, COUNT(*) AS files, SUM(row_count) AS row_total
 FROM `vigil-md-1792696816.vigil_md_ops.load_log` GROUP BY source;
 
 -- no leftover temp tables (they also expire after 1 day)

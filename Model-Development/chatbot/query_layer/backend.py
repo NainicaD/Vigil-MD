@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from . import config
@@ -50,11 +53,27 @@ def _plain(value):
     return value
 
 
+# Table metadata changes at most once a day (after the load), so its date is remembered briefly.
+DATA_AS_OF_TTL_SECONDS = 300
+MAX_PARALLEL = 8
+
+
+def _parallel(fn, items: list) -> list:
+    """fn over items at the same time (BigQuery round trips), results in the items' order."""
+    if len(items) <= 1:
+        return [fn(x) for x in items]
+    with ThreadPoolExecutor(max_workers=min(MAX_PARALLEL, len(items))) as pool:
+        return list(pool.map(fn, items))
+
+
 class BigQueryBackend:
     def __init__(self, project: str = config.PROJECT, dataset: str = config.DATASET,
-                 client=None):
+                 client=None, clock=time.monotonic):
         self.project, self.dataset = project, dataset
         self._client = client
+        self._clock = clock
+        self._as_of: dict[str, tuple[float, str | None]] = {}
+        self._as_of_lock = threading.Lock()
 
     @property
     def client(self):
@@ -78,15 +97,17 @@ class BigQueryBackend:
         return out
 
     def estimate(self, queries: list[Query]) -> list[int]:
-        """Bytes each query would scan (dry run, free)."""
+        """Bytes each query would scan (dry runs, free; sent at the same time)."""
         from google.cloud import bigquery
-        out = []
         for q in queries:
             assert_read_only(q.sql)
-            job = self.client.query(q.sql, job_config=bigquery.QueryJobConfig(
+        client = self.client
+
+        def dry(q):
+            job = client.query(q.sql, job_config=bigquery.QueryJobConfig(
                 dry_run=True, use_query_cache=False, query_parameters=self._bq_params(q)))
-            out.append(int(job.total_bytes_processed or 0))
-        return out
+            return int(job.total_bytes_processed or 0)
+        return _parallel(dry, queries)
 
     def run(self, queries: list[Query], budget: Budget) -> tuple[list[list[dict]], list[QueryRecord]]:
         """Dry-run all, refuse above the budget, then run each with maximum_bytes_billed."""
@@ -97,23 +118,39 @@ class BigQueryBackend:
             raise QueryBudgetExceeded(
                 f"{', '.join(q.name for q in queries)} would scan {need_gb:.2f} GB; "
                 f"{budget.remaining_gb:.2f} GB left of {budget.max_gb:.2f} GB for this question")
-        results, records = [], []
-        for q, est in zip(queries, estimates):
-            cap = max(10 * 1024 * 1024, math.ceil(budget.remaining_gb * 1e9))  # BigQuery bills >= 10 MB
-            job = self.client.query(q.sql, job_config=bigquery.QueryJobConfig(
+        # The queries run at the same time. Each job may bill at most what is left once the
+        # others' estimates are set aside, so together they stay within the budget, as when
+        # they ran one after another. BigQuery bills at least 10 MB per job.
+        left = budget.remaining_gb * 1e9
+        client = self.client
+
+        def one(item):
+            q, est = item
+            cap = max(10 * 1024 * 1024, math.ceil(left - (sum(estimates) - est)))
+            job = client.query(q.sql, job_config=bigquery.QueryJobConfig(
                 query_parameters=self._bq_params(q), maximum_bytes_billed=cap))
             rows = [{k: _plain(v) for k, v in dict(r).items()} for r in job.result()]
             billed = int(getattr(job, "total_bytes_billed", 0) or 0)
-            budget.spent_gb += billed / 1e9
-            results.append(rows)
-            records.append(QueryRecord(q.name, q.sql, {k: v for k, (_, v) in q.params.items()},
-                                       q.tables, est, billed, len(rows)))
-        return results, records
+            return rows, QueryRecord(q.name, q.sql, {k: v for k, (_, v) in q.params.items()},
+                                     q.tables, est, billed, len(rows))
+        done = _parallel(one, list(zip(queries, estimates)))
+        budget.spent_gb += sum(rec.billed_bytes for _, rec in done) / 1e9
+        return [rows for rows, _ in done], [rec for _, rec in done]
 
     def data_as_of(self, tables: list[str]) -> dict[str, str]:
-        """When each table was last modified (table metadata, no query cost)."""
-        out = {}
-        for name in sorted(set(tables)):
-            t = self.client.get_table(f"{self.project}.{self.dataset}.{name}")
-            out[name] = t.modified.isoformat() if t.modified else None
-        return out
+        """When each table was last modified (table metadata, no query cost). Remembered for
+        DATA_AS_OF_TTL_SECONDS; the tables change at most once a day."""
+        now, names = self._clock(), sorted(set(tables))
+        with self._as_of_lock:
+            missing = [n for n in names if n not in self._as_of
+                       or now - self._as_of[n][0] >= DATA_AS_OF_TTL_SECONDS]
+        client = self.client
+
+        def fetch(name):
+            t = client.get_table(f"{self.project}.{self.dataset}.{name}")
+            return name, (t.modified.isoformat() if t.modified else None)
+        fresh = _parallel(fetch, missing)
+        with self._as_of_lock:
+            for name, value in fresh:
+                self._as_of[name] = (now, value)
+            return {n: self._as_of[n][1] for n in names}
