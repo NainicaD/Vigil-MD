@@ -595,6 +595,27 @@ open http://localhost:8000/api/docs          # interactive docs
 
 Tests: `tests/test_api.py` (fake router, index and BigQuery; no network).
 
+**Container** (`Dockerfile`; build from the repository root, whose `.dockerignore` lets in
+only the files the image copies):
+
+```bash
+docker build -f Model-Development/chatbot/Dockerfile --build-arg DATASET=vigil_md_dev -t vigil-md-api:dev .
+docker run --rm -p 8080:8080 -v "$HOME/.config/gcloud:/home/app/.config/gcloud:ro" vigil-md-api:dev
+curl localhost:8080/api/health
+```
+
+- Stage 1 trains the router with `requirements.txt`'s pinned versions (as CI does; same
+  validation numbers and thresholds as the champion), so model and scikit-learn always match.
+- Stage 2 installs `requirements-serve.txt` only (no MLflow, Optuna or matplotlib), copies the
+  code, the trained model and the search index of `DATASET` (build it first with
+  `python -m device_search.build_index --dataset <name>`), and runs as a non-root user.
+- No credentials in the image: locally, mount gcloud application-default credentials
+  read-only (above); on Cloud Run the service account is used.
+- The front end's build goes in with the two commented lines near the end of the Dockerfile,
+  once `Web-App/frontend/dist/` exists.
+- Checked 2026-11-09: build 2.4 min, image 674 MB with the dev index (the PROD index adds
+  712 MB); health, search and an answer correct through the container.
+
 ## Handoff: building the answer (step 7)
 
 The pieces for one chatbot turn, in order. Everything returns plain dicts.
