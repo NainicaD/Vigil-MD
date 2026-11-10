@@ -1,0 +1,36 @@
+{
+  "status": "budget",
+  "text": "**AcmeAir CPAP** (Example Medical Inc.): 1,234 reports linked by UDI in FDA MAUDE (2021–2025).\n\nThat question needs more data than I can read for one question. Try asking about a single device, or one part at a time (for example its recalls).",
+  "sections": [
+    {
+      "kind": "headline",
+      "entity": "dev:000000acme01",
+      "text": "**AcmeAir CPAP** (Example Medical Inc.): 1,234 reports linked by UDI in FDA MAUDE (2021–2025)."
+    },
+    {
+      "kind": "budget",
+      "text": "That question needs more data than I can read for one question. Try asking about a single device, or one part at a time (for example its recalls)."
+    }
+  ],
+  "search": {
+    "status": "resolved",
+    "phrase": "acmeair",
+    "matches": [
+      {
+        "type": "device",
+        "id": "dev:000000acme01",
+        "title": "AcmeAir CPAP",
+        "score": 1.0
+      }
+    ]
+  },
+  "entities": [
+    {
+      "type": "device",
+      "id": "dev:000000acme01",
+      "title": "AcmeAir CPAP",
+      "found": true,
+      "total_reports": 1234
+    }
+  ]
+}

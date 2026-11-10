@@ -106,6 +106,10 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
         return state["bot"]
 
     def limited(request: Request) -> None:
+        # Behind Cloud Run's proxy this is the visitor's address only because uvicorn trusts
+        # the proxy's X-Forwarded-For (--forwarded-allow-ips in the Dockerfile). A visitor can
+        # send a false header to get a fresh limit; the per-question cost cap and the daily
+        # BigQuery quota still bound the cost.
         client = request.client.host if request.client else "unknown"
         if not limiter.allow(client):
             raise HTTPException(status_code=429, detail={
@@ -167,9 +171,28 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
 
     dist = web_dist or os.environ.get("VIGIL_WEB_DIST")
     if dist and Path(dist).is_dir():
-        from fastapi.staticfiles import StaticFiles  # pylint: disable=import-outside-toplevel
-        app.mount("/", StaticFiles(directory=dist, html=True), name="web")
+        add_site(app, Path(dist))
     return app
+
+
+def add_site(app: FastAPI, dist: Path) -> None:
+    """Serves the front end's build from "/". The site is a single-page app: a path such as
+    /device/device/dev:... is not a file, so any path that is not a file in dist/ gets
+    index.html and the page's own router shows it (opening a shared link or reloading works).
+    Unknown /api/... paths stay JSON 404s, and nothing outside dist/ can be read."""
+    from fastapi.responses import FileResponse  # pylint: disable=import-outside-toplevel
+    root = dist.resolve()
+    index = root / "index.html"
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def site(path: str):
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(status_code=404, detail={"status": "not_found",
+                                                         "text": "Not found."})
+        target = (root / path).resolve()
+        if path and target.is_file() and target.is_relative_to(root):
+            return FileResponse(target)
+        return FileResponse(index)
 
 
 app = create_app()

@@ -1,0 +1,12 @@
+{
+  "status": "help",
+  "text": "I answer questions about FDA reports and recalls for medical devices: how many reports a device has (deaths, injuries, malfunctions), what problems are reported, whether it was recalled and why, what happened in the reports, and who makes a device or what a UDI or product code is. For example: \"Was the DreamStation recalled, and why?\" I can't give medical advice or judge whether a device is safe.",
+  "sections": [
+    {
+      "kind": "help",
+      "text": "I answer questions about FDA reports and recalls for medical devices: how many reports a device has (deaths, injuries, malfunctions), what problems are reported, whether it was recalled and why, what happened in the reports, and who makes a device or what a UDI or product code is. For example: \"Was the DreamStation recalled, and why?\" I can't give medical advice or judge whether a device is safe."
+    }
+  ],
+  "search": null,
+  "entities": []
+}
