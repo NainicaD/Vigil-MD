@@ -331,8 +331,12 @@ def comparison_md(results: dict[str, dict]) -> str:
 
 def log_mlflow(run_name, method, metrics, params, artifacts):
     import mlflow
+    sys.path.insert(0, str(ROOT))   # run as `python vigil_model/embedding_retrieval.py`
+    from vigil_model.tracking import lineage_tags, tracking_uri
+    mlflow.set_tracking_uri(tracking_uri())   # same store as the linkage runs, not ./mlruns
     mlflow.set_experiment("vigil-embedding-retrieval")
     with mlflow.start_run(run_name=f"{run_name}:{method}"):
+        mlflow.set_tags(lineage_tags(None))
         mlflow.log_params({"method": method, **params})
         mlflow.log_metrics({k.replace("@", "_at_"): v for k, v in metrics.items()
                             if isinstance(v, (int, float))})

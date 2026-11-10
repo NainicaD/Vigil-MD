@@ -149,3 +149,24 @@ def test_null_normalising_a_frame_keeps_array_cells_intact():
 @pytest.mark.parametrize("value", [None, float("nan"), "", "  ", "<NA>", "nan"])
 def test_text_treats_every_null_spelling_as_missing(value):
     assert rows.text(value) is None
+
+
+def test_text_cosine_is_filled_with_an_encoder_fitted_on_train_rows_only():
+    pd = pytest.importorskip("pandas")
+    pytest.importorskip("sklearn")
+    data = pd.DataFrame([row(), row(pair_id="p3", key_g_name="Pump set", key_g_model_raw="GP200S"),
+                         row(pair_id="p2", meta_split="test", key_g_name="ZZZZ unseen words",
+                             key_g_model_raw="QQ999")])
+    enc = s04.fit_text_encoder(data)       # min_df=2: needs at least two train texts
+    vocab = enc.vec.vocabulary_
+    assert not any("zzz" in t for t in vocab), "a test-split GUDID text shaped the vocabulary"
+    out = s04.build(data, frozenset(), {}, {}, enc)
+    assert out["feat_text_cosine"].iloc[0] > out["feat_text_cosine"].iloc[2]
+    assert build([row()])["feat_text_cosine"].isna().all()          # no encoder: unknown, not 0
+
+
+def test_build_writes_only_the_chosen_feature_set():
+    from vigil_model.same_device_features import FEATURE_SETS
+    pd = pytest.importorskip("pandas")
+    out = s04.build(pd.DataFrame([row()]), frozenset(), {}, {}, cols=FEATURE_SETS["fs1"])
+    assert list(out.columns) == s04.META + list(FEATURE_SETS["fs1"])

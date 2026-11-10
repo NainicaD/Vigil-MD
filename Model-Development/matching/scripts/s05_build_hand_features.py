@@ -16,16 +16,28 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from vigil_model import text_cosine  # noqa: E402
 from vigil_model.rows import is_true, load_aliases, number, product_codes, text  # noqa: E402
 from vigil_model.same_device_features import (  # noqa: E402
-    FEATURE_COLUMNS, DeviceSide, MatchContext, assert_no_leakage, pair_features, usable_key,
+    DEFAULT_FEATURE_SET, FEATURE_SETS, DeviceSide, MatchContext, assert_no_leakage, feature_set,
+    pair_features, usable_key,
 )
 
 parser = argparse.ArgumentParser(description="Features for the hand-label sheet")
 parser.add_argument("--sheet", default=ROOT / "labels/hand_label_sample_v1.csv")
 parser.add_argument("--alias", default=ROOT / "labels/alias_table_v1.csv")
 parser.add_argument("--out", default=ROOT / "data/hand_features.csv")
+parser.add_argument("--tfidf", type=Path, default=ROOT / "data/label_set_v1_features.tfidf.pkl",
+                    help="F1 encoder s04 saved next to the TRAINING feature table (<features>.tfidf.pkl)")
+parser.add_argument("--feature-set", default=DEFAULT_FEATURE_SET, choices=sorted(FEATURE_SETS),
+                    help="the same set as the training feature table (s04 --feature-set)")
 args = parser.parse_args()
+cols = feature_set(args.feature_set)
+encoder = None
+if "feat_text_cosine" in cols:
+    if not args.tfidf.exists():
+        sys.exit(f"{args.tfidf} not found: run s04 first, or pass the .tfidf.pkl of the feature table you train on")
+    encoder = text_cosine.load(args.tfidf)
 
 
 # read everything as text, so model numbers like 007 or 1006402 stay exactly as written
@@ -34,7 +46,7 @@ cands = sheet[sheet["cand_rank"].astype(int) > 0].copy()
 print(f"sheet rows: {len(sheet)}, candidate rows: {len(cands)}")
 
 aliases = load_aliases(args.alias)
-assert_no_leakage(FEATURE_COLUMNS)
+assert_no_leakage(cols)
 
 rows = []
 for _, r in cands.iterrows():
@@ -60,12 +72,16 @@ for _, r in cands.iterrows():
     else:
         siblings = frozenset()
 
+    cosine = None
+    if encoder is not None:
+        cosine = round(float(text_cosine.pair_cosines(encoder, [text_cosine.side_text(maude)],
+                                                      [text_cosine.side_text(gudid)])[0]), 6)
     ctx = MatchContext(alias_pairs=aliases, n_dis_for_model=number(r["cand_n_dis_for_model"]),
-                       sibling_keys=siblings)
+                       sibling_keys=siblings, text_cosine=cosine)
     feats = pair_features(maude, gudid, ctx)
-    rows.append({"pair_id": r["pair_id"], **feats})
+    rows.append({"pair_id": r["pair_id"], **{c: feats[c] for c in cols}})
 
-features = pd.DataFrame(rows)
+features = pd.DataFrame(rows, columns=["pair_id", *cols])
 keep = ["pair_id", "maude_row_id", "cand_rank", "label", "cand_split", "meta_sample_weight",
         "hard_case_reason", "strat_model_usable", "strat_mfr_size", "cand_match_kind"]
 out = cands[keep].merge(features, on="pair_id", how="inner")
@@ -79,4 +95,4 @@ if same < 1:
     print(diff[["pair_id", "cand_match_kind", "feat_match_kind"]].head(10).to_string(index=False))
 
 out.to_csv(args.out, index=False)
-print(f"saved {len(out)} rows with {len(FEATURE_COLUMNS)} features to {args.out}")
+print(f"saved {len(out)} rows with {len(cols)} features (set {args.feature_set}) to {args.out}")

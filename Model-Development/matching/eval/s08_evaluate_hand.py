@@ -1,7 +1,7 @@
 """Evaluate a model's scores on the hand-labeled sheet (HAND_LABEL_GUIDE.md section 9).
 
 - candidate rows only (cand_rank 1-3); rank 0 is used only for retrieval recall
-- INSUFFICIENT_EVIDENCE left out of precision and recall, reported as a count
+- INSUFFICIENT_EVIDENCE left out of precision and recall, reported as a count and an accept rate
 - every number twice: unweighted (the sample) and weighted by meta_sample_weight (the no-UDI pool)
 - two scopes: all candidate rows, and strict (cand_split = test)
 - precision comes with a 95% lower bound and the count of accepted pairs behind it
@@ -14,12 +14,16 @@ Usage (from anywhere):
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 
 import pandas as pd
 from scipy.stats import beta
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from vigil_model.same_device_features import insufficient_evidence  # noqa: E402
+from vigil_model.tracking import lineage_tags, tracking_uri  # noqa: E402
 
 parser = argparse.ArgumentParser(description="Evaluate scores on the hand-labeled sheet")
 parser.add_argument("--scores", required=True)
@@ -29,6 +33,10 @@ parser.add_argument("--manifest", default=ROOT / "labels/label_set_v1.manifest.j
 parser.add_argument("--track", default="test", choices=["test", "baseline", "xgb", "embed", "ft"])
 parser.add_argument("--threshold-version", default="t1")
 parser.add_argument("--normalization-version", default="n1")
+parser.add_argument("--ie-gate", action="store_true",
+                    help="E4: rows the IE gate catches are never accepted (same_device_features.insufficient_evidence)")
+parser.add_argument("--hand-features", default=ROOT / "data/hand_features.csv", help="feat_* columns for --ie-gate")
+parser.add_argument("--exp", help="experiment id from docs/EXPERIMENTS.md (default: $VIGIL_EXP)")
 parser.add_argument("--no-mlflow", action="store_true")
 args = parser.parse_args()
 
@@ -82,6 +90,16 @@ assert missing == 0, f"{missing} candidate rows have no score"
 unlabeled = cands["label"].isna().sum()
 assert unlabeled == 0, f"{unlabeled} candidate rows are not labeled yet"
 
+gated = 0
+if args.ie_gate:
+    feats = pd.read_csv(args.hand_features, dtype=str).set_index("pair_id")
+    absent = set(cands["pair_id"]) - set(feats.index)
+    assert not absent, f"{len(absent)} candidate rows have no features in {args.hand_features}"
+    gate = cands["pair_id"].map(lambda p: insufficient_evidence(feats.loc[p]))
+    cands.loc[gate, "score"] = float("-inf")   # routed to IE: below any cutoff, still counts as a missed MATCH
+    gated = int(gate.sum())
+    print(f"IE gate caught {gated} candidate rows: {cands.loc[gate, 'label'].value_counts().to_dict()}")
+
 ie = cands[cands["label"] == "INSUFFICIENT_EVIDENCE"]
 scored = cands[cands["label"].isin(["MATCH", "NON_MATCH"])].copy()
 scored["y"] = (scored["label"] == "MATCH").astype(int)
@@ -90,6 +108,10 @@ strict = scored[scored["cand_split"] == "test"]
 
 print(f"model: {model_name}   cutoff: {args.cutoff}")
 print(f"candidate rows: {len(cands)}   INSUFFICIENT_EVIDENCE left out: {len(ie)}   used: {len(scored)}")
+# IE rows are out of precision, but accepting them is still a wrong link (MODEL_IMPROVEMENT change 4)
+ie_accepted = int((ie["score"] >= args.cutoff).sum())
+ie_accept_rate = ie_accepted / len(ie) if len(ie) else float("nan")
+print(f"INSUFFICIENT_EVIDENCE accepted at the cutoff: {ie_accepted}/{len(ie)} ({ie_accept_rate:.3f})")
 print("NOTE: every row says labeler=hitika; rows labeled by formula or Claude are not marked yet,")
 print("      so these numbers are not yet against human-only ground truth.")
 
@@ -140,7 +162,8 @@ else:
         with open(args.manifest) as f:
             manifest = json.load(f)
 
-    flat = {"ie_count": len(ie), "retrieval_recall_at1": retrieval_at1}
+    flat = {"ie_count": len(ie), "ie_accepted": ie_accepted, "ie_accept_rate": ie_accept_rate, "ie_gated": gated,
+            "retrieval_recall_at1": retrieval_at1}
     for scope, m in (("all", m_all), ("strict", m_strict)):
         for k, v in m.items():
             flat[f"{scope}_{k}"] = v
@@ -150,10 +173,12 @@ else:
         flat[f"slice_{name}_accepted"] = m["accepted"]
     flat = {k: float(v) for k, v in flat.items() if pd.notna(v)}
 
-    mlflow.set_tracking_uri(f"sqlite:///{ROOT / 'mlflow.db'}")
+    mlflow.set_tracking_uri(tracking_uri())
     mlflow.set_experiment("vigil-md-linkage")
     with mlflow.start_run(run_name=f"{model_name}_hand"):
         mlflow.set_tags({
+            **lineage_tags(args.manifest, args.exp),
+            "ie_gate": "e6_e3b" if args.ie_gate else "off",
             "track": args.track, "model_name": model_name, "eval_set": "hand_label_sample_v1",
             "threshold_version": args.threshold_version, "normalization_version": args.normalization_version,
             "constants_sha256": manifest.get("constants_sha256", "unknown"),

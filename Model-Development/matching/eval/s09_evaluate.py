@@ -1,5 +1,5 @@
 import argparse
-import os
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -78,12 +78,15 @@ if args.no_mlflow:
 else:
     import mlflow   # imported here so --no-mlflow works without mlflow installed, as in s08
 
-    mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI")
-                            or f"sqlite:///{Path(__file__).resolve().parents[1] / 'mlflow.db'}")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from vigil_model.tracking import lineage_tags, tracking_uri
+
+    mlflow.set_tracking_uri(tracking_uri())
     mlflow.set_experiment("vigil-md-linkage")
 
     with mlflow.start_run(run_name=model_name):
         mlflow.set_tags({
+            **lineage_tags(None),
             "track": args.track,
             "model_name": model_name,
             "threshold_version": args.threshold_version,

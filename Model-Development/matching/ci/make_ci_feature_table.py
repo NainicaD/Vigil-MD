@@ -68,6 +68,12 @@ def make(n_devices: int = 600, rows_per_device: int = 5, seed: int = 7) -> pd.Da
         "feat_device_name_token_overlap": np.round(np.where(match, rng.beta(5, 2, n), rng.beta(2, 5, n)), 4),
         "feat_maude_name_has_kit_word": rng.random(n) < 0.1,
         "feat_gudid_name_has_kit_word": rng.random(n) < 0.1,
+        # F2: empty (as in the CSV of the real table) unless the kind is contains
+        "feat_contains_extra_len": np.where(kind == MatchKind.CONTAINS.value,
+                                            rng.integers(1, 10, n).astype(str), ""),
+        "feat_contains_at_end": np.where(kind == MatchKind.CONTAINS.value,
+                                         np.where(rng.random(n) < 0.5, "True", "False"), ""),
+        "feat_text_cosine": np.round(np.where(match, rng.beta(5, 2, n), rng.beta(2, 5, n)), 4),
     }
     unknown = [c for c in FEATURE_COLUMNS if c not in values]
     if unknown:

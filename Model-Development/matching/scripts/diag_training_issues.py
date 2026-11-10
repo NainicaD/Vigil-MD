@@ -19,7 +19,6 @@ import argparse
 import hashlib
 import json
 import math
-import os
 import re
 import subprocess
 import sys
@@ -34,14 +33,15 @@ sys.path.insert(0, str(ROOT))
 from scripts.s04_build_feature_table import read_siblings  # noqa: E402
 from vigil_model.embedding_retrieval import TfidfEncoder, record_text  # noqa: E402
 from vigil_model.rows import load_aliases, number, product_codes, text  # noqa: E402
+from vigil_model.tracking import lineage_tags, resolve_exp, run_outputs, tracking_uri  # noqa: E402
 from vigil_model.same_device_features import (  # noqa: E402
-    FEATURE_COLUMNS, DeviceSide, MatchContext, MatchKind, pair_features,
+    FEATURE_COLUMNS, DeviceSide, MatchContext, MatchKind, feature_columns_in, feature_set_name, pair_features,
 )
 
 MODELS = ("logreg_v1", "xgb_all", "xgb_no_match_kind", "xgb_no_kind_derived")
 # same list as s06_train_models.py:44 (s06 trains at import time, so it cannot be imported)
-KIND_DERIVED = ["feat_match_kind", "feat_identifier_exact", "feat_identifier_cross_field", "feat_prefix_related"]
-NO_KIND_DERIVED = [c for c in FEATURE_COLUMNS if c not in KIND_DERIVED]
+KIND_DERIVED = ["feat_match_kind", "feat_identifier_exact", "feat_identifier_cross_field", "feat_prefix_related",
+                "feat_contains_extra_len", "feat_contains_at_end"]
 RULES_CUTOFF = 0.75            # s07_rules_baseline.RULES_CUTOFF
 DECIDED = ("MATCH", "NON_MATCH")
 IE = "INSUFFICIENT_EVIDENCE"
@@ -107,17 +107,19 @@ def encode(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
     return pd.DataFrame({c: to_float(df[c]) for c in cols}, index=df.index).fillna(-1.0)
 
 
-def shortcut_trees(feats: pd.DataFrame, cols: list[str] = NO_KIND_DERIVED, depth: int = 4,
+def shortcut_trees(feats: pd.DataFrame, cols: list[str] | None = None, depth: int = 4,
                    sample: int = 200_000, seed: int = 0) -> dict:
     """D3. Shallow trees on the xgb_no_kind_derived features: can they rebuild the match kind, and
     the label? High accuracy means dropping the kind-derived columns removed no shortcut."""
     from sklearn.tree import DecisionTreeClassifier
 
+    if cols is None:   # the table's feature set without the kind-derived columns, as s06 does
+        cols = [c for c in feature_columns_in(feats.columns) if c not in KIND_DERIVED]
     train, test = feats[feats["meta_split"] == "train"], feats[feats["meta_split"] == "test"]
     if len(train) > sample:
         train = train.sample(sample, random_state=seed)
     x_train, x_test = encode(train, cols), encode(test, cols)
-    out = {"depth": depth, "train_rows": len(train), "test_rows": len(test)}
+    out = {"depth": depth, "n_features": len(cols), "train_rows": len(train), "test_rows": len(test)}
     for target in ("feat_match_kind", "label"):
         tree = DecisionTreeClassifier(max_depth=depth, random_state=seed).fit(x_train, train[target])
         out[f"{target}_acc"] = float((tree.predict(x_test) == test[target].to_numpy()).mean())
@@ -193,9 +195,11 @@ def rebuild_hand_features(cands: pd.DataFrame, aliases, siblings: dict[str, froz
 
 def parity(s05: pd.DataFrame, rebuilt: pd.DataFrame) -> pd.DataFrame:
     """D6. Per feature: rows where the s05 value differs from the s04-style rebuild."""
-    m = s05[["pair_id", *FEATURE_COLUMNS]].merge(rebuilt, on="pair_id", suffixes=("_s05", "_rebuilt"))
+    cols = [c for c in feature_columns_in(s05.columns) if c != "feat_text_cosine"]
+    m = s05[["pair_id", *cols]].merge(rebuilt[["pair_id", *cols]], on="pair_id", suffixes=("_s05", "_rebuilt"))
     rows = []
-    for col in FEATURE_COLUMNS:
+    # D6 is about the sibling lookup; the rebuild has no text encoder, so the F1 cosine is left out
+    for col in cols:
         a, b = m[f"{col}_s05"], m[f"{col}_rebuilt"]
         if col == "feat_match_kind":
             diff = a.astype(str) != b.astype(str)
@@ -241,10 +245,11 @@ def precision_on(rows: pd.DataFrame, cutoff: float) -> tuple[float, int]:
 # s06 trains at import time, so its encode/lr_matrix/split are copied here. The reproduction gate
 # (refit hand scores == saved hand scores) proves the copies still match s06.
 
-def s06_encode(df: pd.DataFrame) -> pd.DataFrame:
-    """Copy of s06_train_models.encode: match kind as a fixed category, the rest as floats."""
+def s06_encode(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """Copy of s06_train_models.encode: match kind as a fixed category, the rest as floats.
+    `cols` is the training table's feature set (s06's COLS)."""
     X = pd.DataFrame(index=df.index)
-    for col in FEATURE_COLUMNS:
+    for col in cols:
         if col == "feat_match_kind":
             X[col] = pd.Categorical(df[col], categories=[k.value for k in MatchKind])
         else:
@@ -255,7 +260,7 @@ def s06_encode(df: pd.DataFrame) -> pd.DataFrame:
 def s06_lr_matrix(X: pd.DataFrame) -> pd.DataFrame:
     """Copy of s06_train_models.lr_matrix."""
     M = pd.get_dummies(X["feat_match_kind"], prefix="kind", dtype=float)
-    for col in FEATURE_COLUMNS:
+    for col in X.columns:
         if col == "feat_match_kind":
             continue
         values = X[col]
@@ -321,11 +326,16 @@ def explain_models(feats: pd.DataFrame, hand_feats: pd.DataFrame, params: dict[s
 
     train = feats[feats["meta_split"] == "train"].reset_index(drop=True)
     y = (train["label"] == "MATCH").astype(int).to_numpy()
-    X = s06_encode(train)
+    cols = feature_columns_in(feats.columns)
+    missing = [c for c in cols if c not in hand_feats.columns]
+    if missing:
+        raise ValueError(f"hand features lack {missing}: build them with s05 --feature-set "
+                         f"{feature_set_name(cols)}")
+    X = s06_encode(train, cols)
     fit_idx = s06_fit_rows(X, y, train["meta_device_key"])
     test = feats[feats["meta_split"] == "test"]
     test = test.sample(n=min(test_sample, len(test)), random_state=42)
-    X_test, X_hand = s06_encode(test), s06_encode(hand_feats)
+    X_test, X_hand = s06_encode(test, cols), s06_encode(hand_feats, cols)
     out = {}
     for name, logged in params.items():
         if name == "logreg_v1":
@@ -392,10 +402,6 @@ def embedding_probe(cands: pd.DataFrame, index_texts: list[str]) -> tuple[pd.Dat
 
 
 # ---------------------------------------------------------------------------- MLflow
-
-def tracking_uri() -> str:
-    """Same rule as s06_train_models.py."""
-    return os.environ.get("MLFLOW_TRACKING_URI") or f"sqlite:///{ROOT / 'mlflow.db'}"
 
 
 def training_runs(run_ids: dict[str, str], uri: str) -> dict[str, dict]:
@@ -467,7 +473,7 @@ def results_md(s: dict) -> str:
         lines.append(f"| {name} | {fmt(m.get('test_precision'))} | {fmt(m.get('test_recall'))} | "
                      f"{fmt(m.get('test_average_precision'))} | {fmt(m.get('rule_minus_model_precision'))} |")
     lines += ["", "## 2. The no-kind-derived ablation (D3)", "",
-              f"Depth-{d3['depth']} trees on the {len(NO_KIND_DERIVED)} `xgb_no_kind_derived` features, scored on the test split:",
+              f"Depth-{d3['depth']} trees on the {d3['n_features']} `xgb_no_kind_derived` features, scored on the test split:",
               f"- rebuild `feat_match_kind`: accuracy {fmt(d3['feat_match_kind_acc'])} "
               f"(majority class {fmt(d3['feat_match_kind_majority_acc'])})",
               f"- predict the label: accuracy {fmt(d3['label_acc'])} (majority class {fmt(d3['label_majority_acc'])})", "",
@@ -543,16 +549,23 @@ def parse_args(argv=None):
                    help="key_* columns, for the D11 embedding probe's GUDID texts (D11 skipped if absent)")
     p.add_argument("--sheet", type=Path, default=ROOT / "labels/hand_label_sample_v1.csv")
     p.add_argument("--hand-features", type=Path, default=ROOT / "data/hand_features.csv")
-    p.add_argument("--scores-dir", type=Path, default=ROOT / "data/scores")
-    p.add_argument("--cutoffs", type=Path, default=ROOT / "data/cutoffs.json")
+    p.add_argument("--scores-dir", type=Path, help="default: s06's folder for --exp (data/runs/<exp>/scores)")
+    p.add_argument("--cutoffs", type=Path, help="default: s06's cutoffs.json for --exp")
     p.add_argument("--siblings", type=Path, default=ROOT / "data/sibling_keys.csv")
     p.add_argument("--alias", type=Path, default=ROOT / "labels/alias_table_v1.csv")
     p.add_argument("--manifest", type=Path, default=ROOT / "labels/label_set_v1.manifest.json")
-    p.add_argument("--out", type=Path, default=ROOT / "reports/training_diag")
+    p.add_argument("--out", type=Path, help="default: reports/training_diag, or reports/training_diag/<exp>")
+    p.add_argument("--exp", help="experiment id from docs/EXPERIMENTS.md (default: $VIGIL_EXP)")
     p.add_argument("--no-mlflow", action="store_true", help="neither read training runs nor log a diag run")
     p.add_argument("--log-artifacts", action="store_true",
                    help="also upload the report files to the run (the experiment's artifact root is GCS)")
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    scores_dir, cutoffs = run_outputs(args.exp)
+    exp = resolve_exp(args.exp)
+    args.scores_dir = args.scores_dir or scores_dir
+    args.cutoffs = args.cutoffs or cutoffs
+    args.out = args.out or ROOT / "reports/training_diag" / ("" if exp == "none" else exp)
+    return args
 
 
 def read_table(path: Path) -> pd.DataFrame:
@@ -691,10 +704,9 @@ def main(argv=None) -> int:
         notes.append(f"D11 skipped: {args.label_set} not found.")
     notes.append("D11 uses TF-IDF only; sentence-transformers models were not run (no downloads in this check).")
 
-    notes.append("s08_evaluate_hand.py hard-codes the sqlite tracking URI and ignores MLFLOW_TRACKING_URI.")
-    notes.append("s06 picks hyperparameters and the cutoff on the same validation fold.")
-
-    tags = {"diag_version": DIAG_VERSION,
+    tags = {**lineage_tags(args.manifest, args.exp),
+            "feature_set": feature_set_name(feature_columns_in(feats.columns)),
+            "diag_version": DIAG_VERSION,
             "training_data_sha256": hashlib.sha256(args.features.read_bytes()).hexdigest(),
             "constants_sha256": manifest.get("constants_sha256", "unknown"),
             "alias_table_sha256": manifest.get("alias_table_sha256", "unknown"),

@@ -2,14 +2,16 @@
 
 Follows the team's instructions (status, 7 Nov):
 - train only on meta_split = train; validation inside train is grouped by meta_device_key
-- models see feat_* columns only (FEATURE_COLUMNS from same_device_features.py)
+- models see feat_* columns only: the feature set the table holds (FEATURE_SETS in same_device_features.py)
 - XGBoost runs three times: all features, without feat_match_kind, and without every
   match-kind-derived feature (the shortcut stays in through those otherwise)
-- the cutoff for 99% precision is chosen on validation and saved, then used unchanged on the hand labels
+- validation is split again by device: one half picks the XGBoost trial, the other half picks the
+  cutoff for 99% precision, which is saved and then used unchanged on the hand labels
 - MLflow logs constants_sha256, the alias hash and the snapshot date from the label manifest
 
 Input: a feature table with label (MATCH/NON_MATCH), meta_split, meta_device_key and the feat_* columns.
-Output per model: <model>_hand_scores.csv (scores for the hand sheet) and its cutoff in cutoffs.json.
+Output per model: <model>_hand_scores.csv (scores for the hand sheet) and its cutoff in cutoffs.json,
+in data/runs/<exp>/ when --exp or $VIGIL_EXP is set, else in data/scores/ and data/cutoffs.json (CI).
 
 Usage (from anywhere):
     python scripts/s06_train_models.py
@@ -30,7 +32,10 @@ from xgboost import XGBClassifier
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from vigil_model.same_device_features import FEATURE_COLUMNS, MatchKind, assert_no_leakage  # noqa: E402
+from vigil_model.same_device_features import (  # noqa: E402
+    MatchKind, assert_no_leakage, feature_columns_in, feature_set_name, rule_constants_sha256,
+)
+from vigil_model.tracking import lineage_tags, run_outputs, tracking_uri  # noqa: E402
 
 parser = argparse.ArgumentParser(description="Train LR and XGBoost on label_set_v1 features")
 parser.add_argument("--data", default=ROOT / "data/label_set_v1_features.parquet",
@@ -38,16 +43,12 @@ parser.add_argument("--data", default=ROOT / "data/label_set_v1_features.parquet
 parser.add_argument("--hand", default=ROOT / "data/hand_features.csv", help="hand-sheet features to score")
 parser.add_argument("--manifest", default=ROOT / "labels/label_set_v1.manifest.json")
 parser.add_argument("--trials", type=int, default=10, help="random-search trials per XGBoost variant")
+parser.add_argument("--exp", help="experiment id from docs/EXPERIMENTS.md (default: $VIGIL_EXP)")
 parser.add_argument("--no-mlflow", action="store_true")
 args = parser.parse_args()
 
-KIND_DERIVED = ["feat_match_kind", "feat_identifier_exact", "feat_identifier_cross_field", "feat_prefix_related"]
-VARIANTS = {
-    "xgb_all": list(FEATURE_COLUMNS),
-    "xgb_no_match_kind": [c for c in FEATURE_COLUMNS if c != "feat_match_kind"],
-    "xgb_no_kind_derived": [c for c in FEATURE_COLUMNS if c not in KIND_DERIVED],
-}
-assert_no_leakage(FEATURE_COLUMNS)
+KIND_DERIVED = ["feat_match_kind", "feat_identifier_exact", "feat_identifier_cross_field", "feat_prefix_related",
+                "feat_contains_extra_len", "feat_contains_at_end"]   # the last two are non-null only for contains
 
 
 # --- loading and encoding --------------------------------------------------------------------------
@@ -93,7 +94,7 @@ def to_float(series):
 def encode(df):
     """feat_* columns as numbers; feat_match_kind as a category with a fixed list of values."""
     X = pd.DataFrame(index=df.index)
-    for col in FEATURE_COLUMNS:
+    for col in COLS:
         if col == "feat_match_kind":
             X[col] = pd.Categorical(df[col], categories=[k.value for k in MatchKind])
         else:
@@ -105,7 +106,7 @@ def lr_matrix(X):
     """Logistic regression needs no gaps and no categories: one-hot the kind, flag missing values,
     log the DI count, and add the feature cross the plan asks for (identifier AND labeler agree)."""
     M = pd.get_dummies(X["feat_match_kind"], prefix="kind", dtype=float)
-    for col in FEATURE_COLUMNS:
+    for col in COLS:
         if col == "feat_match_kind":
             continue
         values = X[col]
@@ -141,6 +142,17 @@ def at_cutoff(y_true, scores, cutoff):
 
 
 data = read_table(args.data)
+# train on the feature set the table holds (same_device_features.FEATURE_SETS), not the newest one, so a
+# table built for an older experiment still trains with today's code
+COLS = feature_columns_in(data.columns)
+FEATURE_SET = feature_set_name(COLS)
+assert_no_leakage(COLS)
+VARIANTS = {
+    "xgb_all": list(COLS),
+    "xgb_no_match_kind": [c for c in COLS if c != "feat_match_kind"],
+    "xgb_no_kind_derived": [c for c in COLS if c not in KIND_DERIVED],
+}
+print(f"feature set {FEATURE_SET}: {len(COLS)} columns")
 train = data[data["meta_split"] == "train"].reset_index(drop=True)
 y = (train["label"] == "MATCH").astype(int).to_numpy()
 X = encode(train)
@@ -151,6 +163,12 @@ splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
 fit_idx, val_idx = next(splitter.split(X, y, groups=train["meta_device_key"]))
 assert set(train.loc[fit_idx, "meta_device_key"]).isdisjoint(train.loc[val_idx, "meta_device_key"])
 print(f"fit rows: {len(fit_idx)}, validation rows: {len(val_idx)}, validation match rate {y[val_idx].mean():.1%}")
+# trial selection and the cutoff use different devices, so the cutoff is not tuned on the winner's own fold
+half = GroupShuffleSplit(n_splits=1, test_size=0.5, random_state=43)
+sel_pos, cut_pos = next(half.split(val_idx, groups=train.loc[val_idx, "meta_device_key"]))
+sel_idx, cut_idx = val_idx[sel_pos], val_idx[cut_pos]
+assert set(train.loc[sel_idx, "meta_device_key"]).isdisjoint(train.loc[cut_idx, "meta_device_key"])
+print(f"  validation: {len(sel_idx)} rows pick the trial, {len(cut_idx)} rows pick the cutoff")
 
 # the held-out split of the label set: never fitted, never used to pick the cutoff
 test = data[data["meta_split"] == "test"].reset_index(drop=True)
@@ -165,6 +183,10 @@ TEST_TIERS = ({t: (test["meta_mfr_tier"] == t).to_numpy() for t in sorted(test["
               if "meta_mfr_tier" in test.columns else {})
 
 hand = read_table(args.hand)
+missing_hand = [c for c in COLS if c not in hand.columns]
+if missing_hand:
+    raise SystemExit(f"{args.hand} lacks {missing_hand}: rebuild it with "
+                     f"scripts/s05_build_hand_features.py --feature-set {FEATURE_SET}")
 X_hand = encode(hand)
 
 manifest = {}
@@ -177,22 +199,31 @@ except FileNotFoundError:
 # refuse a feature table built under different rules than the label set it claims to describe
 feature_manifest = Path(args.data).with_suffix(".manifest.json")
 if feature_manifest.exists() and manifest:
-    built = json.loads(feature_manifest.read_text()).get("constants_sha256")
-    if built and built != manifest.get("constants_sha256"):
-        raise SystemExit(f"{args.data} was built with constants {built[:12]}, but "
-                         f"{args.manifest} says {manifest.get('constants_sha256', '?')[:12]}. "
+    fm = json.loads(feature_manifest.read_text())
+    if "rule_constants_sha256" in fm and "constants" in manifest:
+        # label rules only: a new feature column changes constants_sha256 but not the labels
+        built, labels = fm["rule_constants_sha256"], rule_constants_sha256(manifest["constants"])
+    else:
+        built, labels = fm.get("constants_sha256"), manifest.get("constants_sha256", "?")
+    if built and built != labels:
+        raise SystemExit(f"{args.data} was built with rule constants {built[:12]}, but "
+                         f"{args.manifest} says {labels[:12]}. "
                          "Rebuild it with scripts/s04_build_feature_table.py.")
+    if fm.get("feature_columns") and fm["feature_columns"] != COLS:
+        raise SystemExit(f"{args.data} holds {COLS} but its manifest says {fm['feature_columns']}")
 
 data_uri, data_sha256 = "none", "none"
 if not args.no_mlflow:
     import mlflow
     import mlflow.xgboost
-    mlflow.set_tracking_uri(os.environ.get("MLFLOW_TRACKING_URI") or f"sqlite:///{ROOT / 'mlflow.db'}")
+    mlflow.set_tracking_uri(tracking_uri())
     mlflow.set_experiment("vigil-md-linkage")
     data_uri, data_sha256 = publish_training_data(args.data)
     print(f"training data published: {data_uri}")
 
 common_tags = {
+    **lineage_tags(args.manifest, args.exp),
+    "feature_set": FEATURE_SET,
     "threshold_version": "t1", "normalization_version": "n1", "data_file": str(args.data),
     "training_data_uri": data_uri, "training_data_sha256": data_sha256,
     "constants_sha256": manifest.get("constants_sha256", "unknown"),
@@ -200,13 +231,14 @@ common_tags = {
     "snapshot_date": manifest.get("snapshot_date", "unknown"),
 }
 cutoffs = {}
-SCORES = ROOT / "data" / "scores"
+SCORES, CUTOFFS = run_outputs(args.exp)   # data/runs/<exp>/ with an experiment id, else data/scores
+print(f"outputs: {SCORES.relative_to(ROOT)}, {CUTOFFS.relative_to(ROOT)}")
 
 
 def finish(name, track, val_scores, test_scores, hand_scores, params, model=None):
-    """Pick the cutoff on validation, score the held-out test split with it, log, write scores."""
-    cutoff, recall = recall_at_p99(y[val_idx], val_scores)
-    avg_prec = average_precision_score(y[val_idx], val_scores)
+    """Pick the cutoff on the cutoff half of validation (val_scores are its rows), score the test split."""
+    cutoff, recall = recall_at_p99(y[cut_idx], val_scores)
+    avg_prec = average_precision_score(y[cut_idx], val_scores)
     cutoffs[name] = cutoff
     print(f"  {name}: validation avg_precision={avg_prec:.4f}, recall_at_p99={recall:.4f}, cutoff={cutoff}")
 
@@ -229,7 +261,7 @@ def finish(name, track, val_scores, test_scores, hand_scores, params, model=None
             mlflow.set_tags({**common_tags, "track": track, "model_name": name})
             mlflow.log_params(params)
             mlflow.log_metrics({"val_average_precision": avg_prec, "val_recall_at_p99": recall,
-                                "val_match_rate": float(y[val_idx].mean()),
+                                "val_match_rate": float(y[cut_idx].mean()),
                                 "test_average_precision": test_ap,
                                 "test_match_rate": float(y_test.mean())})
             if cutoff is not None:
@@ -256,7 +288,7 @@ M_hand = lr_matrix(X_hand).reindex(columns=M.columns, fill_value=0.0)
 M_test = lr_matrix(X_test).reindex(columns=M.columns, fill_value=0.0)
 lr = LogisticRegression(max_iter=2000)
 lr.fit(M.iloc[fit_idx], y[fit_idx])
-finish("logreg_v1", "baseline", lr.predict_proba(M.iloc[val_idx])[:, 1],
+finish("logreg_v1", "baseline", lr.predict_proba(M.iloc[cut_idx])[:, 1],
        lr.predict_proba(M_test)[:, 1], lr.predict_proba(M_hand)[:, 1],
        {"model": "LogisticRegression", "max_iter": 2000})
 
@@ -276,18 +308,20 @@ for name, cols in VARIANTS.items():
         }
         model = XGBClassifier(**params, tree_method="hist", enable_categorical=True, random_state=42, n_jobs=-1)
         model.fit(X.iloc[fit_idx][cols], y[fit_idx])
-        val_scores = model.predict_proba(X.iloc[val_idx][cols])[:, 1]
-        avg_prec = average_precision_score(y[val_idx], val_scores)
+        sel_scores = model.predict_proba(X.iloc[sel_idx][cols])[:, 1]
+        avg_prec = average_precision_score(y[sel_idx], sel_scores)
         print(f"  trial {trial:02d}: avg_precision={avg_prec:.4f}")
         if best is None or avg_prec > best["avg_prec"]:
-            best = {"avg_prec": avg_prec, "model": model, "params": params, "val": val_scores}
+            best = {"avg_prec": avg_prec, "model": model, "params": params}
+    cut_scores = best["model"].predict_proba(X.iloc[cut_idx][cols])[:, 1]
     hand_scores = best["model"].predict_proba(X_hand[cols])[:, 1]
     test_scores = best["model"].predict_proba(X_test[cols])[:, 1]
-    finish(name, "xgb", best["val"], test_scores, hand_scores,
-           {**best["params"], "features": ",".join(cols)}, best["model"])
+    finish(name, "xgb", cut_scores, test_scores, hand_scores,
+           {**best["params"], "features": ",".join(cols), "val_select_average_precision": best["avg_prec"]},
+           best["model"])
 
 SCORES.mkdir(parents=True, exist_ok=True)
-with open(ROOT / "data" / "cutoffs.json", "w") as f:
+with open(CUTOFFS, "w") as f:
     json.dump(cutoffs, f, indent=2)
 
 print("\nNext, score each model on the hand labels with its validation cutoff:")
@@ -296,5 +330,5 @@ for name, cutoff in cutoffs.items():
     if cutoff is None:
         print(f"  {name}: never reached 99% precision on validation, so no cutoff")
         continue
-    print(f"  python eval/s08_evaluate_hand.py --scores data/scores/{name}_hand_scores.csv "
+    print(f"  python eval/s08_evaluate_hand.py --scores {(SCORES / f'{name}_hand_scores.csv').relative_to(ROOT)} "
           f"--cutoff {cutoff:.6f} --track {track}")

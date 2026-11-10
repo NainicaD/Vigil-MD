@@ -1,6 +1,6 @@
 # Golden fixture: Python / BigQuery parity (H4). Empty cell = NULL, <EMPTY> = empty string, \uXXXX = that character.
 # Expected columns are written by golden_fixture.py --regen. Review them by hand. Verify on BigQuery: build_labels.py --fixture
-# constants_sha256=ad06d0321284d7a358187be44053ba4d8ab26a7e9f571f0aeedd05b1cf0912fc
+# constants_sha256=57c55eaf39cd32ca57bbbb98d7e22636b3883f3ba59b44b8a87e74809518f012
 case_id,note,mfr,m_model_raw,m_cat_raw,g_model_raw,g_cat_raw,mdr_report_key,device_seq,udi_di,role,m_model_key,m_cat_key,g_model_key,g_cat_key,match_kind,device_key,split,pair_id
 c01,plain same key,acme,GP-200,,gp 200,,1000001,1,00811111111101,udi_link,GP200,,GP200,,same_model_key,acme|GP200,train,0d548ee993179aff80b1ec9ec24b5f54
 c02,hyphen collision keeps the same key,acme,142-200,,14-2200,,1000002,1,00811111111102,udi_link,142200,,142200,,same_model_key,acme|142200,test,127bc4f337098ae57e71eb326c29956b

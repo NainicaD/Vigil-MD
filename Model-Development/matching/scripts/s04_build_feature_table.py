@@ -32,16 +32,18 @@ import re
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from vigil_model import bq_utils  # noqa: E402
 from vigil_model import same_device_features as feat  # noqa: E402
+from vigil_model import text_cosine  # noqa: E402
 from vigil_model.rows import load_aliases, number, product_codes, text  # noqa: E402
 from vigil_model.same_device_features import (  # noqa: E402
-    FEATURE_COLUMNS, DeviceSide, MatchContext, assert_no_leakage, assert_no_value_leakage,
-    pair_features,
+    DEFAULT_FEATURE_SET, FEATURE_COLUMNS, FEATURE_SETS, DeviceSide, MatchContext, assert_no_leakage,
+    assert_no_value_leakage, feature_set, pair_features,
 )
 
 log = logging.getLogger("build_feature_table")
@@ -182,24 +184,42 @@ def device_sides(r: dict) -> tuple[DeviceSide, DeviceSide]:
     return maude, gudid
 
 
+def fit_text_encoder(data: pd.DataFrame):
+    """F1 encoder, fitted on the GUDID texts of TRAIN-split rows only (no labels)."""
+    train = data[data["meta_split"] == "train"].to_dict("records")
+    return text_cosine.fit(text_cosine.side_text(device_sides(r)[1]) for r in train)
+
+
 def build(data: pd.DataFrame, aliases, siblings: dict[str, frozenset[str]],
-          ranks: dict[str, int]) -> pd.DataFrame:
-    """One feat_* row per input row, in input order."""
-    assert_no_leakage(FEATURE_COLUMNS)
+          ranks: dict[str, int], encoder=None, cols: tuple[str, ...] = FEATURE_COLUMNS) -> pd.DataFrame:
+    """One row per input row, in input order, with the feature columns `cols` (a feature set).
+    Without an encoder feat_text_cosine is None."""
+    assert_no_leakage(cols)
+    records = data.to_dict("records")
+    sides = [device_sides(r) for r in records]
+    cosines = [None] * len(sides)
+    if encoder is not None and sides:
+        cosines = np.round(text_cosine.pair_cosines(encoder, [text_cosine.side_text(m) for m, _ in sides],
+                                                    [text_cosine.side_text(g) for _, g in sides]), 6).tolist()
     rows = []
-    for i, r in enumerate(data.to_dict("records")):
-        maude, gudid = device_sides(r)
+    for i, (r, (maude, gudid), cos) in enumerate(zip(records, sides, cosines)):
         ctx = MatchContext(alias_pairs=aliases,
                            n_dis_for_model=number(r["meta_n_dis_for_model"]),
-                           sibling_keys=siblings.get(text(r["key_g_mfr"]) or "", frozenset()))
+                           sibling_keys=siblings.get(text(r["key_g_mfr"]) or "", frozenset()),
+                           text_cosine=cos)
         feats = pair_features(maude, gudid, ctx)
         if i < LEAK_SAMPLE:
             assert_no_value_leakage(feats, text(r.get("key_gudid_udi_di")))
         rows.append({**{c: r[c] for c in CARRY},
                      "meta_mfr_tier": tier_of(text(r["key_m_mfr"]), ranks), **feats})
-    out = pd.DataFrame(rows, columns=META + list(FEATURE_COLUMNS))
+    out = pd.DataFrame(rows, columns=META + list(cols))
     assert_no_leakage([c for c in out.columns if c.startswith("feat_")])
     return out
+
+
+def text_encoder_path(features_path: Path) -> Path:
+    """Where the F1 encoder of a feature table lives; s05 must load this same file."""
+    return features_path.with_suffix(".tfidf.pkl")
 
 
 def write_manifest(path: Path, args, n_rows: int, n_siblings: int, n_ranked: int, scanned: int) -> None:
@@ -218,9 +238,13 @@ def write_manifest(path: Path, args, n_rows: int, n_siblings: int, n_ranked: int
         "bytes_processed": scanned,
         "limit": args.limit,
         "constants_sha256": feat.constants_sha256(),
+        "rule_constants_sha256": feat.rule_constants_sha256(),
+        "feature_set": args.feature_set,
+        "text_encoder": (str(text_encoder_path(path.with_suffix(".parquet")))
+                         if "feat_text_cosine" in feature_set(args.feature_set) else None),
         "alias_table_sha256": source.get("alias_table_sha256", "unknown"),
         "snapshot_date": source.get("snapshot_date", "unknown"),
-        "feature_columns": list(FEATURE_COLUMNS),
+        "feature_columns": list(feature_set(args.feature_set)),
     }, indent=2) + "\n", encoding="utf-8")
 
 
@@ -235,6 +259,8 @@ def main(argv=None) -> int:
     p.add_argument("--manifest", type=Path, default=ROOT / "labels/label_set_v1.manifest.json")
     p.add_argument("--out", type=Path, default=ROOT / "data/label_set_v1_features.parquet")
     p.add_argument("--siblings", type=Path, default=ROOT / "data/sibling_keys.csv")
+    p.add_argument("--feature-set", default=DEFAULT_FEATURE_SET, choices=sorted(FEATURE_SETS),
+                   help="which feature columns the table holds (same_device_features.FEATURE_SETS)")
     p.add_argument("--mfr-rank", type=Path, default=ROOT / "data/mfr_rank.csv")
     p.add_argument("--gudid-dataset", dest="dataset", default=bq_utils.PROD_DATASET,
                    help="source dataset for gudid and maude; vigil_md_dev for a cheap smoke test")
@@ -300,14 +326,19 @@ def main(argv=None) -> int:
     data = data.astype(object).where(pd.notna(data), None)
     log.info("read %d rows from %s", len(data), args.data)
 
-    out = build(data, load_aliases(args.alias), siblings, ranks)
+    cols, encoder = feature_set(args.feature_set), None
+    if "feat_text_cosine" in cols:
+        encoder = fit_text_encoder(data)
+        text_cosine.save(encoder, text_encoder_path(args.out))
+        log.info("F1 text encoder fitted on train-split GUDID texts, saved to %s", text_encoder_path(args.out))
+    out = build(data, load_aliases(args.alias), siblings, ranks, encoder, cols)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(args.out, index=False)
     write_manifest(args.out.with_suffix(".manifest.json"), args, len(out),
                    sum(len(v) for v in siblings.values()), len(ranks), scanned)
 
     fired = int(out["feat_conflicting_identifier"].sum())
-    log.info("wrote %d rows x %d features to %s", len(out), len(FEATURE_COLUMNS), args.out)
+    log.info("wrote %d rows x %d features (set %s) to %s", len(out), len(cols), args.feature_set, args.out)
     log.info("feat_conflicting_identifier is True on %d rows (0 means sibling_keys never matched)", fired)
     print(out.groupby(["meta_split", "label"]).size().to_string())
     print(out.groupby(["meta_split", "meta_mfr_tier"]).size().to_string())

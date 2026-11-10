@@ -194,10 +194,11 @@ def test_explain_models_reproduces_and_attributes():
     assert set(first["logreg_v1"]["table"].index) >= {"feat_raw_identifier_equal", "kind_conflict"}
     # same params, same rows -> same scores: feed the first refit's scores back as the "saved" ones
     import xgboost  # noqa: F401  (the refit below needs it)
-    X = diag.s06_encode(hand)
+    cols = list(FEATURE_COLUMNS)
+    X = diag.s06_encode(hand, cols)
     train = feats[feats.meta_split == "train"].reset_index(drop=True)
     y = (train.label == "MATCH").astype(int).to_numpy()
-    model = diag.refit_xgb(diag.s06_encode(train), y, diag.s06_fit_rows(diag.s06_encode(train), y, train.meta_device_key),
+    model = diag.refit_xgb(diag.s06_encode(train, cols), y, diag.s06_fit_rows(diag.s06_encode(train, cols), y, train.meta_device_key),
                            diag.xgb_params(XGB_LOGGED), list(FEATURE_COLUMNS))
     saved["xgb_all"]["score"] = model.predict_proba(X[list(FEATURE_COLUMNS)])[:, 1]
     again = diag.explain_models(feats, hand, {"xgb_all": logged["xgb_all"]}, {"xgb_all": 0.5}, saved)
@@ -239,3 +240,13 @@ def test_gudid_side_texts_dedupes_and_reads_code_arrays():
 
 def test_main_refuses_missing_inputs(tmp_path):
     assert diag.main(["--features", str(tmp_path / "nope.parquet"), "--no-mlflow"]) == diag.EXIT_CONFIG
+
+
+def test_explain_models_and_d3_run_on_an_older_feature_set():
+    from vigil_model.same_device_features import FEATURE_SETS
+    fs1 = list(FEATURE_SETS["fs1"])
+    feats = _learnable()[[c for c in _learnable().columns if not c.startswith("feat_") or c in fs1]]
+    hand = feats.head(10).astype(str)
+    out = diag.explain_models(feats, hand, {"logreg_v1": {}}, {"logreg_v1": 0.5}, {})
+    assert "feat_text_cosine" not in out["logreg_v1"]["table"].index
+    assert diag.shortcut_trees(feats, sample=1000)["n_features"] == len([c for c in fs1 if c not in diag.KIND_DERIVED])

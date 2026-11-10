@@ -10,14 +10,25 @@ from vigil_model import same_device_features as f
 LABEL_SQL = sorted((Path(__file__).resolve().parents[1] / "sql" / "labels").glob("*.sql"))
 MACRO = re.compile(r"\{\{\s*(\w+)\((.*?)\)\s*\}\}")
 KNOWN_PLACEHOLDERS = {"__MAUDE__", "__GUDID__", "__MODEL_DATASET__", "__MAX_PER_DEVICE__", "__NEG_PER_ANCHOR__",
-                      "__CAND_POOL__", "__EASY_ANCHOR_PCT__", "__EASY_POOL__"}
+                      "__CAND_POOL__", "__EASY_ANCHOR_PCT__", "__EASY_POOL__", "__AGREE_NEG_PER_ANCHOR__",
+                      "__LABEL_SET__"}
 
 
 expand = build_labels.expand_macros
 
 
 def test_there_are_label_sql_files():
-    assert [p.name[:2] for p in LABEL_SQL] == ["00", "01", "02", "03", "04", "05", "06"]
+    assert [p.name.split("_")[0] for p in LABEL_SQL] == ["00", "01", "02", "03", "04", "04b", "05", "06"]
+
+
+def test_agree_negatives_keep_only_agreeing_kinds():
+    """E1: the point of 04b is negatives whose identifiers agree; conflict/prefix/placeholder must not slip in."""
+    text = (LABEL_SQL[0].parent / "04b_negatives_agree.sql").read_text(encoding="utf-8")
+    kept = set(re.findall(r"'([a-z_]+)'", re.search(r"match_kind IN \((.*?)\)", text, re.S).group(1)))
+    k = f.MatchKind
+    assert kept == {k.SAME_MODEL_KEY, k.MAUDE_MODEL_EQ_GUDID_CATALOG, k.MAUDE_CATALOG_EQ_GUDID_MODEL,
+                    k.CATALOG_EQ_CATALOG, k.CONTAINS}
+    assert "udi_di != anchor_udi_di" in text and "c.meta_split = a.anchor_split" in text
 
 
 @pytest.mark.parametrize("path", LABEL_SQL, ids=lambda p: p.name)

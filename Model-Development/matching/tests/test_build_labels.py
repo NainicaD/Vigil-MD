@@ -9,7 +9,8 @@ from scripts import s01_build_label_set as bl
 
 PROJECT = "test-project"
 PARAMS = {"__MAX_PER_DEVICE__": 200, "__NEG_PER_ANCHOR__": 2, "__CAND_POOL__": 50,
-          "__EASY_ANCHOR_PCT__": 10, "__EASY_POOL__": 20000}
+          "__EASY_ANCHOR_PCT__": 10, "__EASY_POOL__": 20000, "__AGREE_NEG_PER_ANCHOR__": 0,
+          "__LABEL_SET__": "label_set_v1"}
 ALIAS_ROWS = [{"maude_mfr": "a", "gudid_mfr": "b", "n_dis": 3}]
 
 
@@ -146,3 +147,33 @@ def test_full_run_builds_in_order_caps_billing_and_writes_manifest(cfg, paths, m
 def test_print_only_needs_no_gcp(capsys):
     assert bl.main(["--project", PROJECT, "--print-only", "--only", "03"]) == bl.EXIT_OK
     assert "CREATE OR REPLACE TABLE `test-project.vigil_md_model.negatives_suffix`" in capsys.readouterr().out
+
+
+def test_print_only_renders_the_agree_negatives_into_a_new_label_set(capsys):
+    argv = ["--project", PROJECT, "--print-only", "--only", "04b", "05",
+            "--label-set", "label_set_v2_e1", "--agree-neg-per-anchor", "3"]
+    assert bl.main(argv) == bl.EXIT_OK
+    out = capsys.readouterr().out
+    assert "CREATE OR REPLACE TABLE `test-project.vigil_md_model.negatives_agree`" in out
+    assert "WHERE rn <= 3" in out
+    assert "CREATE OR REPLACE TABLE `test-project.vigil_md_model.label_set_v2_e1`" in out
+    assert "label_set_v1" not in out
+
+
+@pytest.mark.parametrize("argv", [
+    ["--agree-neg-per-anchor", "2"],                                   # would overwrite the baseline
+    ["--label-set", "label_set_v2_e1", "--agree-neg-per-anchor", "-1"],
+    ["--label-set", "my table"],
+])
+def test_main_refuses_bad_label_set_args_before_any_gcp_call(argv):
+    assert bl.main(["--project", PROJECT, "--print-only", *argv]) == bl.EXIT_BAD_SQL
+
+
+def test_seed_manifest_copies_the_baseline_alias_hash(tmp_path):
+    base, new = tmp_path / "label_set_v1.manifest.json", tmp_path / "label_set_v2_e1.manifest.json"
+    base.write_text(json.dumps({"alias_table_sha256": "abc", "row_counts": {"x": 1}}))
+    bl.seed_manifest(new, base)
+    assert json.loads(new.read_text()) == {"alias_table_sha256": "abc", "based_on": base.name}
+    new.write_text(json.dumps({"alias_table_sha256": "keep"}))
+    bl.seed_manifest(new, base)                                        # an existing manifest is never touched
+    assert json.loads(new.read_text()) == {"alias_table_sha256": "keep"}
