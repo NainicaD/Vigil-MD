@@ -283,6 +283,41 @@ def test_chatty_words_do_not_block_a_clear_name(index):
     assert r.status == "resolved" and r.matches[0].title == "DreamStation"
 
 
+@pytest.mark.parametrize("question,title", [
+    ("Our contract with the vendor is up for renewal; how many reports does the DreamStation have?",
+     "DreamStation"),
+    ("We're reviewing our suppliers this quarter. What problems are reported for the Impella?",
+     "Impella"),
+    ("For our hospital's annual equipment review: was the HeartMate 3 recalled?", "HeartMate 3"),
+])
+def test_a_context_sentence_before_the_question_is_ignored(index, question, title):
+    r = index.resolve(question)
+    assert r.status == "resolved" and [h.title for h in r.matches] == [title]
+
+
+def test_pronouns_and_contraction_pieces_are_not_device_words():
+    assert device_words("we're asking for our team, they've said us") == ["asking", "team", "said"]
+
+
+def test_a_clause_naming_only_a_company_does_not_take_over(index):
+    # The device clause finds nothing (Trilogy is not in the index); the company clause must
+    # not turn the question into one about the whole firm.
+    r = index.resolve("We buy from Respironics. How many deaths for the Trilogy?")
+    assert not (r.status == "resolved" and r.matches[0].kind != "device"), r
+
+
+def test_a_chatty_clause_matched_only_after_dropping_words_does_not_take_over(index):
+    # The asked-about clause finds nothing (Trilogy is not in the index); the chatty clause
+    # matches only once the retry drops its other words, so it must not take over.
+    q = "How many deaths has the Trilogy had? My dad is getting a DreamStation one day, should he?"
+    assert index.resolve(q) == index._resolve_words(q)
+
+
+def test_two_clauses_naming_different_devices_leave_it_to_the_whole_text(index):
+    q = "I asked about the DreamStation. What about the Impella?"
+    assert index.resolve(q) == index._resolve_words(q)
+
+
 def test_a_model_number_is_never_dropped(index):
     # Not in the index: must not fall back to the company (MEDTRONIC MINIMED).
     assert index.resolve("Any recalls for the MiniMed 780G?").status != "resolved"

@@ -43,10 +43,14 @@ happened happen issues issue common main more any reason reasons class device de
 fda maude goes go going went wrong work works working known about udi code product
 safe safety unsafe dangerous risky good bad better best reliable ok okay worth should
 stop stopped use using used keep still normal worried trust think
-""".split())
+our ours we us they them their re ve ll
+""".split())   # "our" is 0.86 like "four" (AF541 headgear) and resolved to it; "re" from "we're"
 _UDI = re.compile(r"\b\d{8,14}\b")
 _CODE = re.compile(r"\b[A-Z]{3}\b")
 _SPLIT = re.compile(r"\s+(?:vs\.?|versus|compared (?:to|with)|and|or)\s+|,", re.IGNORECASE)
+# Sentence ends inside a question ("Our contract is up for renewal; how many reports ...").
+# "t:slim" and "M.R.I.," have no space after the mark, so they are never split.
+_CLAUSE = re.compile(r"(?<=[.;:?!])\s+")
 
 
 @dataclass
@@ -278,6 +282,31 @@ class DeviceIndex:
             hit = self.get("product_code|" + code)
             if hit:
                 return Resolution("resolved", [hit], code)
+        # A sentence that says why the user asks ("We're reviewing our suppliers this quarter.")
+        # adds words that match nothing or the wrong entry. A clause is the question when it
+        # resolves to one device with all of its device words, and every other clause finds
+        # nothing or only a match on fewer than half of its words, left after the retry
+        # dropped the rest ("quarter" of 3 words -> "Quarterly supply" kit; "one" of 4 in "My
+        # dad is getting one" -> REMstar System One). "I asked about the DreamStation" (1 of 2)
+        # is a named device, not noise. Otherwise the whole text decides, as before.
+        clauses = [c for c in _CLAUSE.split(question) if device_words(c)]
+        if len(clauses) > 1:
+            def kind(c: str, r: Resolution) -> str:
+                n = len(device_words(c))
+                if r.status == "none" or (r.status == "resolved" and 2 * len(r.phrase.split()) < n):
+                    return "noise"
+                if (r.status == "resolved" and r.matches[0].kind == "device"
+                        and len(r.phrase.split()) == n):
+                    return "device"
+                return "other"
+            results = [(r, kind(c, r)) for c, r in zip(clauses, map(self._resolve_words, clauses))]
+            devices = [r for r, k in results if k == "device"]
+            if len(devices) == 1 and all(k in ("device", "noise") for _, k in results):
+                return devices[0]
+        return self._resolve_words(question)
+
+    def _resolve_words(self, question: str) -> Resolution:
+        """resolve() without the identifier and clause steps: comparisons, then the phrase."""
         parts = [p for p in _SPLIT.split(question) if device_words(p)]
         if len(parts) > 1:
             resolved = [self._resolve_phrase(" ".join(device_words(p))) for p in parts]

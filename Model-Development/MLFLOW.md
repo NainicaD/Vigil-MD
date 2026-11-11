@@ -97,7 +97,26 @@ Log held-out and test metrics to the **same run** that trained the model (reopen
 
 Credentials, `.env` values, service-account keys, or raw data beyond small samples.
 
-## Later: a shared store
+## Publishing approved models: Artifact Registry
 
-When the team needs one view of all runs, point `MLFLOW_TRACKING_URI` at a shared server
-(options and costs to be decided; a GCP VM costs money, so check the budget first).
+Decided 2026-11-11: **MLflow** records the runs and keeps the `champion` alias; a model that
+passed its workstream's gate is then **published to Google Cloud Artifact Registry**, so everyone
+(and the Docker image) takes the same approved model from one place, and every version stays for
+rollback.
+
+| | |
+|---|---|
+| Repository | `vigil-md-models`, generic format, `us-central1`, project `vigil-md-1792696816` |
+| Packages | one per registered model: `chatbot-query-router`; matching later, e.g. `vigil-md-linkage-<variant>` |
+| Version | `<what fixes the model>-<short commit>`, e.g. the chatbot's `<rules fingerprint>-<commit>` |
+| Contents | the model files plus `manifest.json`: commit, MLflow run id and model version, test metrics, SHA-256 of each file |
+| Who writes | CI only in normal use, as `vigil-md-ci-publisher` (keyless sign-in from this repository; write access to this repository only) |
+| Cost | storage only; the first 0.5 GB a month is free |
+
+Reference implementation: [`chatbot/query_router/publish.py`](chatbot/query_router/publish.py)
+and `.github/workflows/chatbot-publish.yml`. The matching team adds its own package and gate the
+same way; its workflow needs read/write access added for the same service account.
+
+A shared MLflow server (one screen with everyone's runs) was not set up: a free e2-micro VM still
+pays for its external IPv4 address (about $3.65 a month), too much for the project's credits. Each
+laptop keeps its own MLflow store; CI runs are recorded on the GitHub run page.
