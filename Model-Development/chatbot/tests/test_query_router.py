@@ -99,7 +99,15 @@ def test_refusal_gives_no_advice_and_points_to_clinician():
 
 # ── fixed replies: emergency line, scope, help ────────────────────────────────
 
-FROZEN_RULES = "6705cf050941"      # revision 3 (2026-11-09); rescored on handwritten_test_v2
+FROZEN_RULES = "5d1584bb53b3"      # revision 4 (2026-11-11): "lump" added to the symptom words
+
+
+def test_symptom_rule_catches_a_lump_but_not_a_report_about_one():
+    assert gr.rule_hits("I noticed a lump next to my pacemaker") == ["symptoms"]
+    assert gr.rule_hits("my mom has a lump where her port is") == ["symptoms"]
+    assert not gr.rule_hits("how many reports mention a lump near a breast implant")
+    assert not gr.rule_hits("I'm researching how often lumps are reported for silicone implants")
+    assert not gr.rule_hits("summarize the reports of breast implant lymphoma")
 
 
 def test_advice_rules_stay_frozen():
@@ -227,6 +235,31 @@ def test_templates_are_held_out_per_label():
     for label in LABELS:
         tr, va = set(split["train"][label]), set(split["val"][label])
         assert tr and va and not tr & va, label
+
+
+def test_contexts_are_held_out_per_split():
+    split = gen.split_contexts(seed=7)
+    tr, va, ho = (set(split[s]) for s in gen.SPLITS)
+    assert tr and va and ho and not (tr & va or tr & ho or va & ho)
+
+
+def test_contexts_carry_no_advice_signal():
+    """A context sentence alone must not look like advice: no rule fires on it."""
+    from query_router.templates import CONTEXTS
+    for c in CONTEXTS:
+        assert not gr.rule_hits(c), c
+        assert not gr.rule_hits(c + "how many reports does the device have"), c
+
+
+def test_context_rate_is_the_same_for_every_label():
+    """Bias mitigation (style=long, procurement): context must not predict the label."""
+    from query_router.templates import CONTEXTS
+    rows = gen.generate(n_train=4000, n_val=0, seed=7)["train"]
+    ctx = [any(c[:15] in r["text"].lower() for c in CONTEXTS) for r in rows]
+    oos = [OUT_OF_SCOPE in r["labels"] for r in rows]
+    rate = lambda flag: sum(c for c, o in zip(ctx, oos) if o == flag) / sum(o == flag for o in oos)
+    assert 0.15 < rate(True) < 0.25 and 0.15 < rate(False) < 0.25
+    assert abs(rate(True) - rate(False)) < 0.04
 
 
 def test_every_label_and_multi_label_present(data):

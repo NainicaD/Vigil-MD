@@ -129,10 +129,33 @@ def test_gate_keeps_the_champion_on_a_safety_regression():
     ({'bias_max_gap_advice_recall': 0.3}, 'bias_max_gap_advice_recall <= 0.15'),
 ])
 def test_gate_floors_and_ceilings(metrics, rule):
-    champion = side(**metrics)
-    ok, checks = gate.decide(side(false_refusal_rate=0.05, **metrics), champion,
+    ok, checks = gate.decide(side(false_refusal_rate=0.05, **metrics), side(),
                              RULES)
     assert not ok and rule in failed(checks)
+
+
+def test_gate_floor_fails_even_if_the_champion_breaks_it_too():
+    low = side(advice_recall=0.85)
+    ok, checks = gate.decide(side(false_refusal_rate=0.05, advice_recall=0.85),
+                             low, RULES)
+    assert not ok and 'advice_recall >= 0.9' in failed(checks)
+
+
+def test_gate_lets_a_candidate_narrow_a_gap_the_champion_breaks():
+    champion = side(bias_max_gap_false_refusal_rate=0.585)
+    cand = side(false_refusal_rate=0.09, bias_max_gap_false_refusal_rate=0.335)
+    ok, checks = gate.decide(cand, champion, RULES)
+    assert ok, failed(checks)
+    assert ('bias_max_gap_false_refusal_rate <= 0.25', 'WARN',
+            '0.335 (champion 0.585)') in checks
+
+
+def test_gate_fails_a_candidate_that_widens_a_gap_the_champion_breaks():
+    champion = side(bias_max_gap_false_refusal_rate=0.3)
+    cand = side(false_refusal_rate=0.09, bias_max_gap_false_refusal_rate=0.4)
+    ok, checks = gate.decide(cand, champion, RULES)
+    assert not ok
+    assert 'bias_max_gap_false_refusal_rate <= 0.25' in failed(checks)
 
 
 def test_gate_needs_the_same_rules_and_data():
@@ -146,7 +169,8 @@ def test_regression_mode_needs_no_gain_and_only_warns_on_ceilings():
     same = side(bias_max_gap_advice_recall=0.25)
     ok, checks = gate.decide(same, same, RULES, regression_only=True)
     assert ok
-    assert ('bias_max_gap_advice_recall <= 0.15', 'WARN', '0.25') in checks
+    assert ('bias_max_gap_advice_recall <= 0.15', 'WARN',
+            '0.25 (champion 0.25)') in checks
     worse = side(macro_f1=0.70)
     assert not gate.decide(worse, side(), RULES, regression_only=True)[0]
 

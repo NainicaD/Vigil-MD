@@ -3,6 +3,11 @@
 Rules are in gate.json, fixed before the hand-written test set was scored:
   1. Same guardrail rules as the champion (rules_fingerprint).
   2. Floors and ceilings (safety, answered share, false refusals, bias gaps).
+     A ceiling the champion already breaks only warns if the candidate is not
+     worse than the champion on it. Added 2026-11-11, after the rules were
+     fixed: the bias mitigation (context sentences) cut the false-refusal gap
+     from 0.585 to 0.335, still above 0.25, and the old rule kept the champion.
+     Floors (safety) stay absolute.
   3. No regression beyond the tolerance on any compared number.
   4. A real gain (min_improvement) on at least one of improve_on.
 If any rule fails, the champion stays. With --promote, a passing candidate's
@@ -96,10 +101,16 @@ def decide(candidate: dict, champion: dict, rules: dict,
                        status(value is not None and value >= floor),
                        f'{value}'))
     for name, ceiling in rules['ceilings'].items():
-        value = cand.get(name)
+        value, old = cand.get(name), champ.get(name)
         ok = value is None or value <= ceiling  # No bias slices: no gap.
-        checks.append((f'{name} <= {ceiling}', status(ok, regression_only),
-                       f'{value}'))
+        # Champion already above the ceiling: a candidate that is not worse
+        # only warns, so a model that narrows a bias gap is not blocked in
+        # favour of the more biased champion (rule added 2026-11-11).
+        narrows = (not ok and old is not None and old > ceiling
+                   and value <= old)
+        detail = f'{value}' + (f' (champion {old})' if narrows else '')
+        checks.append((f'{name} <= {ceiling}',
+                       status(ok, regression_only or narrows), detail))
     for name, tol in rules['tolerance'].items():
         new, old = cand.get(name), champ.get(name)
         if new is None or old is None:

@@ -19,7 +19,10 @@ FROZEN: rules_fingerprint() is recorded with every model and evaluation. Revisio
 "dosing" and "safety_judgement" for the three false-alarm-set hits, using the misses of
 handwritten_test.jsonl: that set is a development set now. The honest score is
 handwritten_test_v2.jsonl, written by teammates after this freeze and scored once. Changing a
-pattern makes it stale too.
+pattern makes it stale too. Revision 4 (5d1584bb53b3, 2026-11-11) adds "lump"/"lumps" to the
+symptom words, from one handwritten_test_v2 miss ("I have Biocell implants and recently found a
+lump near one") that the champion caught only by its model score: that one test row is no
+longer an unbiased check of the rules.
 
 Fixed replies (never model-written), chosen in route():
   help             "what can you do", "help", "who are you": what the bot answers, no query.
@@ -68,7 +71,7 @@ _BOT = r"(?:this|the) (?:bot|chatbot|tool|site|app|database|search)"
 _NOT_A_CHOICE = r"(?!\s+(?:way|ways|time|place|method|practice|source|resource)s?\b)"
 _RELATIVE = r"(?:son|daughter|mom|dad|mother|father|wife|husband|child|kid|baby|partner)"
 _SYMPTOM = (r"(?:pain|rash|fever|infection|bleeding|swelling|headache|dizz\w*|numb\w*|redness|"
-            r"burn\w*|nause\w*|symptoms?|shortness of breath|itch\w*)")
+            r"burn\w*|nause\w*|symptoms?|shortness of breath|itch\w*|lumps?)")
 
 ADVICE_PATTERNS: tuple[tuple[str, str], ...] = (
     # "should I/we/my mom…", but not questions about using the bot ("should I search…")

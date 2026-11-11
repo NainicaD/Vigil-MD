@@ -171,3 +171,33 @@ JOINERS = (" and ", ", also ", ". ", "? and ", " - also ")
 OPENERS = ("", "", "", "hi, ", "quick question: ", "can you tell me ", "i want to know ",
            "please ", "hey ")
 CLOSERS = ("", "", "", "?", "?", " please", " thanks")
+
+# Why the question is asked, said before it ("our team is reviewing suppliers. ..."). generate.py
+# puts one in front of the same share of questions of every label, out_of_scope included, so a
+# context sentence carries no label signal. Without them, "our hospital" appeared only in advice
+# templates and the router refused long, factual procurement questions (bias slice style=long,
+# false refusals 0.62 vs 0.04 for short; see query_router/bias.py). Written fresh, not taken from
+# the hand-written test set. No advice or judgement words: a context must not trigger a rule.
+CONTEXTS = (
+    "i'm preparing a briefing for my department. ",
+    "for an internal report i'm writing: ",
+    "our biomedical engineering team is updating its device files. ",
+    "we're reviewing our suppliers this quarter. ",
+    "i work in hospital purchasing. ",
+    "for a class assignment on device surveillance: ",
+    "our compliance office asked me to look this up. ",
+    "i'm a nurse manager putting together background for my unit. ",
+    "we're comparing vendors before our next order. ",
+    "for a journal club presentation next week: ",
+    "our clinic is reviewing the equipment it uses. ",
+    "i'm writing a thesis chapter on adverse event reporting. ",
+    "my manager asked for some numbers for our planning meeting. ",
+    "we're doing a yearly review of the devices our health system buys. ",
+    "for a news article i'm researching: ",
+    "i'm helping our hospital's quality team with a report. ",
+    "background for a grant proposal: ",
+    "our department is drafting a purchasing plan. ",
+    "i keep a spreadsheet of devices for our facility. ",
+    "for our hospital's annual equipment review: ",
+    "for a board presentation at our medical center: ",
+)

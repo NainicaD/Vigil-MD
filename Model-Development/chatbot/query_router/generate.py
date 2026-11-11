@@ -24,7 +24,7 @@ import random
 from pathlib import Path
 
 from .labels import LABELS
-from .templates import CLOSERS, JOINERS, OPENERS, TEMPLATES, UNRELATED
+from .templates import CLOSERS, CONTEXTS, JOINERS, OPENERS, TEMPLATES, UNRELATED
 
 SLOTS_FILE = Path(__file__).with_name("slots.json")
 OUT_DIR = Path("data/generated")
@@ -32,6 +32,7 @@ SPLITS = ("train", "val", "heldout")
 SPLIT_SHARES = {"val": 0.2, "heldout": 0.2}        # the rest is train
 SPLIT_SLOTS = ("device", "company", "code")
 MULTI_LABEL_SHARE = 0.25     # share of questions that combine two labels
+CONTEXT_SHARE = 0.2          # share of questions, of every label, with a context sentence first
 
 
 def load_slots(path: Path = SLOTS_FILE) -> dict[str, list[str]]:
@@ -81,6 +82,11 @@ def split_templates(templates: dict, seed: int) -> dict[str, dict]:
     return out
 
 
+def split_contexts(contexts=CONTEXTS, seed: int = 13) -> dict[str, list[str]]:
+    """Per split, the context sentences; disjoint across splits, like the templates."""
+    return _three_way(sorted(contexts), random.Random(f"{seed}-contexts"), min_each=2)
+
+
 def random_udi(rng: random.Random) -> str:
     return "00" + "".join(rng.choice("0123456789") for _ in range(12))
 
@@ -113,7 +119,8 @@ def add_noise(text: str, rng: random.Random) -> str:
     return text
 
 
-def make_example(slots: dict, rng: random.Random, templates: dict = TEMPLATES) -> dict:
+def make_example(slots: dict, rng: random.Random, templates: dict = TEMPLATES,
+                 contexts=CONTEXTS) -> dict:
     n_labels = 2 if rng.random() < MULTI_LABEL_SHARE else 1
     picked = rng.sample(list(LABELS), n_labels)
     parts, audiences, oos_kind = [], [], None
@@ -124,6 +131,8 @@ def make_example(slots: dict, rng: random.Random, templates: dict = TEMPLATES) -
         if label == "out_of_scope":
             oos_kind = "unrelated" if template in UNRELATED else "advice"
     text = parts[0] if n_labels == 1 else rng.choice(JOINERS).join(parts)
+    if contexts and rng.random() < CONTEXT_SHARE:   # drawn after the labels: same rate for all
+        text = rng.choice(contexts) + text
     audience = next((a for a in audiences if a != "neutral"), "neutral")
     ex = {"text": add_noise(text, rng), "labels": sorted(picked), "audience": audience}
     if oos_kind:
@@ -135,6 +144,7 @@ def generate(n_train: int, n_val: int, n_heldout: int = 0, seed: int = 13,
              slots: dict | None = None) -> dict[str, list[dict]]:
     pools = split_pools(slots or load_slots(), seed)
     tmpl = split_templates(TEMPLATES, seed)
+    ctx = split_contexts(CONTEXTS, seed)
     out = {}
     for split, n in (("train", n_train), ("val", n_val), ("heldout", n_heldout)):
         if n == 0:
@@ -144,7 +154,7 @@ def generate(n_train: int, n_val: int, n_heldout: int = 0, seed: int = 13,
         attempts = 0
         while len(rows) < n and attempts < n * 20:
             attempts += 1
-            ex = make_example(pools[split], rng, tmpl[split])
+            ex = make_example(pools[split], rng, tmpl[split], ctx[split])
             key = ex["text"].lower()
             if key in seen:
                 continue

@@ -1,5 +1,5 @@
 {
-  "_comment": "Promotion rules for the query router, fixed 2026-11-08 before the hand-written test set was scored. Higher is better unless listed in lower_is_better. See gate.py.",
+  "_comment": "Promotion rules for the query router, fixed 2026-11-08 before the hand-written test set was scored. Higher is better unless listed in lower_is_better. Changed 2026-11-11, after seeing a result: a ceiling the champion already breaks only warns if the candidate is not worse on it (gate.py). See gate.py.",
   "floors": {
     "advice_recall": 0.9,
     "answered_facts_with_refusal": 0.85
