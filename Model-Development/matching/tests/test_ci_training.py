@@ -11,7 +11,7 @@ import yaml
 
 import ci.check_training_outputs as chk
 import ci.make_ci_feature_table as gen
-from vigil_model.same_device_features import FEATURE_COLUMNS, MatchKind
+from vigil_model.same_device_features import DEFAULT_FEATURE_SET, FEATURE_COLUMNS, MatchKind, feature_set
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT.parents[1] / ".github" / "workflows" / "model-training.yml"
@@ -21,10 +21,28 @@ WORKFLOW = ROOT.parents[1] / ".github" / "workflows" / "model-training.yml"
 
 def test_synthetic_table_has_every_column_s06_reads():
     df = gen.make(n_devices=100, rows_per_device=3)
-    for col in ("label", "meta_split", "meta_device_key", "meta_mfr_tier", *FEATURE_COLUMNS):
+    for col in ("label", "meta_split", "meta_device_key", "meta_mfr_tier", *feature_set(DEFAULT_FEATURE_SET)):
         assert col in df.columns, col
     assert set(df["label"]) == {"MATCH", "NON_MATCH"}
     assert set(df["feat_match_kind"]) <= {k.value for k in MatchKind}
+
+
+def test_synthetic_table_holds_only_its_feature_set():
+    # s06 trains on the columns the table holds and s05 builds one set: they must be the same set
+    fs2 = gen.make(n_devices=20, feature_set="fs2")
+    assert [c for c in fs2.columns if c.startswith("feat_")] == list(feature_set("fs2"))
+    assert "feat_labeler_sim" not in fs2.columns
+    fs3 = gen.make(n_devices=20, feature_set="fs3")
+    assert [c for c in fs3.columns if c.startswith("feat_")] == list(FEATURE_COLUMNS)
+
+
+def test_generator_writes_a_tfidf_encoder_s05_can_load(tmp_path):
+    pytest.importorskip("sklearn")
+    from vigil_model import text_cosine
+    out, enc = tmp_path / "f.csv", tmp_path / "f.tfidf.pkl"
+    assert gen.main(["--out", str(out), "--devices", "20", "--tfidf", str(enc)]) == 0
+    loaded = text_cosine.load(enc)
+    assert text_cosine.pair_cosines(loaded, ["boston scientific stent"], ["boston scientific stent"])[0] > 0.99
 
 
 def test_synthetic_split_is_by_device_with_both_labels_on_each_side():
@@ -174,6 +192,8 @@ def test_only_the_train_job_can_reach_gcp(wf):
 def test_smoke_train_uses_synthetic_data_and_no_mlflow(wf):
     run = _run_lines(wf["jobs"]["smoke-train"])
     assert "ci/make_ci_feature_table.py" in run and "--data data/ci/features.csv" in run and "--no-mlflow" in run
+    # fs2 needs feat_text_cosine: the generator writes the encoder and s05 reads it (no s04 in this job)
+    assert run.count("--tfidf data/ci/features.tfidf.pkl") == 2
 
 
 def test_train_runs_the_chain_in_order_with_cost_guards(wf):
@@ -186,14 +206,25 @@ def test_train_runs_the_chain_in_order_with_cost_guards(wf):
     assert wf["jobs"]["train"]["needs"] == ["test", "smoke-train"]
 
 
+def test_train_uses_the_released_recipe(wf):
+    job = wf["jobs"]["train"]
+    run = _run_lines(job)
+    assert "--table label_set_v2" in run and "--feature-set fs2" in run
+    assert run.count("$S04_ARGS") == 3                      # dry run and both real runs build the same table
+    assert "--table label_set_v2" in job["env"]["S04_ARGS"] and "--feature-set fs2" in job["env"]["S04_ARGS"]
+    assert "--tfidf data/label_set_v2_fs2_features.tfidf.pkl" in run
+    assert "--data data/label_set_v2_fs2_features.parquet" in run
+    assert '"--ie-gate"' in run                             # s08 scores with the E4 gate, as the release does
+
+
 def test_train_uploads_the_models(wf):
     upload = [s for s in wf["jobs"]["train"]["steps"] if s.get("uses", "").startswith("actions/upload-artifact")]
     assert upload and upload[0]["if"] == "always()"
-    for p in ("mlflow.db", "mlruns/", "data/cutoffs.json", "data/scores/"):
+    for p in ("mlflow.db", "mlruns/", "data/cutoffs.json", "data/scores/", "data/label_set_v2_fs2_features.tfidf.pkl"):
         assert f"Model-Development/matching/{p}" in upload[0]["with"]["path"]
 
 
 def test_data_cache_is_keyed_on_the_label_manifest(wf):
     keys = [s["with"]["key"] for s in wf["jobs"]["train"]["steps"] if "actions/cache" in s.get("uses", "")]
     assert len(keys) == 2 and keys[0] == keys[1]
-    assert "labels/label_set_v1.manifest.json" in keys[0]
+    assert "labels/label_set_v2.manifest.json" in keys[0]
