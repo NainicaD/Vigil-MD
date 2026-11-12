@@ -72,11 +72,18 @@ def sha256(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def manifest(meta: dict, metrics: dict, git: dict, files: dict[str, str], version: str) -> dict:
-    """What a published version says about itself. Pure."""
+def manifest(meta: dict, metrics: dict, git: dict, files: dict[str, str], version: str,
+             approved_version: str | None = None) -> dict:
+    """What a published version says about itself. Pure.
+
+    mlflow_run_id / mlflow_model_version are the run that built these files; in CI that is a
+    throwaway store (kept as the run's "mlflow-ci" artifact). approved_model_version is the
+    registry version the gate approved (champion_metrics.json "model"), whose numbers these
+    files reproduce."""
     return {'package': PACKAGE, 'version': version,
             'git_commit': git['git_commit'],
             'rules_fingerprint': meta['rules_fingerprint'],
+            'approved_model_version': approved_version,
             'mlflow_run_id': meta.get('mlflow_run_id'),
             'mlflow_model_version': meta.get('model_version'),
             'registered_model': meta.get('registered_model'),
@@ -168,7 +175,8 @@ def publish(model_dir: pathlib.Path, project: str, print_only: bool) -> int:
             shutil.copy2(model_dir / name, stage / name)
             files[name] = sha256(stage / name)
         (stage / 'manifest.json').write_text(
-            json.dumps(manifest(meta, candidate, git, files, version), indent=2) + '\n')
+            json.dumps(manifest(meta, candidate, git, files, version,
+                                champion.get('model')), indent=2) + '\n')
         if print_only:
             print('--print-only: would run')
             print('  ' + ' '.join(exists_cmd(version, project)))

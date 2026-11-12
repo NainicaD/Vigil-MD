@@ -2,15 +2,25 @@
 #
 #   docker build -f Model-Development/chatbot/Dockerfile --build-arg DATASET=vigil_md_dev -t vigil-md-api .
 #
-# Stage 1 trains the query router with the pinned versions of requirements.txt, as CI does
-# (a fresh retrain reproduces champion_metrics.json), so the model and scikit-learn always
-# match. Stage 2 is the slim server: serving libraries only, the trained model, the search
+# The model stage trains the query router with the pinned versions of requirements.txt, as CI
+# does (a fresh retrain reproduces champion_metrics.json), or takes the published one (below);
+# either way it was built with the same scikit-learn as the server. The last stage is the slim
+# server: serving libraries only, the trained model, the search
 # index of DATASET (built beforehand with python -m device_search.build_index --dataset ...),
 # and the website, built by the "web" stage from Web-App/frontend/ (Node 22, npm ci).
 # No credentials are baked in: on Cloud Run the service account is used; locally, mount
 # your gcloud application-default credentials (README, "API").
+#
+# The router comes from one of two stages (Docker builds only the one chosen):
+#   MODEL=train      (default) retrain it from this commit, as CI does
+#   MODEL=published  use the approved model from Artifact Registry, downloaded beforehand:
+#       python -m query_router.publish --download <version> --out models/published
+#       docker build ... --build-arg MODEL=published ...
+#     The build checks the SHA-256 of every file against its manifest; /api/health then
+#     reports the version.
+ARG MODEL=train
 
-FROM python:3.12-slim AS train
+FROM python:3.12-slim AS model-train
 WORKDIR /build
 COPY Model-Development/chatbot/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -19,7 +29,16 @@ ENV MLFLOW_TRACKING_URI=sqlite:////tmp/mlflow.db \
     VIGIL_MLFLOW_ARTIFACTS=/tmp/mlflow-artifacts \
     VIGIL_AUTHOR=docker-build \
     MLFLOW_DISABLE_AGENT_HINT=1
-RUN python -m query_router.generate && python -m query_router.train
+RUN python -m query_router.generate && python -m query_router.train && cp -R models/baseline /model
+
+FROM python:3.12-slim AS model-published
+COPY Model-Development/chatbot/models/published/ /model/
+RUN python -c "import hashlib, json, pathlib, sys; d = pathlib.Path('/model'); \
+m = json.loads((d / 'manifest.json').read_text()); \
+bad = [n for n, h in m['sha256'].items() if hashlib.sha256((d / n).read_bytes()).hexdigest() != h]; \
+sys.exit(f'checksum mismatch: {bad}') if bad else print('published model', m['version'], 'checksums match')"
+
+FROM model-${MODEL} AS model
 
 FROM node:22-slim AS web
 WORKDIR /web
@@ -40,7 +59,7 @@ COPY Model-Development/chatbot/api api
 COPY Model-Development/chatbot/device_search device_search
 COPY Model-Development/chatbot/query_layer query_layer
 COPY Model-Development/chatbot/query_router query_router
-COPY --from=train /build/models/baseline models/baseline
+COPY --from=model /model models/baseline
 ARG DATASET=vigil_md_dev
 COPY Model-Development/chatbot/data/search/${DATASET}.sqlite data/search/${DATASET}.sqlite
 ENV VIGIL_BQ_DATASET=${DATASET}

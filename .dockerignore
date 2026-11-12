@@ -9,6 +9,8 @@
 !Model-Development/chatbot/query_layer/
 !Model-Development/chatbot/query_router/
 !Model-Development/chatbot/data/search/
+# The approved router, downloaded by query_router.publish --download (MODEL=published)
+!Model-Development/chatbot/models/published/
 !Web-App/frontend/
 Web-App/frontend/node_modules
 Web-App/frontend/dist

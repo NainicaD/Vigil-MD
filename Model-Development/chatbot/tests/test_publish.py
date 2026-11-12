@@ -35,6 +35,12 @@ def test_version_names_the_rules_and_the_commit():
     assert publish.version_name('5d1584bb53b3', '3a764361e4c6fefe') == '5d1584bb53b3-3a76436'
 
 
+def test_manifest_names_the_approved_registry_version():
+    m = publish.manifest({'rules_fingerprint': 'abc', 'model_version': '1'}, candidate(),
+                         {'git_commit': 'c0ffee'}, {'model.joblib': 'x'}, 'abc-c0ffee', '12')
+    assert m['approved_model_version'] == '12' and m['mlflow_model_version'] == '1'
+
+
 def test_commands_target_the_model_repository_only():
     cmd = publish.upload_cmd('/tmp/x', 'v1')
     assert cmd[:4] == ['gcloud', 'artifacts', 'generic', 'upload']

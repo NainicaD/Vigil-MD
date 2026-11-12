@@ -19,6 +19,7 @@ Run (from Model-Development/chatbot/):
 from __future__ import annotations
 
 import collections
+import json
 import logging
 import os
 import threading
@@ -65,6 +66,15 @@ class AnswerRequest(BaseModel):
     entity: EntityKey | None = None
 
 
+def published_version(model_dir: Path = pipeline.DEFAULT_MODEL_DIR) -> str | None:
+    """The Artifact Registry version the router came from (manifest.json, written by
+    query_router.publish), or None for a model trained at build time or on a laptop."""
+    try:
+        return json.loads((Path(model_dir) / "manifest.json").read_text())["version"]
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 class RateLimiter:
     """At most `per_minute` calls per client in any 60-second window (in memory, per process)."""
 
@@ -91,6 +101,7 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
     dataset = dataset or config.DATASET
     state = {"bot": bot}
     limiter = RateLimiter(rate_limit)
+    model_version = published_version()
     app = FastAPI(title="Vigil MD API", docs_url="/api/docs", redoc_url=None,
                   openapi_url="/api/openapi.json")
 
@@ -128,7 +139,8 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
         return {"status": "ok", "dataset": dataset,
                 "rules_fingerprint": guardrails.rules_fingerprint(),
                 "template_fingerprint": templates.templates_fingerprint(),
-                "index_built": getattr(bot_.index, "meta", {}).get("built_at")}
+                "index_built": getattr(bot_.index, "meta", {}).get("built_at"),
+                "model_version": model_version}
 
     @app.get("/api/search")
     def search(q: str = Query(min_length=2, max_length=MAX_QUERY_CHARS),

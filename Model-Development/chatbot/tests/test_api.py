@@ -37,7 +37,16 @@ def test_health_reports_fingerprints_and_runs_no_query():
     assert body["status"] == "ok" and body["dataset"] == "vigil_md_test"
     assert body["rules_fingerprint"] == guardrails.rules_fingerprint()
     assert body["template_fingerprint"] == templates.templates_fingerprint()
+    assert "model_version" in body
     assert not bq.calls
+
+
+def test_published_version_comes_from_the_manifest(tmp_path):
+    assert api.published_version(tmp_path) is None                 # trained, not published
+    (tmp_path / "manifest.json").write_text('{"version": "5d1584bb53b3-e9e70c5"}')
+    assert api.published_version(tmp_path) == "5d1584bb53b3-e9e70c5"
+    (tmp_path / "manifest.json").write_text("not json")
+    assert api.published_version(tmp_path) is None
 
 
 def test_search_returns_the_contract_fields_only():
@@ -191,7 +200,11 @@ def test_the_image_copies_every_package_the_api_imports():
     dockerfile = (CHATBOT / "Dockerfile").read_text()
     for package in ("answer", "api", "device_search", "query_layer", "query_router"):
         assert f"COPY Model-Development/chatbot/{package} {package}" in dockerfile, package
-    assert "COPY --from=train /build/models/baseline models/baseline" in dockerfile
+    # the router: retrained by default, or the published one with its checksums checked
+    assert "ARG MODEL=train" in dockerfile and "FROM model-${MODEL} AS model" in dockerfile
+    assert "COPY --from=model /model models/baseline" in dockerfile
+    published = dockerfile.split("AS model-published", 1)[1].split("FROM model-", 1)[0]
+    assert "manifest.json" in published and "sha256" in published
     assert "COPY --from=web /web/dist web" in dockerfile    # the website, built in the image
     assert "VITE_USE_MOCKS=false" in dockerfile
     assert "--forwarded-allow-ips" in dockerfile           # per-visitor rate limit on Cloud Run

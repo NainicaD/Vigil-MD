@@ -41,8 +41,6 @@ jobs:
       contents: read
       id-token: write          # lets the job ask GCP for a short-lived token (no stored key)
     env:
-      MLFLOW_TRACKING_URI: sqlite:///${{ github.workspace }}/../mlflow-ci/mlflow.db
-      VIGIL_MLFLOW_ARTIFACTS: ${{ github.workspace }}/../mlflow-ci/artifacts
       MLFLOW_DISABLE_AGENT_HINT: "1"
     steps:
       - uses: actions/checkout@v4
@@ -59,12 +57,26 @@ jobs:
       - name: Run the tests
         run: pytest -q -rs
 
+      # MLflow writes to the runner's temp folder (outside the checkout, so publish.py sees a
+      # clean tree); the store is kept below as the run's "mlflow-ci" artifact.
       - name: Retrain the router and run the model gate
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///${{ runner.temp }}/mlflow-ci/mlflow.db
+          VIGIL_MLFLOW_ARTIFACTS: ${{ runner.temp }}/mlflow-ci/artifacts
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/../mlflow-ci"
+          mkdir -p "$RUNNER_TEMP/mlflow-ci"
           python -m query_router.generate
           python -m query_router.train
           python -m query_router.gate --candidate models/baseline --regression-only
+
+      - name: Keep this run's MLflow record (training run, model version, metrics)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-ci
+          path: ${{ runner.temp }}/mlflow-ci
+          retention-days: 90
+          if-no-files-found: warn
 
       - name: Check it is the approved champion (no upload)
         run: python -m query_router.publish --model-dir models/baseline --print-only
