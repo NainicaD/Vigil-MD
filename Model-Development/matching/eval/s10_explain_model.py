@@ -25,6 +25,8 @@ import pandas as pd
 import xgboost as xgb
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from vigil_model.tracking import tracking_uri  # noqa: E402
 DATA = ROOT / "data"
 
 parser = argparse.ArgumentParser(description="SHAP explanation for a trained model")
@@ -41,7 +43,7 @@ def to_float(series):
 
 
 # --- find the training run and load its model ------------------------------------------------------
-mlflow.set_tracking_uri(f"sqlite:///{ROOT / 'mlflow.db'}")
+mlflow.set_tracking_uri(tracking_uri())
 runs = mlflow.search_runs(experiment_names=["vigil-md-linkage"],
                           filter_string=f"tags.model_name = '{args.model_name}'",
                           order_by=["start_time DESC"])

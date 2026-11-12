@@ -41,7 +41,8 @@ from vigil_model import same_device_features as feat  # noqa: E402
 ROOT = Path(__file__).resolve().parents[1]
 SQL_DIR = ROOT / "sql" / "labels"
 LABELS_DIR = ROOT / "labels"
-MANIFEST = LABELS_DIR / "label_set_v1.manifest.json"
+BASE_LABEL_SET = "label_set_v1"
+MANIFEST = LABELS_DIR / f"{BASE_LABEL_SET}.manifest.json"
 ALIAS_CSV = LABELS_DIR / "alias_table_v1.csv"
 MODEL_DATASET = bq_utils.MODEL_DATASET
 EXIT_OK, EXIT_BAD_SQL, EXIT_OVER_BUDGET = 0, 2, 3
@@ -118,6 +119,16 @@ def load_manifest(path: Path) -> dict:
 def save_manifest(path: Path, manifest: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(manifest, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+
+
+def seed_manifest(path: Path, base: Path | None = None) -> None:
+    """A new label set starts from the baseline's alias hash, so check_alias proves both use one alias table."""
+    base = base or MANIFEST
+    if path.exists() or path == base:
+        return
+    want = load_manifest(base).get("alias_table_sha256")
+    if want:
+        save_manifest(path, {"alias_table_sha256": want, "based_on": base.name})
 
 
 def export_alias(client, project: str, csv_path: Path, manifest_path: Path) -> int:
@@ -269,6 +280,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cand-pool", type=int, default=50, help="models kept per labeler and product code")
     ap.add_argument("--easy-anchor-pct", type=int, default=10, help="percent of positives given an easy negative")
     ap.add_argument("--easy-pool", type=int, default=20000, help="GUDID records per split for easy negatives")
+    ap.add_argument("--agree-neg-per-anchor", type=int, default=0,
+                    help="E1 agree-region negatives per anchor (04b); 0 = none, as in label_set_v1")
+    ap.add_argument("--placeholder-neg-per-anchor", type=int, default=0,
+                    help="E3 placeholder-model negatives per anchor (04c); 0 = none, as in label_set_v1")
+    ap.add_argument("--label-set", default=BASE_LABEL_SET,
+                    help="table name and manifest name of this label set, e.g. label_set_v2_e1")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -282,9 +299,20 @@ def main(argv: list[str] | None = None) -> int:
     params ={"__MAX_PER_DEVICE__": args.max_per_device, "__NEG_PER_ANCHOR__": args.neg_per_anchor,
               "__CAND_POOL__": args.cand_pool, "__EASY_ANCHOR_PCT__": args.easy_anchor_pct,
               "__EASY_POOL__": args.easy_pool}
-    if min(params.values()) < 1 or args.easy_anchor_pct > 100:
-        log.error("caps must be positive and --easy-anchor-pct at most 100")
+    optional = (args.agree_neg_per_anchor, args.placeholder_neg_per_anchor)
+    if min(params.values()) < 1 or args.easy_anchor_pct > 100 or min(optional) < 0:
+        log.error("caps must be positive, the agree/placeholder caps at least 0 and --easy-anchor-pct at most 100")
         return EXIT_BAD_SQL
+    if not re.fullmatch(r"label_set_v\d+\w*", args.label_set):
+        log.error("--label-set must look like label_set_v2_e1, got %r", args.label_set)
+        return EXIT_BAD_SQL
+    if args.label_set == BASE_LABEL_SET and any(optional):
+        log.error("%s is the baseline: give a new --label-set for agree or placeholder negatives", BASE_LABEL_SET)
+        return EXIT_BAD_SQL
+    params["__AGREE_NEG_PER_ANCHOR__"] = args.agree_neg_per_anchor
+    params["__PLACEHOLDER_NEG_PER_ANCHOR__"] = args.placeholder_neg_per_anchor
+    params["__LABEL_SET__"] = args.label_set
+    manifest_path = LABELS_DIR / f"{args.label_set}.manifest.json"
     try:
         files = bq_utils.load_query_dir(args.sql_dir, args.only)
         if args.print_only:
@@ -301,7 +329,9 @@ def main(argv: list[str] | None = None) -> int:
     client = bigquery.Client(project=args.project)
     if args.export_alias:
         return export_alias(client, args.project, ALIAS_CSV, MANIFEST)
-    return run(client, args.project, files, params, args.max_gb, args.estimate_only, args.snapshot_date)
+    seed_manifest(manifest_path)
+    return run(client, args.project, files, params, args.max_gb, args.estimate_only, args.snapshot_date,
+               manifest_path=manifest_path)
 
 
 if __name__ == "__main__":

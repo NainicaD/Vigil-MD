@@ -134,3 +134,72 @@ def test_sql_emitters_carry_the_shared_constants():
     assert f.STRIP_CHARS_RE in f.sql_identifier_key("x") and f.PLACEHOLDER_RE in f.sql_is_placeholder("k")
     assert f"< {f.TEST_SPLIT_PCT}" in f.sql_split("k") and "'v1'" in f.sql_split("k")
     assert "''" in f.sql_pair_id("a", "b", "c", "'pos'")  # NULL device_seq falls back to ''
+
+
+@pytest.mark.parametrize("kind,model_missing,cat_missing,gated", [
+    ("maude_model_missing_or_placeholder", "True", "True", True),    # E6: no usable identifier
+    ("maude_model_missing_or_placeholder", True, False, False),      # catalog still usable
+    ("prefix_related", "False", "False", True),                      # E3b: a prefix alone is not evidence
+    ("same_model_key", "False", "1.0", False),
+    ("contains", False, False, False),
+])
+def test_insufficient_evidence_gate(kind, model_missing, cat_missing, gated):
+    feat = {"feat_match_kind": kind, "feat_maude_model_missing": model_missing,
+            "feat_maude_catalog_missing": cat_missing}
+    assert f.insufficient_evidence(feat) is gated
+
+
+@pytest.mark.parametrize("m,g,extra,at_end", [
+    ("1260", "M001711260", 6, True),        # the hand false positive: a short key ends a long catalog code
+    ("0673", "M0067301400", 7, False),      # in the middle
+    ("U1054260B", "1054260", 2, False),     # GUDID key inside the MAUDE key
+])
+def test_contains_features(m, g, extra, at_end):
+    feats = f.pair_features(side(model=m), side(model=g), MatchContext(frozenset(), 3))
+    assert feats["feat_match_kind"] == MatchKind.CONTAINS
+    assert feats["feat_contains_extra_len"] == extra and feats["feat_contains_at_end"] is at_end
+
+
+def test_contains_features_are_none_for_other_kinds_and_cosine_comes_from_ctx():
+    feats = f.pair_features(side(model="GP200"), side(model="GP200"), MatchContext(frozenset(), 3, text_cosine=0.42))
+    assert feats["feat_contains_extra_len"] is None and feats["feat_contains_at_end"] is None
+    assert feats["feat_text_cosine"] == 0.42
+
+
+def test_rule_hash_ignores_the_feature_list():
+    c = f.constants()
+    assert f.rule_constants_sha256(c) == f.rule_constants_sha256({**c, "FEATURE_COLUMNS": ["feat_x"]})
+    assert f.rule_constants_sha256(c) != f.rule_constants_sha256({**c, "MIN_KEY_LEN": 3})
+
+
+def test_fs1_is_the_baseline_feature_list_of_label_set_v1():
+    """P0/E1 were trained on these 19 columns; editing fs1 would silently change those experiments."""
+    import json
+    from pathlib import Path
+    manifest = Path(__file__).resolve().parents[1] / "labels" / "label_set_v1.manifest.json"
+    assert list(f.FEATURE_SETS["fs1"]) == json.loads(manifest.read_text())["constants"]["FEATURE_COLUMNS"]
+
+
+def test_feature_sets_are_ordered_subsets_and_named_back():
+    for name, cols in f.FEATURE_SETS.items():
+        assert f.feature_columns_in(cols) == list(cols), name        # subset of FEATURE_COLUMNS, canonical order
+        assert f.feature_set_name(cols) == name
+    assert f.DEFAULT_FEATURE_SET in f.FEATURE_SETS
+    assert f.FEATURE_SETS["fs3"] == f.FEATURE_COLUMNS                   # the newest set holds every column
+    assert f.feature_set_name(["feat_match_kind"]) == "custom"
+    with pytest.raises(ValueError):
+        f.feature_set("fs99")
+    assert f.feature_columns_in(["pair_id", "feat_text_cosine", "feat_match_kind"]) == ["feat_match_kind",
+                                                                                        "feat_text_cosine"]
+
+
+def test_labeler_similarity_ranks_spelling_variants_above_unrelated_labelers():
+    sim = f.labeler_similarity
+    assert sim("acme", "acme") == 1.0 and sim(None, "acme") is None and sim("", "acme") is None
+    same_company = sim("s.i.n. implant system sin", "sistema de implante nacional s/a")   # logreg's missed match
+    renamed = sim("carefusion sd", "carefusion 303")
+    unrelated = sim("dentsply sirona", "resmed")                                       # a cross-labeler collision
+    assert renamed > same_company > unrelated
+    feats = f.pair_features(side(model="X1", mfr="carefusion sd"), side(model="X1", mfr="carefusion 303"),
+                            MatchContext(frozenset(), 3))
+    assert feats["feat_labeler_sim"] == renamed

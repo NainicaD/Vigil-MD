@@ -38,7 +38,11 @@ KIT_WORD_RE = r'\b(KIT|KITS|SYSTEM|SYSTEMS|SET|TRAY|PACK)\b'   # same pattern as
 LEAK_MIN_SUBSTRING = 6           # a feat_* string this long that sits inside the DI is a derived leak
 
 # --- Column contract -----------------------------------------------------------------------------
-FEATURE_COLUMNS: tuple[str, ...] = (
+# FEATURE_COLUMNS is every column pair_features computes. A feature table holds one named FEATURE_SET of
+# them (s04/s05 --feature-set), and s06/diag train on the set the table holds, so a table built for an
+# older experiment still trains with today's code. Add a new set for new features; never edit a set
+# that an experiment in docs/EXPERIMENTS.md used.
+_FS1: tuple[str, ...] = (
     "feat_match_kind",
     "feat_identifier_exact",
     "feat_identifier_cross_field",
@@ -59,6 +63,38 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "feat_maude_name_has_kit_word",
     "feat_gudid_name_has_kit_word",
 )
+_FS2: tuple[str, ...] = _FS1 + (
+    "feat_contains_extra_len",       # F2: characters the longer model key adds; None unless kind is contains
+    "feat_contains_at_end",          # F2: the shorter key ends the longer one; None unless kind is contains
+    "feat_text_cosine",              # F1: TF-IDF cosine of the two record texts (vigil_model/text_cosine.py)
+)
+FEATURE_COLUMNS: tuple[str, ...] = _FS2 + (
+    "feat_labeler_sim",              # F3: character-trigram Jaccard of the two labeler names; None if one is missing
+)
+FEATURE_SETS: dict[str, tuple[str, ...]] = {
+    "fs1": _FS1,                     # baseline: P0-rerun, E4, E1-agree-neg
+    "fs2": _FS2,                     # fs1 + F2 contains + F1 text cosine: F1F2-text-contains, E3
+    "fs3": FEATURE_COLUMNS,          # fs2 + F3 labeler similarity: F3-labeler-sim (dropped, no gain)
+}
+DEFAULT_FEATURE_SET = "fs2"          # the set kept by the experiments (docs/EXPERIMENTS.md)
+
+
+def feature_set(name: str) -> tuple[str, ...]:
+    if name not in FEATURE_SETS:
+        raise ValueError(f"unknown feature set {name!r}; known: {sorted(FEATURE_SETS)}")
+    return FEATURE_SETS[name]
+
+
+def feature_columns_in(columns: Iterable[str]) -> list[str]:
+    """The FEATURE_COLUMNS a table holds, in canonical order (what s06 and diag train on)."""
+    present = set(columns)
+    return [c for c in FEATURE_COLUMNS if c in present]
+
+
+def feature_set_name(columns: Iterable[str]) -> str:
+    """The set whose columns these are, or 'custom'."""
+    cols = list(columns)
+    return next((n for n, c in FEATURE_SETS.items() if list(c) == cols), "custom")
 # A feature column with one of these as a whole "_"-delimited token is a leak (checked by
 # assert_no_leakage). Whole tokens, not substrings: "_di" would also hit feat_distinctive and
 # feat_n_dis_for_model. "gudid" is NOT banned: feat_gudid_model_missing is a fine feature. This is the
@@ -77,6 +113,13 @@ def constants() -> dict[str, Any]:
 def constants_sha256() -> str:
     """Hash of constants(). The label manifest and the golden fixture both store it to detect rule drift."""
     return hashlib.sha256(json.dumps(constants(), sort_keys=True).encode()).hexdigest()
+
+
+def rule_constants_sha256(consts: Mapping[str, Any] | None = None) -> str:
+    """Hash of the label rules only: constants() without FEATURE_COLUMNS. Adding a feature changes
+    constants_sha256 but not the label set, so s06 compares a feature table with its labels on this."""
+    rules = {k: v for k, v in (constants() if consts is None else consts).items() if k != "FEATURE_COLUMNS"}
+    return hashlib.sha256(json.dumps(rules, sort_keys=True).encode()).hexdigest()
 
 
 def is_banned_feature_name(name: str) -> bool:
@@ -121,6 +164,7 @@ class MatchContext:
     alias_pairs: frozenset[tuple[str, str]]      # (maude labeler, gudid labeler)
     n_dis_for_model: int | None                  # GUDID DIs for (labeler, model key)
     sibling_keys: frozenset[str] = frozenset()   # same-labeler GUDID keys, for E3
+    text_cosine: float | None = None             # F1: computed in batch by text_cosine.pair_cosines
 
 
 # --- Python rules (section 4 of the definition) ----------------------------------------------------
@@ -202,6 +246,18 @@ def is_distinctive(n_dis_for_model: int | None) -> bool:
     return n_dis_for_model is not None and n_dis_for_model <= NON_DISTINCTIVE_MAX_DIS
 
 
+def _truthy(value: Any) -> bool:
+    """A feat_* flag read from parquet (bool) or CSV ("True", "1", "1.0")."""
+    return value is True or str(value).strip().upper() in ("TRUE", "1", "1.0")
+
+
+def insufficient_evidence(feat: Mapping[str, Any]) -> bool:
+    """E4 gate in front of the model: the pair is INSUFFICIENT_EVIDENCE, never MATCH, when MAUDE has no
+    usable identifier (HAND_LABEL_GUIDE E6) or the identifiers are only prefix-related (E3b)."""
+    no_identifier = _truthy(feat["feat_maude_model_missing"]) and _truthy(feat["feat_maude_catalog_missing"])
+    return no_identifier or str(feat["feat_match_kind"]) == MatchKind.PREFIX_RELATED.value
+
+
 def has_conflicting_identifier(maude: DeviceSide, gudid: DeviceSide,
                                sibling_keys: frozenset[str]) -> bool:
     """GUDID has a record equal to the MAUDE key, and this candidate is only a 1-3 character suffix away (E3a)."""
@@ -223,6 +279,22 @@ def _words(name: str | None) -> set[str]:
     return set(_WORD.findall((name or "").upper()))
 
 
+def _trigrams(name: str) -> set[str]:
+    words = " ".join(re.findall(r"[a-z0-9]+", name.lower()))
+    padded = f" {words} "
+    return {padded[i:i + 3] for i in range(len(padded) - 2)}
+
+
+def labeler_similarity(a: str | None, b: str | None) -> float | None:
+    """F3. Character-trigram Jaccard of two labeler names, so 'carefusion sd' vs 'carefusion 303' or
+    'sistema de implante nacional' vs 's.i.n. implant system' score between 'equal' (1.0) and 'unrelated'
+    (near 0), where feat_labeler_equal and the alias table only say yes or no. None if one is missing."""
+    if not a or not b:
+        return None
+    ta, tb = _trigrams(a), _trigrams(b)
+    return round(len(ta & tb) / len(ta | tb), 6) if ta and tb else None
+
+
 def _is_kit(name: str | None) -> bool:
     return _KIT.search((name or "").upper()) is not None
 
@@ -238,6 +310,8 @@ def pair_features(maude: DeviceSide, gudid: DeviceSide, ctx: MatchContext) -> di
     m_mfr, g_mfr = maude.manufacturer_norm or None, gudid.manufacturer_norm or None
     wm, wg = _words(maude.device_name), _words(gudid.device_name)
     both_codes = maude.product_codes and gudid.product_codes
+    contains = kind == MatchKind.CONTAINS           # identifier_match compared the two model keys
+    short, long_ = sorted((m_model, g_model), key=len) if contains else ("", "")
     return {
         "feat_match_kind": kind.value,
         "feat_identifier_exact": kind in (MatchKind.SAME_MODEL_KEY, MatchKind.MAUDE_MODEL_EQ_GUDID_CATALOG,
@@ -262,6 +336,10 @@ def pair_features(maude: DeviceSide, gudid: DeviceSide, ctx: MatchContext) -> di
         "feat_device_name_token_overlap": len(wm & wg) / len(wm | wg) if wm and wg else None,
         "feat_maude_name_has_kit_word": _is_kit(maude.device_name),
         "feat_gudid_name_has_kit_word": _is_kit(gudid.device_name),
+        "feat_contains_extra_len": len(long_) - len(short) if contains else None,
+        "feat_contains_at_end": long_.endswith(short) if contains else None,
+        "feat_text_cosine": ctx.text_cosine,
+        "feat_labeler_sim": labeler_similarity(m_mfr, g_mfr),
     }
 
 

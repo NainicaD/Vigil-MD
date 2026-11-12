@@ -1,5 +1,5 @@
 -- Title: The label set: union, dedup, pair_id
--- Check: Stacks positives and the three negative sources, keeps one row per (maude labeler, model key,
+-- Check: Stacks positives and the negative sources, keeps one row per (maude labeler, model key,
 --   catalog key, product code, udi_di) with positives winning ties, assigns pair_id, and fails the
 --   statement if any row has no split.
 -- Why: One table is what the validator and training read. Column namespaces follow
@@ -8,8 +8,10 @@
 --   duplicate count. No feat_* column is written here: features are computed in Python from the key_*
 --   fields, so the UDI never has a path into one.
 -- Informs: validate_labels.py (C1 pair_id, C2 and C6 split, C7 dedup) and 06_label_stats.sql.
--- Placeholders filled by build_labels.py: __MODEL_DATASET__.
-CREATE OR REPLACE TABLE `__MODEL_DATASET__.label_set_v1` AS
+-- Placeholders filled by build_labels.py: __MODEL_DATASET__, __LABEL_SET__ (label_set_v1, label_set_v2_e1, ...).
+--   negatives_agree (04b) and negatives_placeholder (04c) are empty when their caps are 0, which rebuilds
+--   label_set_v1.
+CREATE OR REPLACE TABLE `__MODEL_DATASET__.__LABEL_SET__` AS
 WITH u AS (
   SELECT 'MATCH' AS label, 'udi_link' AS label_source, 1 AS prio,
          mdr_report_key, device_seq, udi_di, yr, m_mfr, m_pc, m_name, m_model_raw, m_catalog_raw, m_model, m_cat,
@@ -34,6 +36,18 @@ WITH u AS (
          n_dup_rows, g_mfr, g_pcs, g_name, g_model_raw, g_catalog_raw, g_model, g_cat, n_dis_for_model,
          meta_device_key, meta_split, match_kind
   FROM `__MODEL_DATASET__.negatives_easy`
+  UNION ALL
+  SELECT 'NON_MATCH', CONCAT('agree_', agree_source), 5,
+         mdr_report_key, device_seq, udi_di, yr, m_mfr, m_pc, m_name, m_model_raw, m_catalog_raw, m_model, m_cat,
+         n_dup_rows, g_mfr, g_pcs, g_name, g_model_raw, g_catalog_raw, g_model, g_cat, n_dis_for_model,
+         meta_device_key, meta_split, match_kind
+  FROM `__MODEL_DATASET__.negatives_agree`
+  UNION ALL
+  SELECT 'NON_MATCH', 'placeholder_other_model', 6,
+         mdr_report_key, device_seq, udi_di, yr, m_mfr, m_pc, m_name, m_model_raw, m_catalog_raw, m_model, m_cat,
+         n_dup_rows, g_mfr, g_pcs, g_name, g_model_raw, g_catalog_raw, g_model, g_cat, n_dis_for_model,
+         meta_device_key, meta_split, match_kind
+  FROM `__MODEL_DATASET__.negatives_placeholder`
 ),
 deduped AS (
   SELECT * EXCEPT (rn) FROM (

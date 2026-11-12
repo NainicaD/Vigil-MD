@@ -2,7 +2,7 @@
 
 Pull requests get no GCP credentials, so CI checks the training code (scripts/s06_train_models.py)
 on made-up rows. They have exactly the columns s06 reads: label, meta_split, meta_device_key,
-meta_mfr_tier and every FEATURE_COLUMNS column, with the same value types the real table has
+meta_mfr_tier and the columns of one feature set (default fs2), with the same value types the real table has
 (True/False, numbers, empty for unknown, a MatchKind value). Labels depend on the features, so the
 models have something to learn. The scores mean nothing and are never reported.
 
@@ -10,7 +10,7 @@ If FEATURE_COLUMNS gains a column this file does not know, it stops with an erro
 guessing, so a change to the feature contract is noticed here first.
 
 Usage (from Model-Development/matching/):
-    python ci/make_ci_feature_table.py --out data/ci/features.csv
+    python ci/make_ci_feature_table.py --out data/ci/features.csv --tfidf data/ci/features.tfidf.pkl
 """
 from __future__ import annotations
 
@@ -23,7 +23,11 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from vigil_model.same_device_features import FEATURE_COLUMNS, MatchKind, assert_no_leakage  # noqa: E402
+from vigil_model.same_device_features import (  # noqa: E402
+    DEFAULT_FEATURE_SET, FEATURE_COLUMNS, FEATURE_SETS, MatchKind, assert_no_leakage, feature_set as columns_of,
+)
+
+SHEET = ROOT / "labels" / "hand_label_sample_v1.csv"
 
 EXACT_KINDS = [MatchKind.SAME_MODEL_KEY, MatchKind.MAUDE_MODEL_EQ_GUDID_CATALOG,
                MatchKind.MAUDE_CATALOG_EQ_GUDID_MODEL, MatchKind.CATALOG_EQ_CATALOG]
@@ -33,8 +37,10 @@ OTHER_KINDS = [MatchKind.CONFLICT, MatchKind.CONFLICT, MatchKind.CONFLICT, Match
 TIERS = ["top_10", "11_100", "smaller"]
 
 
-def make(n_devices: int = 600, rows_per_device: int = 5, seed: int = 7) -> pd.DataFrame:
-    """Rows grouped by device, 20% of devices in test, about 42% MATCH (like label_set_v1)."""
+def make(n_devices: int = 600, rows_per_device: int = 5, seed: int = 7,
+         feature_set: str = DEFAULT_FEATURE_SET) -> pd.DataFrame:
+    """Rows grouped by device, 20% of devices in test, about 42% MATCH (like label_set_v1).
+    Only the columns of `feature_set` are written, so s06 trains on the same set s05 builds for the hand sheet."""
     rng = np.random.default_rng(seed)
     n = n_devices * rows_per_device
     device = np.repeat([f"ci labeler {i % 40}|CI{i:05d}" for i in range(n_devices)], rows_per_device)
@@ -68,6 +74,13 @@ def make(n_devices: int = 600, rows_per_device: int = 5, seed: int = 7) -> pd.Da
         "feat_device_name_token_overlap": np.round(np.where(match, rng.beta(5, 2, n), rng.beta(2, 5, n)), 4),
         "feat_maude_name_has_kit_word": rng.random(n) < 0.1,
         "feat_gudid_name_has_kit_word": rng.random(n) < 0.1,
+        # F2: empty (as in the CSV of the real table) unless the kind is contains
+        "feat_contains_extra_len": np.where(kind == MatchKind.CONTAINS.value,
+                                            rng.integers(1, 10, n).astype(str), ""),
+        "feat_contains_at_end": np.where(kind == MatchKind.CONTAINS.value,
+                                         np.where(rng.random(n) < 0.5, "True", "False"), ""),
+        "feat_text_cosine": np.round(np.where(match, rng.beta(5, 2, n), rng.beta(2, 5, n)), 4),
+        "feat_labeler_sim": np.round(np.where(match, rng.beta(4, 2, n), rng.beta(1, 4, n)), 4),
     }
     unknown = [c for c in FEATURE_COLUMNS if c not in values]
     if unknown:
@@ -79,10 +92,25 @@ def make(n_devices: int = 600, rows_per_device: int = 5, seed: int = 7) -> pd.Da
         "meta_split": split,
         "meta_device_key": device,
         "meta_mfr_tier": rng.choice(TIERS, n),
-        **{c: values[c] for c in FEATURE_COLUMNS},
+        **{c: values[c] for c in columns_of(feature_set)},
     })
     assert_no_leakage(c for c in df.columns if c.startswith("feat_"))
     return df
+
+
+def write_tfidf(path: Path, sheet: Path = SHEET) -> int:
+    """Fit the F1 encoder on the GUDID side of the committed hand sheet, built as s05 builds it. In CI it
+    stands in for the encoder s04 fits on the training split; the cosines it gives mean nothing."""
+    from vigil_model import text_cosine                  # pulls in sklearn: only when asked for
+    from vigil_model.rows import product_codes, text
+    from vigil_model.same_device_features import DeviceSide
+    cands = pd.read_csv(sheet, dtype=str)
+    cands = cands[cands["cand_rank"].astype(int) > 0]
+    texts = [text_cosine.side_text(DeviceSide(text(r.cand_labeler), text(r.cand_device_name), text(r.cand_model),
+                                              text(r.cand_catalog), product_codes(r.cand_product_codes)))
+             for r in cands.itertuples()]
+    text_cosine.save(text_cosine.fit(texts), path)
+    return len(texts)
 
 
 def main(argv=None) -> int:
@@ -91,11 +119,16 @@ def main(argv=None) -> int:
     p.add_argument("--devices", type=int, default=600)
     p.add_argument("--rows-per-device", type=int, default=5)
     p.add_argument("--seed", type=int, default=7)
+    p.add_argument("--feature-set", default=DEFAULT_FEATURE_SET, choices=sorted(FEATURE_SETS))
+    p.add_argument("--tfidf", type=Path, help="also write a TF-IDF encoder here, for s05 --tfidf")
     args = p.parse_args(argv)
-    df = make(args.devices, args.rows_per_device, args.seed)
+    df = make(args.devices, args.rows_per_device, args.seed, args.feature_set)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.out, index=False)
-    print(f"wrote {len(df)} synthetic rows ({df['meta_split'].eq('train').sum()} train) to {args.out}")
+    print(f"wrote {len(df)} synthetic rows ({df['meta_split'].eq('train').sum()} train, "
+          f"set {args.feature_set}) to {args.out}")
+    if args.tfidf:
+        print(f"wrote a TF-IDF encoder fitted on {write_tfidf(args.tfidf)} hand-sheet GUDID texts to {args.tfidf}")
     return 0
 
 
