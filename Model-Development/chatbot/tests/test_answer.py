@@ -376,13 +376,51 @@ def test_advice_only_is_refused_and_runs_no_query():
     ('what can you do', [], 'help', guardrails.HELP_REPLY),
     ('write me a poem about the ocean', ['out_of_scope'], 'scope',
      guardrails.SCOPE_REPLY),
-    ('asdf qwerty', [], 'unclear', templates.UNCLEAR),
 ])
 def test_fixed_replies_run_no_query(question, labels, status, text):
     bot, client, index = make_bot(labels)
     out = bot.answer(question)
     assert (out['status'], out['text']) == (status, text)
     assert not client.calls and not index.calls
+
+
+@pytest.mark.parametrize('resolution', [
+    search.Resolution('none', [], 'asdf qwerty'),            # nothing found
+    search.Resolution('ambiguous', [hit(), hit('dev:2', 'Other', '', 9)], 'x'),
+])
+def test_no_label_and_no_clear_device_is_unclear(resolution):
+    # Junk, or several close matches: still "unclear", and no BigQuery query runs.
+    bot, client, _ = make_bot([], resolution=resolution)
+    out = bot.answer('asdf qwerty')
+    assert (out['status'], out['text']) == ('unclear', templates.UNCLEAR)
+    assert not client.calls
+
+
+def test_no_label_but_a_clear_device_gives_its_summary():
+    # "How many deaths has the HeartMate 3 had?" passed no threshold (counts 0.768 < 0.77)
+    # but names one device: its summary is shown, after a note, instead of "unclear".
+    bot, _, _ = make_bot([])
+    out = bot.answer('How many deaths has the DreamStation had?')
+    assert out['status'] == 'answered'
+    assert kinds(out) == ['note', 'headline', 'counts', 'problems', 'recalls', 'footer']
+    assert out['sections'][0]['text'] == templates.SUMMARY_FALLBACK_NOTE
+    assert out['run_queries'] == list(pipeline.SUMMARY_FALLBACK)
+    assert out['labels'] == []                     # what the router said is kept
+
+
+def test_no_label_on_a_device_page_gives_its_summary():
+    bot, _, index = make_bot([])
+    out = bot.answer('tell me more', entity=('device', DEV))
+    assert out['status'] == 'answered' and 'counts' in kinds(out)
+    assert not index.calls                         # the page already knows the device
+
+
+def test_advice_with_no_factual_label_is_still_only_refused():
+    # The fallback never applies when advice was detected.
+    bot, client, _ = make_bot([])
+    out = bot.answer('Should I let my dad get a DreamStation?')
+    assert (out['status'], out['text']) == ('refused', guardrails.REFUSAL)
+    assert not client.calls
 
 
 def test_sections_follow_a_fixed_order_whatever_the_labels():

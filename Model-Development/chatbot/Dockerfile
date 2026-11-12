@@ -6,7 +6,7 @@
 # (a fresh retrain reproduces champion_metrics.json), so the model and scikit-learn always
 # match. Stage 2 is the slim server: serving libraries only, the trained model, the search
 # index of DATASET (built beforehand with python -m device_search.build_index --dataset ...),
-# and, once it exists, the front end's build (see the COPY line near the end).
+# and the website, built by the "web" stage from Web-App/frontend/ (Node 22, npm ci).
 # No credentials are baked in: on Cloud Run the service account is used; locally, mount
 # your gcloud application-default credentials (README, "API").
 
@@ -20,6 +20,15 @@ ENV MLFLOW_TRACKING_URI=sqlite:////tmp/mlflow.db \
     VIGIL_AUTHOR=docker-build \
     MLFLOW_DISABLE_AGENT_HINT=1
 RUN python -m query_router.generate && python -m query_router.train
+
+FROM node:22-slim AS web
+WORKDIR /web
+COPY Web-App/frontend/package.json Web-App/frontend/package-lock.json ./
+RUN npm ci
+COPY Web-App/frontend/ ./
+# Read at build time by Vite: call the real API on the same origin, no example data.
+ENV VITE_USE_MOCKS=false VITE_API_BASE_URL=/api
+RUN npm run build
 
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080
@@ -35,10 +44,11 @@ COPY --from=train /build/models/baseline models/baseline
 ARG DATASET=vigil_md_dev
 COPY Model-Development/chatbot/data/search/${DATASET}.sqlite data/search/${DATASET}.sqlite
 ENV VIGIL_BQ_DATASET=${DATASET}
-# The front end's static build, once Web-App/frontend/ exists (npm ci && npm run build):
-# COPY Web-App/frontend/dist web
-# ENV VIGIL_WEB_DIST=/app/web
+COPY --from=web /web/dist web
+ENV VIGIL_WEB_DIST=/app/web
 RUN useradd --create-home app
 USER app
 EXPOSE 8080
-CMD ["sh", "-c", "exec uvicorn api.app:app --host 0.0.0.0 --port ${PORT}"]
+# --forwarded-allow-ips: trust Cloud Run's proxy for the visitor's address (the rate limit is
+# per visitor); Cloud Run's proxy is the only way into the container.
+CMD ["sh", "-c", "exec uvicorn api.app:app --host 0.0.0.0 --port ${PORT} --forwarded-allow-ips='*'"]

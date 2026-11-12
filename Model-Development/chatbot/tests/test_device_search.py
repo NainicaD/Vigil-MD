@@ -365,3 +365,40 @@ def test_the_candidate_pool_is_large_enough_for_prod():
     import inspect
     from device_search.search import DeviceIndex
     assert inspect.signature(DeviceIndex.search).parameters["candidates"].default >= 3000
+
+
+# ── the whole-name rule and a dominant entry of the same family (2026-11-10) ──
+
+def _tied(*entries):
+    """Hits with equal scores: (kind, title, reports, company_norm)."""
+    from device_search.search import Hit
+    return [Hit(f"{k}|{t}", k, t, t, "", n, 0, 0, [], c, 1.0) for k, t, n, c in entries]
+
+
+@pytest.mark.parametrize("phrase,entries,expected", [
+    # GUDID lists one product twice: the short name was typed, the long one has 71x the reports
+    ("heartmate 3", [("device", "Thoratec HeartMate 3", 21203, "thoratec"),
+                     ("device", "HeartMate 3", 296, "thoratec")], "Thoratec HeartMate 3"),
+    # manufacturer spellings are left to the company grouping: the typed one stays
+    ("tandem", [("manufacturer", "TANDEM DIABETES CARE", 1373938, "tandem diabetes care"),
+                ("manufacturer", "TANDEM", 992, "tandem")], "TANDEM"),
+    # a longer name with other words is a different variant, even with more reports
+    ("corevalve evolut", [("device", "CoreValve Evolut R", 1750, "medtronic"),
+                          ("device", "CoreValve Evolut", 147, "medtronic")], "CoreValve Evolut"),
+    # the typed whole name is already the largest: it stays (why the rule exists)
+    ("natrelle inspira breast implants",
+     [("device", "Natrelle INSPIRA Breast Implants", 5191, "allergan"),
+      ("device", "Natrelle Inspira SoftTouch Breast Implants", 2880, "allergan")],
+     "Natrelle INSPIRA Breast Implants"),
+    # a bigger entry of ANOTHER company does not override the typed name
+    ("acme valve", [("device", "Other Acme Valve", 9000, "other co"),
+                    ("device", "Acme Valve", 100, "acme")], "Acme Valve"),
+    # the company's name in front, but under 3x the reports: the typed name stays
+    ("acme valve", [("device", "Acmecorp Acme Valve", 250, "acmecorp"),
+                    ("device", "Acme Valve", 100, "acmecorp")], "Acme Valve"),
+])
+def test_typed_name_yields_only_to_a_dominant_entry_of_its_family(index, monkeypatch,
+                                                                   phrase, entries, expected):
+    monkeypatch.setattr(index, "search", lambda text, limit=10: _tied(*entries))
+    r = index.resolve(phrase)
+    assert r.status == "resolved" and r.matches[0].title == expected

@@ -243,3 +243,7 @@ __marimo__/
 /*.ndjson
 # Per-user Claude Code settings
 .claude/settings.local.json
+
+# The website's source is all code: the Python template rules above (lib/, build/, env/,
+# var/, parts/, ...) must not hide any folder under it. Last, so it overrides them.
+!Web-App/frontend/src/**/
