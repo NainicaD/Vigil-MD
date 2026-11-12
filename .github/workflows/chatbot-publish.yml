@@ -69,6 +69,13 @@ jobs:
       - name: Check it is the approved champion (no upload)
         run: python -m query_router.publish --model-dir models/baseline --print-only
 
+      - name: Say why nothing is published
+        if: vars.GCP_WIF_PROVIDER == '' || vars.GCP_PUBLISH_SA == ''
+        run: |
+          msg="Not published: repository variables GCP_WIF_PROVIDER and GCP_PUBLISH_SA are not set (Settings -> Secrets and variables -> Actions -> Variables)."
+          echo "::warning::$msg"
+          echo "**$msg**" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Authenticate to GCP (Workload Identity Federation)
         if: vars.GCP_WIF_PROVIDER != '' && vars.GCP_PUBLISH_SA != ''
         uses: google-github-actions/auth@v2

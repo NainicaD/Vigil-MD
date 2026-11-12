@@ -117,6 +117,15 @@ def verify(folder: pathlib.Path) -> list[str]:
             if not (folder / name).exists() or sha256(folder / name) != digest]
 
 
+def dirty_files() -> list[str]:
+    """`git status --porcelain` lines (read-only), so a refusal says which files."""
+    try:
+        return subprocess.run(['git', 'status', '--porcelain'], capture_output=True, text=True,
+                              check=True).stdout.splitlines()
+    except (OSError, subprocess.CalledProcessError):
+        return []
+
+
 def _run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess:
     print('+', ' '.join(cmd), flush=True)
     return subprocess.run(cmd, capture_output=True, text=True, check=check)
@@ -143,7 +152,9 @@ def publish(model_dir: pathlib.Path, project: str, print_only: bool) -> int:
     git = tracking.git_info()
     if git['git_dirty'] != 'false':
         print(f'uncommitted changes (git_dirty={git["git_dirty"]}): commit first, so the '
-              'published model can be rebuilt from its commit', file=sys.stderr)
+              'published model can be rebuilt from its commit:', file=sys.stderr)
+        for line in dirty_files()[:20]:
+            print(f'  {line}', file=sys.stderr)
         if not print_only:
             return EXIT_BAD_INPUT
     version = version_name(meta['rules_fingerprint'], git['git_commit'])

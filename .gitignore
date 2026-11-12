@@ -257,6 +257,8 @@ Model-Development/matching/**/*.parquet
 Model-Development/**/mlflow.db
 mlruns/
 mlartifacts/
+# Short-lived GCP credentials written by google-github-actions/auth in CI (never commit)
+gha-creds-*.json
 
 # The website's source is all code: the Python template rules above (lib/, build/, env/,
 # var/, parts/, ...) must not hide any folder under it. Last, so it overrides them.

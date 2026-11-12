@@ -99,10 +99,13 @@ def test_refuses_a_model_that_is_not_the_champion(model_dir, fake):
     assert calls == []
 
 
-def test_refuses_uncommitted_changes_but_print_only_still_shows(model_dir, fake):
+def test_refuses_uncommitted_changes_but_print_only_still_shows(model_dir, fake, monkeypatch,
+                                                                 capsys):
     calls, state = fake
     state['dirty'] = 'true'
+    monkeypatch.setattr(publish, 'dirty_files', lambda: ['?? gha-creds-1a2b.json'])
     assert publish.publish(model_dir, 'p', print_only=False) == publish.EXIT_BAD_INPUT
+    assert 'gha-creds-1a2b.json' in capsys.readouterr().err      # says which file
     assert publish.publish(model_dir, 'p', print_only=True) == 0
     assert calls == []
 
