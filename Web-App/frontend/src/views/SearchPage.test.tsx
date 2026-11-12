@@ -1,6 +1,5 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchHit } from "../api/types";
 import { NO_RESULTS_MESSAGE } from "../components/SearchResults";
@@ -15,11 +14,7 @@ const hit = (kind: SearchHit["kind"], entity_id: string, title: string, reports:
 });
 
 function renderPage() {
-  return render(
-    <MemoryRouter>
-      <SearchPage />
-    </MemoryRouter>,
-  );
+  return render(<SearchPage />);
 }
 
 // Braces matter: a function returned from beforeEach is run by Vitest as cleanup.
@@ -48,13 +43,28 @@ describe("SearchPage (handover §3)", () => {
 
     const devices = await screen.findByRole("region", { name: /devices/i });
     const link = within(devices).getByRole("link", { name: /acme pump/i });
-    expect(link).toHaveAttribute("href", "/device/device/dev%3A1");
+    expect(link).toHaveAttribute("href", "/device?kind=device&id=dev%3A1");
     expect(link).toHaveTextContent("1,234 reports");
     expect(link).toHaveTextContent("Example Co.");
     expect(link).not.toHaveTextContent(/death|injur/i); // only kind, title, company, reports
     expect(screen.getByRole("region", { name: /companies/i })).toHaveTextContent("1 report");
-    expect(screen.getByRole("link", { name: /acme co\./i })).toHaveAttribute("href", "/device/manufacturer/acme%20co");
+    expect(screen.getByRole("link", { name: /acme co\./i })).toHaveAttribute("href", "/device?kind=manufacturer&id=acme+co");
     expect(screen.getByRole("region", { name: /product codes/i })).toBeInTheDocument();
+  });
+
+  it("keeps the search in the address and starts from it", async () => {
+    search.mockResolvedValue({ query: "acme", hits: [] });
+    renderPage();
+    await userEvent.type(screen.getByLabelText(/device, company or product code/i), "acme");
+    await waitFor(() => expect(window.location.search).toBe("?q=acme"));
+  });
+
+  it("opens with the search from ?q=", async () => {
+    window.history.replaceState(null, "", "/?q=dream+station");
+    search.mockResolvedValue({ query: "dream station", hits: [] });
+    renderPage();
+    expect(screen.getByLabelText(/device, company or product code/i)).toHaveValue("dream station");
+    await waitFor(() => expect(search).toHaveBeenCalledWith("dream station", expect.anything()));
   });
 
   it("shows the handover's text when nothing is found", async () => {

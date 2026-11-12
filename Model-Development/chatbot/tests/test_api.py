@@ -179,6 +179,46 @@ def test_nothing_outside_the_build_can_be_read(site):
         assert "not public" not in site.get(path).text, path
 
 
+@pytest.fixture
+def next_site(tmp_path):
+    """A Next.js static export: one HTML file per page, a 404 page, Next's own data files."""
+    dist = tmp_path / "dist"
+    (dist / "_next" / "static").mkdir(parents=True)
+    (dist / "index.html").write_text("<title>Search</title>")
+    (dist / "device.html").write_text("<title>Device page</title>")
+    (dist / "device.txt").write_text("rsc payload")
+    (dist / "404.html").write_text("<title>Page not found</title>")
+    (dist / "_next" / "static" / "app.js").write_text("console.log(1)")
+    (tmp_path / "secret.html").write_text("not public")
+    bot, _, _ = test_answer.make_bot(["counts"])
+    bot.index = FakeSearchIndex(search.Resolution("resolved", [test_answer.hit()], "x"))
+    return TestClient(api.create_app(bot=bot, web_dist=str(dist)))
+
+
+def test_a_next_page_is_served_from_its_html_file(next_site):
+    # a device link opened, reloaded or shared: /device?kind=…&id=… is device.html
+    r = next_site.get(f"/device?kind=device&id={DEV}")
+    assert r.status_code == 200 and "Device page" in r.text
+    assert "Device page" in next_site.get("/device/").text
+    assert "Search" in next_site.get("/").text
+
+
+def test_next_files_are_served_as_files(next_site):
+    assert next_site.get("/device.txt").text == "rsc payload"     # loaded when navigating
+    assert next_site.get("/_next/static/app.js").text == "console.log(1)"
+
+
+def test_an_unknown_page_gets_the_404_page(next_site):
+    r = next_site.get("/no-such-page")
+    assert r.status_code == 404 and "Page not found" in r.text
+    assert next_site.get("/api/nothing-here").json()["status"] == "not_found"   # still JSON
+
+
+def test_the_html_lookup_reads_nothing_outside_the_build(next_site):
+    for path in ("/../secret", "/%2e%2e/secret", "/_next/../../secret", "/."):
+        assert "not public" not in next_site.get(path).text, path
+
+
 # ── the container (Dockerfile, ../../.dockerignore) ───────────────────────────
 
 from pathlib import Path  # noqa: E402
@@ -193,7 +233,7 @@ def test_the_image_copies_every_package_the_api_imports():
         assert f"COPY Model-Development/chatbot/{package} {package}" in dockerfile, package
     assert "COPY --from=train /build/models/baseline models/baseline" in dockerfile
     assert "COPY --from=web /web/dist web" in dockerfile    # the website, built in the image
-    assert "VITE_USE_MOCKS=false" in dockerfile
+    assert "NEXT_PUBLIC_USE_MOCKS=false" in dockerfile      # no example data in the image
     assert "--forwarded-allow-ips" in dockerfile           # per-visitor rate limit on Cloud Run
     assert "USER app" in dockerfile                       # not root
 
@@ -206,7 +246,7 @@ def test_the_build_context_lets_in_only_what_the_image_needs():
     assert not any((".env" in a and not a.endswith(".env.example")) or "credential" in a
                    or a.startswith("Data-Pipeline") for a in allowed)
     for kept_out in ("Web-App/frontend/node_modules", "Web-App/frontend/dist",
-                     "Web-App/frontend/.env*"):
+                     "Web-App/frontend/.next", "Web-App/frontend/.env*"):
         assert kept_out in lines, kept_out
 
 

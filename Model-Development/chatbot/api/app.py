@@ -176,22 +176,30 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
 
 
 def add_site(app: FastAPI, dist: Path) -> None:
-    """Serves the front end's build from "/". The site is a single-page app: a path such as
-    /device/device/dev:... is not a file, so any path that is not a file in dist/ gets
-    index.html and the page's own router shows it (opening a shared link or reloading works).
+    """Serves the front end's build from "/". The front end is a Next.js static export: one
+    HTML file per page, so /device (opened, reloaded or shared, with ?kind=…&id=…) gets
+    device.html. A file in dist/ is served as itself; any other path gets 404.html with a 404
+    when the build has one, else index.html (a single-page build without page files).
     Unknown /api/... paths stay JSON 404s, and nothing outside dist/ can be read."""
     from fastapi.responses import FileResponse  # pylint: disable=import-outside-toplevel
     root = dist.resolve()
-    index = root / "index.html"
+    index, not_found = root / "index.html", root / "404.html"
 
     @app.get("/{path:path}", include_in_schema=False)
     def site(path: str):
         if path == "api" or path.startswith("api/"):
             raise HTTPException(status_code=404, detail={"status": "not_found",
                                                          "text": "Not found."})
+        if not path:
+            return FileResponse(index)
         target = (root / path).resolve()
-        if path and target.is_file() and target.is_relative_to(root):
+        if target.is_file() and target.is_relative_to(root):
             return FileResponse(target)
+        page = (root / f"{path.rstrip('/')}.html").resolve()   # /device -> device.html
+        if page.is_file() and page.is_relative_to(root):
+            return FileResponse(page)
+        if not_found.is_file():
+            return FileResponse(not_found, status_code=404)
         return FileResponse(index)
 
 

@@ -1,6 +1,10 @@
+"use client";
+
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
-import { Link, useParams } from "react-router-dom";
 import { isEntityKind, type EntityKind, type EntityResponse } from "../api/types";
+import { PageNotFound } from "../components/PageNotFound";
 import { DataSources } from "../components/device/DataSources";
 import { ProblemsList } from "../components/device/ProblemsList";
 import { RecallsList } from "../components/device/RecallsList";
@@ -13,8 +17,11 @@ import { paths } from "../routes";
 
 export const NO_DATA_MESSAGE = "This entry is in the search list, but there is no report or recall data for it.";
 
+/** The device page: /device?kind=<kind>&id=<entity id> (see routes.ts). */
 export function DevicePage() {
-  const { kind, entityId } = useParams();
+  const params = useSearchParams();
+  const kind = params.get("kind");
+  const entityId = params.get("id");
   if (!isEntityKind(kind) || !entityId) return <PageNotFound />;
   // key: a new entity starts with a fresh page state.
   return <EntityView key={`${kind}|${entityId}`} kind={kind} entityId={entityId} />;
@@ -42,7 +49,7 @@ function EntityView({ kind, entityId }: { kind: EntityKind; entityId: string }) 
   return (
     <div className="page device-page">
       <p className="back">
-        <Link to={paths.search()}>← Search</Link>
+        <Link href={paths.search()}>← Search</Link>
       </p>
       {state.status === "loading" && (
         <p className="hint" role="status">
@@ -106,16 +113,5 @@ function AskButton() {
     <button type="button" className="btn secondary ask-btn" onClick={() => setOpen(true)}>
       Ask the assistant about this
     </button>
-  );
-}
-
-function PageNotFound({ inline = false }: { inline?: boolean }) {
-  return (
-    <div className={inline ? undefined : "page"}>
-      <h1>Page not found</h1>
-      <p>
-        This entry doesn't exist. <Link to={paths.search()}>Search again</Link>.
-      </p>
-    </div>
   );
 }

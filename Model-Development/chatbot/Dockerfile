@@ -26,8 +26,9 @@ WORKDIR /web
 COPY Web-App/frontend/package.json Web-App/frontend/package-lock.json ./
 RUN npm ci
 COPY Web-App/frontend/ ./
-# Read at build time by Vite: call the real API on the same origin, no example data.
-ENV VITE_USE_MOCKS=false VITE_API_BASE_URL=/api
+# Read at build time by Next.js (static export to dist/): call the real API on the same
+# origin, no example data, no build telemetry.
+ENV NEXT_PUBLIC_USE_MOCKS=false NEXT_PUBLIC_API_BASE_URL=/api NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM python:3.12-slim

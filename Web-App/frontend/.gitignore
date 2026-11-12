@@ -5,3 +5,9 @@ coverage/
 .env.local
 .env.*.local
 *.log
+
+# Next.js: build cache and generated files
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo

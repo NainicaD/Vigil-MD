@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import type { AnswerSection, SearchMatch } from "../../api/types";
 import type { Turn } from "../../chat/chatStore";
 import { sectionsToShow } from "../../lib/answer";
@@ -52,7 +52,7 @@ export function BotReply({ turn, busy, onChoose, onRetry, onNavigate }: Props) {
       )}
       {r.status === "not_found" && (
         <p className="reply-extra">
-          <Link to={paths.search()} onClick={onNavigate}>
+          <Link href={paths.search()} onClick={onNavigate}>
             Search the device list
           </Link>
         </p>

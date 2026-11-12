@@ -587,8 +587,10 @@ device search, the query layer and the chatbot.
   30 a minute per client by default, `VIGIL_RATE_LIMIT_PER_MINUTE`; search is not limited).
 - **Questions are not logged** by the API.
 - `VIGIL_WEB_DIST=<front end dist/>` also serves the website from `/` (one container for both):
-  files in `dist/` as files, any other non-API path as `index.html`, so device links work when
-  opened directly or reloaded; unknown `/api/...` paths stay JSON 404s, and nothing outside
+  files in `dist/` as files, a page path as its HTML file (the front end is a Next.js static
+  export: `/device?kind=…&id=…` is `device.html`), any other path as `404.html` with a 404
+  (or `index.html` for a build without one), so device links work when opened directly or
+  reloaded; unknown `/api/...` paths stay JSON 404s, and nothing outside
   `dist/` is read. `VIGIL_CORS_ORIGINS=http://localhost:5173` allows the front end's dev server.
 - **Rate limit behind Cloud Run:** uvicorn trusts the proxy's `X-Forwarded-For`
   (`--forwarded-allow-ips` in the Dockerfile), so the limit is per visitor. A visitor can forge
@@ -627,7 +629,7 @@ curl localhost:8080/api/health
 - No credentials in the image: locally, mount gcloud application-default credentials
   read-only (above); on Cloud Run the service account is used.
 - A `node:22` stage builds the website from `Web-App/frontend/` (`npm ci`, then `npm run build`
-  with `VITE_USE_MOCKS=false`), so a clean clone builds without a `dist/` on disk.
+  with `NEXT_PUBLIC_USE_MOCKS=false`), so a clean clone builds without a `dist/` on disk.
 - Checked 2026-11-10 with the website: image 675 MB with the dev index (the PROD index adds
   712 MB); `/` and a directly opened device link return the page, assets load, the bundle has
   no example data, and health, a device page and an answer work through the container.

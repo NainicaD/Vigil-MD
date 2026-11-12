@@ -184,6 +184,39 @@ export interface AnswerResponse {
   entities?: AnswerEntitySummary[] | null;
 }
 
+// ---------------------------------------------------------------- developer page only
+
+/** GET /api/health (api/app.py). Fields may be missing on another API version. */
+export interface HealthResponse {
+  status: string;
+  dataset?: string | null;
+  rules_fingerprint?: string | null;
+  template_fingerprint?: string | null;
+  /** When the device search index was built (ISO). */
+  index_built?: string | null;
+}
+
+/**
+ * The fields /api/answer sends besides the contract's (answer/pipeline.py). The client pages
+ * ignore them; the developer page shows them. All optional: mock answers don't have them.
+ */
+export interface AnswerDetails extends AnswerResponse {
+  /** Question types the router model found (each passed its threshold). */
+  labels?: string[] | null;
+  /** Guardrail rules that matched the question (e.g. "should_i"). */
+  rule_hits?: string[] | null;
+  /** Parts looked up: counts, problems, recalls, narratives, identity. */
+  run_queries?: string[] | null;
+  /** Fixed reply chosen by the router: help, medical_refusal, scope, or none. */
+  reply_kind?: string | null;
+  sources?: Source[] | null;
+  data_as_of?: Record<string, string | null> | null;
+  /** BigQuery cost of this question, in GB. */
+  budget_gb?: { max: number | null; spent: number } | null;
+  template_fingerprint?: string | null;
+  rules_fingerprint?: string | null;
+}
+
 /** An "ambiguous" choice becomes the entity of the re-sent question (handover §5). */
 export function matchToEntity(match: SearchMatch): AnswerEntity {
   return { entity_type: match.type, entity_id: match.id };

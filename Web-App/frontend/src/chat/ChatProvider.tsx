@@ -1,3 +1,5 @@
+"use client";
+
 import type { ReactNode } from "react";
 import { ChatContext, useChatController } from "./chatStore";
 

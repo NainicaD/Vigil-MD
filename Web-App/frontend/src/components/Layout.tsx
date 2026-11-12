@@ -1,5 +1,8 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
 import { useChat } from "../chat/chatStore";
 import { config } from "../config";
 import { paths } from "../routes";
@@ -8,13 +11,14 @@ import { ChatToggle } from "./chat/ChatToggle";
 
 export function Layout({ children }: { children: ReactNode }) {
   const { open } = useChat();
+  const onDeveloperPage = usePathname() === paths.developer();
   return (
     <div className={open ? "app chat-open" : "app"}>
       <a className="skip-link" href="#main">
         Skip to content
       </a>
       <header className="site-header">
-        <Link to={paths.search()} className="brand">
+        <Link href={paths.search()} className="brand">
           Vigil MD
         </Link>
         {config.useMocks && (
@@ -23,6 +27,11 @@ export function Layout({ children }: { children: ReactNode }) {
           </span>
         )}
         <span className="header-spacer" />
+        {config.devTools && (
+          <Link className="dev-link" href={onDeveloperPage ? paths.search() : paths.developer()}>
+            {onDeveloperPage ? "Client site" : "Developer"}
+          </Link>
+        )}
         <ChatToggle />
       </header>
       <div className="shell">

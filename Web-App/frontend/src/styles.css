@@ -669,3 +669,134 @@ h2 {
 .safe-text li + li {
   margin-top: 0.25rem;
 }
+
+/* ---- developer page (/developer; only in builds with NEXT_PUBLIC_DEV_TOOLS=true) ---- */
+.dev-link {
+  margin-right: 12px;
+  font-size: 0.9rem;
+}
+.dev-section {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin: 16px 0;
+}
+.dev-section h3 {
+  font-size: 0.95rem;
+  margin: 1rem 0 0.4rem;
+}
+.dev-grid {
+  display: grid;
+  gap: 0 24px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+.dev-facts {
+  display: grid;
+  grid-template-columns: minmax(9rem, max-content) 1fr;
+  gap: 4px 16px;
+  margin: 0 0 0.75rem;
+}
+.dev-facts-row {
+  display: contents;
+}
+.dev-facts dt {
+  color: var(--muted);
+}
+.dev-facts dd {
+  margin: 0;
+  min-width: 0;
+}
+.dev-summary {
+  grid-template-columns: repeat(auto-fit, minmax(7rem, max-content) minmax(5rem, 1fr));
+}
+.dev-page code,
+.dev-facts dd,
+.dev-table td {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.85rem;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chip {
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 1px 9px;
+}
+.dev-form {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.dev-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.dev-input {
+  font: inherit;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  min-width: 0;
+}
+textarea.dev-input {
+  resize: vertical;
+}
+input.dev-input {
+  flex: 1 1 14rem;
+}
+.dev-preview {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+  max-width: 460px;
+}
+.dev-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 12px;
+}
+.dev-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.dev-table th,
+.dev-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+}
+.dev-table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+.dev-table .log-cancelled td {
+  color: var(--muted);
+}
+.dev-list {
+  margin: 0 0 0.75rem;
+  padding-left: 1.2rem;
+}
+.dev-json {
+  background: var(--surface-2);
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 420px;
+  overflow: auto;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+.dev-section > .btn {
+  margin-top: 4px;
+}

@@ -102,6 +102,7 @@ jobs:
 
       - name: Build (real API, no example data, as in the Docker image)
         env:
-          VITE_USE_MOCKS: "false"
-          VITE_API_BASE_URL: /api
+          NEXT_PUBLIC_USE_MOCKS: "false"
+          NEXT_PUBLIC_API_BASE_URL: /api
+          NEXT_TELEMETRY_DISABLED: "1"
         run: npm run build

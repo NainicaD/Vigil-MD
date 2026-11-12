@@ -5,10 +5,11 @@ open its **device page** to see what FDA adverse-event reports and recalls say a
 ask the **assistant** (a chat panel on every page). The assistant only reports what FDA data
 says; it never gives medical advice or judges whether a device is safe.
 
-Built to the front-end handover of 2026-11-09, against its draft API. The result is a
-**static build** (`dist/`: HTML, JS, CSS). There is no Node server at runtime; the API serves
-`dist/` in one container. Docker, the web server, Cloud Run, login, the API and the model are
-handled separately.
+Built to the front-end handover of 2026-11-09, against its draft API, with **Next.js 16**
+(App Router, React 19, TypeScript). The result is a **static export** (`dist/`: one HTML file
+per page, plus JS and CSS). There is no Node server at runtime; the API serves `dist/` in one
+container. Docker, the web server, Cloud Run, login, the API and the model are handled
+separately.
 
 ## Contents
 
@@ -19,7 +20,7 @@ handled separately.
 5. [Run against a local API](#run-against-a-local-api)
 6. [Checks](#checks)
 7. [Pages](#pages)
-8. [Example data (mock mode)](#example-data-mock-mode)
+8. [Developer page](#developer-page) and [Example data (mock mode)](#example-data-mock-mode)
 9. [API contract used](#api-contract-used)
 10. [Rules the code follows](#rules-the-code-follows)
 11. [Code layout](#code-layout)
@@ -43,19 +44,25 @@ cp .env.example .env      # PowerShell: Copy-Item .env.example .env
 npm run dev               # open http://localhost:5173
 ```
 
-`.env.example` has `VITE_USE_MOCKS=true`, so the site answers from the example files in
+`.env.example` has `NEXT_PUBLIC_USE_MOCKS=true`, so the site answers from the example files in
 `src/mocks/` and the header shows an **Example data** badge. Saved changes appear in the
 browser straight away. After changing `.env`, stop the server (Ctrl+C) and start it again.
 
 ## Build
 
 ```bash
-npm ci && npm run build   # type check + static build into dist/
+npm ci && npm run build   # type check + static export into dist/
 npm run preview           # serve dist/ at http://localhost:4173 to check it
 ```
 
-Settings are read **at build time**. A build made without `VITE_USE_MOCKS=true` contains no
-mock code or example data and calls the API at `VITE_API_BASE_URL` (default `/api`).
+Settings are read **at build time**. A build made without `NEXT_PUBLIC_USE_MOCKS=true`
+contains no mock code or example data and calls the API at `NEXT_PUBLIC_API_BASE_URL`
+(default `/api`). `npm run preview` serves `dist/` the way the API container does (files as
+files, `/device` as `device.html`, other addresses as `404.html`); with `DEV_API_PROXY` set it
+also forwards `/api`. (`next start` does not work with a static export.)
+
+The build uses `.env` too: to check the real build locally, set
+`NEXT_PUBLIC_USE_MOCKS=false` in `.env` or in the shell first (Docker and CI already do).
 
 ## Settings
 
@@ -63,9 +70,11 @@ In `.env` (copy of `.env.example`), `.env.local`, or the environment of the buil
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `VITE_API_BASE_URL` | `/api` | API address. The default is the same origin that serves the site. No other address is written in the code. |
-| `VITE_USE_MOCKS` | not set (off) | Exactly `true` = answer from `src/mocks/`; anything else = call the API. |
-| `DEV_API_PROXY` | empty | `npm run dev` only, never in the build: forward `/api` to a local API, e.g. `http://127.0.0.1:8000`. |
+| `NEXT_PUBLIC_API_BASE_URL` | `/api` | API address. The default is the same origin that serves the site. No other address is written in the code. |
+| `NEXT_PUBLIC_USE_MOCKS` | not set (off) | Exactly `true` = answer from `src/mocks/`; anything else = call the API. |
+| `NEXT_PUBLIC_DEV_TOOLS` | not set (off); `true` in `.env.example` | Exactly `true` = build the [developer page](#developer-page) and its call log. Docker and CI don't set it, so a public build has neither. |
+| `DEV_API_PROXY` | empty | `npm run dev` and `npm run preview` only, never in the build: forward `/api` to a local API, e.g. `http://127.0.0.1:8000`. |
+| `NEXT_TELEMETRY_DISABLED` | `1` in `.env.example` | Stops Next.js sending anonymous build statistics to Vercel. Nothing about visitors is ever sent. |
 
 A request that gets no answer within **30 seconds** is abandoned (see `src/config.ts`).
 
@@ -74,20 +83,21 @@ A request that gets no answer within **30 seconds** is abandoned (see `src/confi
 When the API exists, run it locally (e.g. on port 8000), then in `.env`:
 
 ```
-VITE_USE_MOCKS=false
-VITE_API_BASE_URL=/api
+NEXT_PUBLIC_USE_MOCKS=false
+NEXT_PUBLIC_API_BASE_URL=/api
 DEV_API_PROXY=http://127.0.0.1:8000
 ```
 
 and restart `npm run dev`. The browser keeps talking to `localhost:5173/api/...`, and the
-dev server forwards those requests to the API, so no CORS setup is needed.
+dev server forwards those requests to the API (a Next.js rewrite, development only), so no
+CORS setup is needed.
 
 ## Checks
 
 ```bash
 npm run lint        # ESLint
 npm run typecheck   # TypeScript
-npm test            # Vitest (jsdom), 62 tests
+npm test            # Vitest (jsdom), 85 tests
 npm run build       # must also pass
 ```
 
@@ -99,8 +109,12 @@ ESLint also blocks, as errors: `console` calls (questions can contain health det
 | Page | Address | What it shows |
 |---|---|---|
 | Search | `/` (`/?q=…`) | A search box. Searches 300 ms after typing stops, from 2 characters. Results grouped as Devices / Companies / Product codes, each with its title, company and report count, in the API's order. A result opens its device page. No results: *"Nothing found. Try the brand name, the company or the 3-letter product code."* |
-| Device page | `/device/<kind>/<entity_id>` | Name, company, product codes; total reports with the API's `counts_note` beside them; reports by event type; reports per year (bars, plus a table by event type); top device and patient problems and the "no patient harm reported" count; recalls in the API's order (newest first) with class, date, status, reason and more details; sources and data date. `found: false`: a note that there is no data. Unknown entry: "Page not found". Failure: the service message and **Try again**. |
+| Device page | `/device?kind=<kind>&id=<entity_id>` | Name, company, product codes; total reports with the API's `counts_note` beside them; reports by event type; reports per year (bars, plus a table by event type); top device and patient problems and the "no patient harm reported" count; recalls in the API's order (newest first) with class, date, status, reason and more details; sources and data date. `found: false`: a note that there is no data. Unknown entry: "Page not found". Failure: the service message and **Try again**. |
 | Assistant | panel on every page | Opened from the header ("Ask the assistant") or a device page's button. On a device page it sends that device as `entity` and says so; elsewhere `entity: null`. Conversation kept on screen for the session only. Enter sends, Shift+Enter is a new line, Esc closes. Side panel on wide screens, full screen at 720 px and below. |
+
+These are the **client pages**: what the public sees. The team also has a
+[developer page](#developer-page) at `/developer`, in builds with `NEXT_PUBLIC_DEV_TOOLS=true`
+only; the header then shows a **Developer** / **Client site** link to switch.
 
 Assistant replies, by `status` (handover §5):
 
@@ -118,6 +132,24 @@ Assistant replies, by `status` (handover §5):
 
 While an answer is awaited the reply shows *"Looking this up…"* and a second question can't be
 sent.
+
+## Developer page
+
+`/developer`, for the team: how the service is running and how each answer was made. Built
+only when `NEXT_PUBLIC_DEV_TOOLS=true` (on in `.env.example` for local work). The page file is
+`src/app/developer/page.dev.tsx`, and `next.config.ts` treats `.dev.tsx` files as pages only
+with that setting, so a public build has no developer page, no call log and no link to them
+(`/developer` is the normal "Page not found"). Nothing on the page is stored; it is all gone on
+reload.
+
+| Section | What it shows | Where it comes from |
+|---|---|---|
+| **Service status** | Is the API up, its response time, the BigQuery dataset, when the search index was built, the router-rules and answer-template versions (fingerprints); this front end's API address, mock mode, timeout, version and build time. **Check again** asks once more. | `GET /api/health`, build settings |
+| **Answer inspector** | Ask a question, optionally about one entry (kind + id), and see: the reply as the user sees it; status, time taken and BigQuery cost; the router's question types, guardrail rules hit, parts looked up and fixed reply; the device search result with its matches and scores (or "skipped" when an entry was given); the entries looked up with report totals; the queries run and their tables; each table's data date; both versions; the raw JSON. A choice button on an "ambiguous" reply asks again about that entry. | `POST /api/answer` (the fields the client pages don't use) |
+| **Session log** | Every API call this tab made, from any page (search, device pages, assistant, this page), newest first: time, call, what was asked, result (e.g. "12 hits", "answered", "HTTP 429 rate_limited", "timeout", "cancelled"), time taken, cost; with totals (calls, failed, cancelled, average and slowest time, total GB). At most 200 calls, in memory. | `src/dev/callLog.ts` wraps the API client |
+
+Example answers (mock mode) don't carry the router, search and data fields; the page says
+"not in this response" for them. Run against the API to see them.
 
 ## Example data (mock mode)
 
@@ -205,9 +237,17 @@ From handover sections 4 and 7:
 ```
 Web-App/frontend/
 ├── .env.example  .nvmrc  .npmrc  .gitignore  package.json  package-lock.json
-├── index.html  vite.config.ts  tsconfig.json  eslint.config.js
+├── next.config.ts          static export to dist/, dev-only /api proxy, settings
+├── vitest.config.ts  tsconfig.json  eslint.config.js
+├── scripts/preview.mjs     npm run preview: serves dist/ like the API container
 └── src/
-    ├── main.tsx, App.tsx       entry point; routes: /, /device/:kind/:entityId
+    ├── app/                Next.js App Router (the pages and the frame around them)
+    │   ├── layout.tsx      <html>, title, styles, ChatProvider + Layout on every page
+    │   ├── page.tsx        /            -> views/SearchPage
+    │   ├── device/page.tsx /device?kind=…&id=…  -> views/DevicePage
+    │   ├── developer/page.dev.tsx  /developer -> views/DeveloperPage (dev tools builds only)
+    │   └── not-found.tsx   any other address (404.html)
+    ├── dev/                    developer page only: callLog.ts (session log), format.ts
     ├── config.ts               build-time settings (API base URL, mocks, 30 s timeout)
     ├── routes.ts               page addresses
     ├── styles.css              all styles (colour tokens for light and dark mode)
@@ -223,20 +263,28 @@ Web-App/frontend/
     │   ├── SearchResults.tsx
     │   ├── Layout.tsx          header (assistant toggle), page, panel, footer
     │   ├── chat/               ChatPanel, BotReply (status table), ChatToggle
-    │   └── device/             ReportCounts, YearChart, ProblemsList, RecallsList, DataSources
-    ├── pages/                  SearchPage, DevicePage
-    ├── mocks/                  example data and the mock API
-    └── test/setup.ts           test setup (jsdom matchers)
+    │   ├── device/             ReportCounts, YearChart, ProblemsList, RecallsList, DataSources
+    │   └── dev/                ServiceStatus, AnswerInspector, SessionLog (developer page)
+    ├── views/                  SearchPage, DevicePage, DeveloperPage (client components; not "pages/",
+    │                           which Next.js would treat as its older Pages Router)
+    ├── mocks/                  example data and the mock API (new files: import them in mockApi.ts)
+    └── test/setup.ts           test setup (jsdom matchers; stand-ins for next/navigation, next/link)
 ```
 
-Tests sit next to the code they test (`*.test.ts(x)`).
+Tests sit next to the code they test (`*.test.ts(x)`). Components that use state or the
+address start with `"use client"`; `src/app/` files are rendered once at build time.
+
+**Why the device page address has a query:** a static export makes one HTML file per page at
+build time, and the devices aren't known then, so there is one `device.html` and the entry is
+read from `?kind=…&id=…` in the browser.
 
 ## Notes for the API and hosting team
 
-1. **Page addresses:** the site uses normal paths (`/device/device/dev%3A…`). When such a page
-   is opened or reloaded directly, the server must answer with `index.html` (a single-page app
-   fallback) for any path that isn't `/api/...` or a file in `dist/`. Assets are referenced from
-   the site root (`/assets/...`), so the site must be served at `/`.
+1. **Page addresses:** `dist/` has one HTML file per page: `/` is `index.html`, `/device` is
+   `device.html` (the entry is in `?kind=…&id=…`), and other addresses should get `404.html`
+   with status 404. Files under `/_next/...` and the `*.txt` page data are served as files.
+   `api/app.py` `add_site()` does all of this; any static host that maps `/x` to `x.html` works
+   too. Files are referenced from the site root, so the site must be served at `/`.
 2. **Unknown entity:** the device page treats HTTP 404 as "Page not found" and
    `found: false` as "no data for this entry". Please confirm which one the API returns for an
    id it doesn't know.
@@ -252,7 +300,7 @@ Tests sit next to the code they test (`*.test.ts(x)`).
 | Item | Where |
 |---|---|
 | `npm ci && npm run build` works on a clean copy and outputs `dist/` | [Build](#build) |
-| API address only via `VITE_API_BASE_URL`; mocks via `VITE_USE_MOCKS`; `.env.example` | [Settings](#settings) |
+| API address only via `NEXT_PUBLIC_API_BASE_URL`; mocks via `NEXT_PUBLIC_USE_MOCKS`; `.env.example` | [Settings](#settings) |
 | Search, device page and chat work fully in mock mode | [Example data](#example-data-mock-mode) |
 | All statuses in section 5 handled; ambiguous choices clickable | [Pages](#pages), `ChatPanel.test.tsx` |
 | Footer, disclaimer, UDI note and sources always shown; no judgement wording, ratings or danger colours | [Rules](#rules-the-code-follows) |

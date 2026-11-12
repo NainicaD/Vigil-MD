@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import Link from "next/link";
 import { ENTITY_KINDS, type EntityKind, type SearchHit } from "../api/types";
 import { KIND_GROUP_LABEL, KIND_LABEL, formatReports } from "../lib/format";
 import { paths } from "../routes";
@@ -50,7 +50,7 @@ function HitItem({ hit }: { hit: SearchHit }) {
   const kind = KIND_LABEL[hit.kind as EntityKind] ?? hit.kind;
   return (
     <li>
-      <Link className="hit" to={paths.device(hit.kind, hit.entity_id)}>
+      <Link className="hit" href={paths.device(hit.kind, hit.entity_id)}>
         <span className="tag">{kind}</span>
         <span className="hit-title">{hit.title}</span>
         {hit.subtitle && <span className="hit-subtitle">{hit.subtitle}</span>}

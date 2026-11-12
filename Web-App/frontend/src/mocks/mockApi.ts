@@ -1,5 +1,5 @@
 /**
- * Mock mode (VITE_USE_MOCKS=true): the same interface as the real API, answered from the
+ * Mock mode (NEXT_PUBLIC_USE_MOCKS=true): the same interface as the real API, answered from the
  * JSON files in this folder. The placeholder files use FICTIONAL devices and the chatbot's
  * own fixed texts; replace them with the real example responses when they arrive.
  *
@@ -14,19 +14,55 @@ import type { Api, CallOptions } from "../api/client";
 import { NotFoundError, ServiceUnavailableError } from "../api/errors";
 import type { AnswerEntity, AnswerResponse, EntityResponse, SearchResponse } from "../api/types";
 
-const searchFile = import.meta.glob<SearchResponse>("./search.json", { eager: true, import: "default" });
-const entityFiles = import.meta.glob<EntityResponse>("./entities/*.json", { eager: true, import: "default" });
-const answerFiles = import.meta.glob<AnswerResponse>("./answers/*.json", { eager: true, import: "default" });
+import ambiguous from "./answers/ambiguous.json";
+import answeredCompare from "./answers/answered-compare.json";
+import answeredLong from "./answers/answered-long.json";
+import answeredNoReports from "./answers/answered-no-reports.json";
+import answeredWithRefusal from "./answers/answered-with-refusal.json";
+import answered from "./answers/answered.json";
+import budget from "./answers/budget.json";
+import error from "./answers/error.json";
+import help from "./answers/help.json";
+import needDevice from "./answers/need_device.json";
+import notFound from "./answers/not_found.json";
+import refused from "./answers/refused.json";
+import scope from "./answers/scope.json";
+import unclear from "./answers/unclear.json";
+import deviceAcmeInfusion from "./entities/device-acme-infusion.json";
+import deviceAcmeInsulin from "./entities/device-acme-insulin.json";
+import deviceAcmeLegacy from "./entities/device-acme-legacy.json";
+import deviceAcmeair from "./entities/device-acmeair.json";
+import manufacturerExampleMedical from "./entities/manufacturer-example-medical.json";
+import productCodeZzz from "./entities/product-code-zzz.json";
+import searchFile from "./search.json";
 
-const SEARCH: SearchResponse = Object.values(searchFile)[0] ?? { query: "", hits: [] };
+// Adding a file: import it above and list it here. Entities are matched on entity.type +
+// entity.id inside each file; answers by the names below (MOCK_QUESTIONS uses them).
+const SEARCH = searchFile as SearchResponse;
 
 const ENTITIES = new Map<string, EntityResponse>(
-  Object.values(entityFiles).map((e) => [`${e.entity.type}|${e.entity.id}`, e]),
+  ([deviceAcmeair, deviceAcmeInfusion, deviceAcmeInsulin, deviceAcmeLegacy, manufacturerExampleMedical, productCodeZzz] as EntityResponse[]).map(
+    (e) => [`${e.entity.type}|${e.entity.id}`, e],
+  ),
 );
 
-/** answers/<name>.json -> <name> */
 const ANSWERS = new Map<string, AnswerResponse>(
-  Object.entries(answerFiles).map(([path, a]) => [path.replace(/^.*\/(.+)\.json$/, "$1"), a]),
+  Object.entries({
+    ambiguous,
+    "answered-compare": answeredCompare,
+    "answered-long": answeredLong,
+    "answered-no-reports": answeredNoReports,
+    "answered-with-refusal": answeredWithRefusal,
+    answered,
+    budget,
+    error,
+    help,
+    need_device: needDevice,
+    not_found: notFound,
+    refused,
+    scope,
+    unclear,
+  }) as [string, AnswerResponse][],
 );
 
 /**
@@ -127,6 +163,11 @@ export function createMockApi(delays: MockDelays = { search: 200, entity: 300, a
       const found = ANSWERS.get(name) ?? ANSWERS.get("unclear");
       if (!found) throw new ServiceUnavailableError("server");
       return copy(found);
+    },
+
+    async health({ signal } = {}) {
+      await sleep(delays.search, signal);
+      return { status: "ok", dataset: "example files (src/mocks/)", rules_fingerprint: null, template_fingerprint: null, index_built: null };
     },
   };
 }

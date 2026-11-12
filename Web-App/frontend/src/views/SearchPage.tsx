@@ -1,23 +1,27 @@
+"use client";
+
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import { SearchResults } from "../components/SearchResults";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { MIN_QUERY_LENGTH, useSearch } from "../hooks/useSearch";
+import { paths } from "../routes";
 
 /** Search 300 ms after typing stops (handover §3). */
 export const SEARCH_DEBOUNCE_MS = 300;
 
 export function SearchPage() {
-  const [params, setParams] = useSearchParams();
+  const params = useSearchParams();
   const [text, setText] = useState(() => params.get("q") ?? "");
   const query = useDebouncedValue(text, SEARCH_DEBOUNCE_MS);
   const state = useSearch(query);
 
   // Keep the search in the address, so "back" from a device page shows the same results.
+  // history.replaceState is synced with useSearchParams by Next.js and loads nothing.
   useEffect(() => {
     const q = query.trim();
-    if ((params.get("q") ?? "") !== q) setParams(q ? { q } : {}, { replace: true });
-  }, [query, params, setParams]);
+    if ((params.get("q") ?? "") !== q) window.history.replaceState(null, "", paths.search(q));
+  }, [query, params]);
 
   const tooShort = text.trim().length > 0 && text.trim().length < MIN_QUERY_LENGTH;
 

@@ -1,7 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
-import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiMessageError, ServiceUnavailableError } from "../../api/errors";
 import { MAX_QUESTION_LENGTH, type AnswerResponse } from "../../api/types";
@@ -32,12 +31,10 @@ function SetPageEntity({ value }: { value: PageEntity }) {
 
 function renderPanel(pageEntity?: PageEntity) {
   return render(
-    <MemoryRouter>
-      <ChatProvider>
-        {pageEntity && <SetPageEntity value={pageEntity} />}
-        <ChatPanel />
-      </ChatProvider>
-    </MemoryRouter>,
+    <ChatProvider>
+      {pageEntity && <SetPageEntity value={pageEntity} />}
+      <ChatPanel />
+    </ChatProvider>,
   );
 }
 

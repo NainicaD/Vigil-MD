@@ -44,7 +44,7 @@ describe("request shapes (handover §2)", () => {
     expect((fetchFn.mock.calls[0] as unknown as [string])[0]).toBe("/api/answer");
   });
 
-  it("uses VITE_API_BASE_URL as the prefix", async () => {
+  it("uses NEXT_PUBLIC_API_BASE_URL as the prefix", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ query: "x", hits: [] }));
     await createHttpApi({ ...cfg, apiBaseUrl: "https://api.example.org/v1" }, fetchFn).search("x");
     expect((fetchFn.mock.calls[0] as unknown as [string])[0]).toBe("https://api.example.org/v1/search?q=x&limit=10");
