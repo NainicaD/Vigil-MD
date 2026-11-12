@@ -511,6 +511,13 @@ device_summary(backend, **index.query_key(r.matches[0]), budget=budget)
   change), and long questions with many non-name words ("every Alaris recall since 2019 with
   the recall class and the corrective action") find no device: 7 of the 8 long questions in
   `handwritten_test_v2.jsonl` on PROD. That needs a better name filter, not more stopwords.
+- **Fixed 2026-11-11** (found on Cloud Run, a 504 after 60 s): a word under 3 letters ("up",
+  "go", "g6") has no trigrams, and the search scored every entry in Python, 17 s on PROD's
+  360,000 entries. SQLite now keeps the entries with a word starting with it, most reports first,
+  3,000 at most: "Our contract with the vendor is up for renewal; how many malfunction reports
+  does the DreamStation have?" takes 2.9 s instead of 16 s locally. Unchanged: 331 broad PROD
+  searches and the 70 end-to-end questions on both indexes; on dev "3m recalls" now finds
+  nothing instead of offering a 0-report "Carrying Case".
 - **Report counts for devices are exact UDI links only.** Many reports have no UDI:
   DreamStation has 30,356 linked reports in `vigil_md_prod`, while product code BZD has many
   more. Answers should say "reports linked by UDI". The matching team's predicted links will add

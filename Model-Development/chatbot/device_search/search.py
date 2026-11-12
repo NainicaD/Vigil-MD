@@ -182,8 +182,16 @@ class DeviceIndex:
             ids = [r[0] for r in self.con.execute(
                 "SELECT id FROM entities_fts WHERE entities_fts MATCH ? ORDER BY bm25(entities_fts) "
                 "LIMIT ?", (match, candidates))]
-        else:   # words shorter than 3 letters: compare with every entry's title words
-            ids = [r[0] for r in self.con.execute("SELECT id FROM entities")]
+        else:
+            # Words shorter than 3 letters ("up", "go", "g6") have no trigrams. Scoring every
+            # entry in Python took 17 s on PROD (360,000 entries) and timed out on Cloud Run,
+            # so SQLite keeps the entries with a word starting with one of them ("up" -> "up",
+            # "ups"), most reports first, as many as the trigram path.
+            cond = " OR ".join(["instr(' ' || title_words || ' ' || other_words, ' ' || ?) > 0"]
+                               * len(q))
+            ids = [r[0] for r in self.con.execute(
+                f"SELECT id FROM entities WHERE {cond} ORDER BY reports DESC LIMIT ?",
+                (*q, candidates))]
         hits = []
         for i in range(0, len(ids), 500):
             chunk = ids[i:i + 500]

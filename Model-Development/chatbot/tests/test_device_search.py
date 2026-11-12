@@ -295,6 +295,14 @@ def test_a_context_sentence_before_the_question_is_ignored(index, question, titl
     assert r.status == "resolved" and [h.title for h in r.matches] == [title]
 
 
+def test_short_words_are_searched_without_scoring_every_entry(index):
+    # Words under 3 letters have no trigrams: SQLite pre-selects entries with a word starting
+    # with them (17 s on PROD when every entry was scored in Python).
+    titles = [h.title for h in index.search("go")]
+    assert "DreamStation Go" in titles and "V-Go Disposable Insulin Delivery" in titles
+    assert index.search("zq") == []
+
+
 def test_pronouns_and_contraction_pieces_are_not_device_words():
     assert device_words("we're asking for our team, they've said us") == ["asking", "team", "said"]
 
