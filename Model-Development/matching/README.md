@@ -130,8 +130,11 @@ Each release has three identifiers:
 | Where | Identifier | Meaning |
 |---|---|---|
 | Artifact Registry version | `v1.0.0` | Semantic version. MAJOR: the input/output schema changes. MINOR: new features or architecture. PATCH: routine retraining. |
-| Artifact Registry tag | `mlflow-v<N>` | Version N of the MLflow registered model `matching-same-device`. |
-| Artifact Registry tag | `git-<sha7>` | The commit of the serving code (`vigil_model/predict.py`). |
+| Artifact Registry annotation `mlflow` | `mlflow-v<N>` | Version N of the MLflow registered model `matching-same-device`. |
+| Artifact Registry annotation `git` | `git-<sha7>` | The commit of the serving code (`vigil_model/predict.py`). |
+
+Generic repositories reject tags (HTTP 501), so these two are version annotations. See them with
+`gcloud artifacts versions describe v1.0.0 ...`.
 | MLflow | `matching-same-device` version N | Auto-incremented. Carries the alias `@challenger`, `@champion` or `@baseline`, and the tags `semver` and `git_sha`. |
 
 `v1.0.0` is the first release: experiment `final_v1`, alias `@challenger`. Its config is the one the experiments recommend (`reports/Vigil_MD_Label_Feature_Experiments.pdf`): label_set_v2, feature set fs2 and xgb_no_match_kind, with the IE gate applied before the cutoff. A version has these files:
@@ -157,7 +160,7 @@ How it is built:
 1. s06 with `VIGIL_EXP=final_v1` on `data/label_set_v2_fs2_features.parquet`.
 2. `eval/s08_all.py --exp final_v1 --ie-gate`.
 3. Commit the serving code, then run `python scripts/s11_package_final.py --exp final_v1 --semver 1.0.0`. It checks that the bundle reproduces s06's hand-sheet scores, registers the MLflow version with its alias and tags, and prints the upload and tag commands.
-4. Run the printed `gcloud artifacts generic upload` and `gcloud artifacts tags create` commands.
+4. Run the printed `gcloud artifacts generic upload` and `gcloud artifacts versions update --annotations` commands.
 
 Teammates need `roles/artifactregistry.reader` on the repository. The bundle's `README.txt` lists the limits: this is a test model, not a validated one.
 

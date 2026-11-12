@@ -10,7 +10,8 @@ the scores s06 wrote for the same run, so the bundle reproduces the evaluated mo
 
 Versioning: the MLflow registered model <package> gets an auto-incremented version with an alias
 (challenger/champion/baseline) and tags semver + git_sha. Artifact Registry gets version v<semver> plus
-tags mlflow-v<N> and git-<sha7> (the upload commands are printed at the end, not run).
+annotations mlflow=mlflow-v<N> and git=git-<sha7>. Generic repositories do not support tags. The upload
+commands are printed at the end, not run.
 
 Usage (from anywhere, after s06 with VIGIL_EXP=final_v1; serving code must be committed):
     python scripts/s11_package_final.py --exp final_v1 --semver 1.0.0
@@ -185,5 +186,6 @@ ar = (f"--project vigil-md-1792696816 --location us-central1 --repository vigil-
       f"--package {args.package}")
 print("\nPublish (not run here; check the names first):")
 print(f"  gcloud artifacts generic upload {ar} --version {version} --source-directory {bundle_dir}")
-for tag in manifest["tags"]:
-    print(f"  gcloud artifacts tags create {tag} {ar} --version {version}")
+# generic repositories reject tags (HTTP 501), so the cross-references go in as version annotations
+mlflow_ref, git_ref = manifest["tags"]
+print(f"  gcloud artifacts versions update {version} {ar} --annotations=mlflow={mlflow_ref},git={git_ref}")
