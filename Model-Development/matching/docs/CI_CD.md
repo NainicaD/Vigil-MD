@@ -46,11 +46,11 @@ code runs, and (on the shared branches) retrains the models on the real BigQuery
   `git=git-<sha7>`. `ci/publish.py` refuses again if `gate.json` did not pass or the tree has
   uncommitted files, and skips a version that already exists.
 
-## 3. One-time GCP setup (someone with Owner on the project)
+## 3. One-time GCP setup (done 2026-11-13)
 
 GitHub gets a short-lived token through **Workload Identity Federation**. No service-account key is
 created or stored. Only this repository can use it, and pull requests never get it, so a fork cannot
-spend the query budget.
+spend the query budget. This setup is in place; the commands are what was run.
 
 ```bash
 PROJECT_ID=vigil-md-1792696816
@@ -59,45 +59,35 @@ REPO=NainicaD/Vigil-MD
 SA=github-ci-trainer@$PROJECT_ID.iam.gserviceaccount.com
 ```
 
-**1. A service account that can read BigQuery and run queries, nothing else:**
+**1. A service account that can run queries and read two datasets, nothing else:**
 
 ```bash
-gcloud iam service-accounts create github-ci-trainer --project "$PROJECT_ID" --display-name "GitHub Actions model training"
+gcloud iam service-accounts create github-ci-trainer --project "$PROJECT_ID" --display-name "GitHub Actions matching training"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$SA" --role roles/bigquery.jobUser --condition=None
+for D in vigil_md_model vigil_md_prod; do
+  bq query --use_legacy_sql=false "GRANT \`roles/bigquery.dataViewer\` ON SCHEMA \`$PROJECT_ID.$D\` TO \"serviceAccount:$SA\""
+done
 ```
+
+`bq add-iam-policy-binding -d` is refused on this project ("requires allowlisting"), hence the SQL
+`GRANT`. The training chain never writes to BigQuery, so no write role is needed.
+
+**2. Writes outside BigQuery, each limited to what the job needs:**
 
 ```bash
-gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$SA" --role roles/bigquery.jobUser
+# s06 (with MLflow) copies the training table to gs://vigil-md-raw-nd/mlflow/data/: only that prefix
+for R in objectCreator objectViewer; do
+  gcloud storage buckets add-iam-policy-binding gs://vigil-md-raw-nd --member "serviceAccount:$SA" --role roles/storage.$R \
+    --condition='expression=resource.name.startsWith("projects/_/buckets/vigil-md-raw-nd/objects/mlflow/data/"),title=mlflow-data-only'
+done
+# the publish step (s11) uploads to Artifact Registry
+gcloud artifacts repositories add-iam-policy-binding vigil-md-models --project "$PROJECT_ID" --location us-central1 \
+  --member "serviceAccount:$SA" --role roles/artifactregistry.writer
 ```
 
-```bash
-gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$SA" --role roles/bigquery.dataViewer
-```
-
-`dataViewer` at project level is read-only on every dataset. To limit it to `vigil_md_prod` and
-`vigil_md_model`, grant it on those two datasets instead (BigQuery console → dataset → Sharing →
-Permissions). The training chain never writes to BigQuery, so no write role is needed.
-
-Two more roles, for writes outside BigQuery:
-- `s06` (with MLflow) copies the training table to `gs://vigil-md-raw-nd/mlflow/data/`: grant
-  `roles/storage.objectCreator` and `roles/storage.objectViewer` on that bucket.
-- The publish step uploads to Artifact Registry: grant `roles/artifactregistry.writer` on the
-  repository `vigil-md-models` (us-central1).
-
-**2. A workload identity pool and a provider that trusts only this repository:**
-
-```bash
-gcloud iam workload-identity-pools create github --project "$PROJECT_ID" --location global --display-name "GitHub Actions"
-```
-
-```bash
-gcloud iam workload-identity-pools providers create-oidc vigil-md --project "$PROJECT_ID" --location global \
-  --workload-identity-pool github --display-name "Vigil-MD repository" \
-  --issuer-uri "https://token.actions.githubusercontent.com" \
-  --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
-  --attribute-condition "assertion.repository == '$REPO'"
-```
-
-**3. Let that repository act as the service account:**
+**3. Let this repository act as the service account.** The project already has the workload
+identity pool `github` with the provider `vigil-md-repo` (made for `chatbot-publish.yml`; it trusts
+only `NainicaD/Vigil-MD`). It is reused, not recreated:
 
 ```bash
 gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID" --role roles/iam.workloadIdentityUser \
@@ -110,10 +100,13 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID"
 | Variable | Value |
 |---|---|
 | `GCP_PROJECT_ID` | `vigil-md-1792696816` |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/292904548224/locations/global/workloadIdentityPools/github/providers/vigil-md` |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/292904548224/locations/global/workloadIdentityPools/github/providers/vigil-md-repo` |
 | `GCP_SERVICE_ACCOUNT` | `github-ci-trainer@vigil-md-1792696816.iam.gserviceaccount.com` |
 
-Then run it once by hand: **Actions → model-training → Run workflow**, branch `same-device-profiling`.
+**Running it.** GitHub shows **Run workflow** only for workflows on the default branch (`main`).
+This file is only on `model-dev-integration`, so manual runs (and the `trials` and `refresh_data`
+inputs) are not available. Training runs on a push to `model-dev-integration` that touches
+`Model-Development/matching/`, and a push run publishes the next patch version when the gate passes.
 
 ## 4. Cost
 
