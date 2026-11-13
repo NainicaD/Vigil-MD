@@ -83,6 +83,12 @@ done
 # the publish step (s11) uploads to Artifact Registry
 gcloud artifacts repositories add-iam-policy-binding vigil-md-models --project "$PROJECT_ID" --location us-central1 \
   --member "serviceAccount:$SA" --role roles/artifactregistry.writer
+# ... and then writes the mlflow/git annotations (gcloud artifacts versions update), which the writer
+# role does not allow; repoAdmin would, but it can also delete versions, so a one-permission role:
+gcloud iam roles create artifactVersionAnnotator --project "$PROJECT_ID" --title "Artifact version annotator" \
+  --permissions artifactregistry.versions.update --stage GA
+gcloud artifacts repositories add-iam-policy-binding vigil-md-models --project "$PROJECT_ID" --location us-central1 \
+  --member "serviceAccount:$SA" --role "projects/$PROJECT_ID/roles/artifactVersionAnnotator"
 ```
 
 **3. Let this repository act as the service account.** The project already has the workload
@@ -111,8 +117,8 @@ inputs) are not available. Training runs on a push to `model-dev-integration` th
 ## 4. Cost
 
 - `s03` downloads the label set through the row-listing API: **no query cost**.
-- `s04` runs two small queries, **about 0.3 GB the first time**. Its answers and the downloaded label
-  set are cached in GitHub Actions, keyed on `labels/label_set_v1.manifest.json` and `s04`'s code. Later
+- `s04` runs two small queries, **0.62 GiB billed on the first CI run** (2026-11-13). Its answers
+  and the downloaded label set are cached in GitHub Actions, keyed on `labels/label_set_v1.manifest.json` and `s04`'s code. Later
   runs reuse them and **query nothing** until the label set is rebuilt or `s04` changes.
 - Every `s04` call is dry-run first and refused above `--max-gb 2` (the job fails with exit 3).
 - `refresh_data` on a manual run ignores the cache and re-queries.
