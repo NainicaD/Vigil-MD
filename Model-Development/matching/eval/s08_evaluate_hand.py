@@ -22,7 +22,7 @@ from scipy.stats import beta
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from vigil_model.same_device_features import insufficient_evidence  # noqa: E402
+from vigil_model.same_device_features import IE_GATE_VERSION, IE_GATE_VERSIONS, insufficient_evidence  # noqa: E402
 from vigil_model.tracking import lineage_tags, tracking_uri  # noqa: E402
 
 parser = argparse.ArgumentParser(description="Evaluate scores on the hand-labeled sheet")
@@ -35,6 +35,8 @@ parser.add_argument("--threshold-version", default="t1")
 parser.add_argument("--normalization-version", default="n1")
 parser.add_argument("--ie-gate", action="store_true",
                     help="E4: rows the IE gate catches are never accepted (same_device_features.insufficient_evidence)")
+parser.add_argument("--ie-gate-version", default=IE_GATE_VERSION, choices=IE_GATE_VERSIONS,
+                    help="with --ie-gate: which gate (e6_e3b = v1.0.0's)")
 parser.add_argument("--hand-features", default=ROOT / "data/hand_features.csv", help="feat_* columns for --ie-gate")
 parser.add_argument("--exp", help="experiment id from docs/EXPERIMENTS.md (default: $VIGIL_EXP)")
 parser.add_argument("--no-mlflow", action="store_true")
@@ -96,7 +98,7 @@ if args.ie_gate:
     feats = pd.read_csv(args.hand_features, dtype=str).set_index("pair_id")
     absent = set(cands["pair_id"]) - set(feats.index)
     assert not absent, f"{len(absent)} candidate rows have no features in {args.hand_features}"
-    gate = cands["pair_id"].map(lambda p: insufficient_evidence(feats.loc[p]))
+    gate = cands["pair_id"].map(lambda p: insufficient_evidence(feats.loc[p], args.ie_gate_version))
     cands.loc[gate, "score"] = float("-inf")   # routed to IE: below any cutoff, still counts as a missed MATCH
     gated = int(gate.sum())
     print(f"IE gate caught {gated} candidate rows: {cands.loc[gate, 'label'].value_counts().to_dict()}")
@@ -171,7 +173,8 @@ flat = {k: float(v) for k, v in flat.items() if pd.notna(v)}
 if args.out_json:
     Path(args.out_json).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out_json).write_text(json.dumps(
-        {"model_name": model_name, "cutoff": args.cutoff, "ie_gate": args.ie_gate, "metrics": flat}, indent=2))
+        {"model_name": model_name, "cutoff": args.cutoff, "ie_gate": args.ie_gate,
+         "ie_gate_version": args.ie_gate_version if args.ie_gate else "off", "metrics": flat}, indent=2))
     print(f"\nwrote {args.out_json}")
 
 if args.no_mlflow:
@@ -189,7 +192,7 @@ else:
     with mlflow.start_run(run_name=f"{model_name}_hand"):
         mlflow.set_tags({
             **lineage_tags(args.manifest, args.exp),
-            "ie_gate": "e6_e3b" if args.ie_gate else "off",
+            "ie_gate": args.ie_gate_version if args.ie_gate else "off",
             "track": args.track, "model_name": model_name, "eval_set": "hand_label_sample_v1",
             "threshold_version": args.threshold_version, "normalization_version": args.normalization_version,
             "constants_sha256": manifest.get("constants_sha256", "unknown"),

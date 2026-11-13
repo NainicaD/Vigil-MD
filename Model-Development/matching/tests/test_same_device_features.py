@@ -147,6 +147,29 @@ def test_insufficient_evidence_gate(kind, model_missing, cat_missing, gated):
     feat = {"feat_match_kind": kind, "feat_maude_model_missing": model_missing,
             "feat_maude_catalog_missing": cat_missing}
     assert f.insufficient_evidence(feat) is gated
+    assert f.insufficient_evidence(feat, "e6_e3b") is gated
+
+
+@pytest.mark.parametrize("at_end,pc_agree,gated", [
+    ("False", "False", True),       # C1: 3401 inside H7491213401M0, product codes LWS vs DQX
+    (False, False, True),           # parquet booleans
+    ("True", "False", False),       # the key ends the GUDID id: left to the model
+    ("False", "True", False),       # product codes agree
+    ("False", None, False),         # product code unknown on one side: not evidence either way
+    ("False", float("nan"), False),
+])
+def test_c1_gate_sends_mid_string_contains_with_disagreeing_codes_to_ie(at_end, pc_agree, gated):
+    feat = {"feat_match_kind": "contains", "feat_maude_model_missing": False, "feat_maude_catalog_missing": True,
+            "feat_contains_at_end": at_end, "feat_product_code_agree": pc_agree}
+    assert f.insufficient_evidence(feat, "e6_e3b_c1") is gated
+    assert f.insufficient_evidence(feat, "e6_e3b") is False          # v1.0.0's gate never does
+    assert f.insufficient_evidence(dict(feat, feat_match_kind="same_model_key")) is False
+
+
+def test_unknown_gate_version_is_refused():
+    with pytest.raises(ValueError):
+        f.insufficient_evidence({"feat_match_kind": "contains", "feat_maude_model_missing": False,
+                                 "feat_maude_catalog_missing": False}, "e7")
 
 
 @pytest.mark.parametrize("m,g,extra,at_end", [

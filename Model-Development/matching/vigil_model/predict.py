@@ -1,8 +1,9 @@
 """Score candidate pairs with a final model bundle (written by scripts/s11_package_final.py).
 
 A bundle is a folder with model.json (XGBoost), tfidf.pkl (the F1 encoder s04 fitted on the training
-GUDID texts), and meta.json (cutoff, feature columns, lineage). The IE gate (E4) runs before the
-cutoff, so a pair without a usable MAUDE identifier, or only prefix-related, is never a MATCH.
+GUDID texts), and meta.json (cutoff, feature columns, lineage). The IE gate runs before the cutoff,
+so a pair without a usable MAUDE identifier, only prefix-related, or (gate e6_e3b_c1) a mid-string
+contains hit with disagreeing product codes, is never a MATCH. meta.json "ie_gate" names the version.
 
     from vigil_model.predict import load
     bundle = load("models/final_v1")
@@ -64,7 +65,9 @@ class Bundle:
         """score (model probability) and decision per row. The gate needs feat_match_kind and the two
         missing-identifier flags even when the model itself does not use them."""
         score = self.model.predict_proba(encode(feats, self.meta["feature_columns"]))[:, 1]
-        gated = feats.apply(insufficient_evidence, axis=1).to_numpy(dtype=bool)
+        # the gate version the bundle was evaluated with; v1.0.0 and older name e6_e3b
+        version = self.meta.get("ie_gate", "e6_e3b")
+        gated = feats.apply(insufficient_evidence, axis=1, version=version).to_numpy(dtype=bool)
         decision = np.where(gated, IE, np.where(score >= self.cutoff, MATCH, NON_MATCH))
         return pd.DataFrame({"score": score, "decision": decision}, index=feats.index)
 

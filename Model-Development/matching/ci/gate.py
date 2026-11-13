@@ -61,7 +61,8 @@ def candidate_metrics(scores_dir: Path, model: str) -> dict:
     train = json.loads((scores_dir / "train_metrics.json").read_text()).get(model, {})
     metrics = {**hand["metrics"], **{k: v for k, v in train.items() if v is not None}}
     metrics.update(bias_gaps(slices(hand["metrics"])))
-    return {"model_name": model, "ie_gate": hand["ie_gate"], "cutoff": hand["cutoff"], "metrics": metrics}
+    return {"model_name": model, "ie_gate": hand["ie_gate"], "ie_gate_version": hand.get("ie_gate_version", "e6_e3b"),
+            "cutoff": hand["cutoff"], "metrics": metrics}
 
 
 def decide(candidate: dict, champion: dict, rules: dict) -> tuple[bool, list]:
@@ -72,8 +73,10 @@ def decide(candidate: dict, champion: dict, rules: dict) -> tuple[bool, list]:
 
     cand, champ = candidate["metrics"], champion["metrics"]
     lower = set(rules["lower_is_better"])
-    checks = [("same IE gate", status(candidate["ie_gate"] == champion["ie_gate"]),
-               f'{candidate["ie_gate"]} vs {champion["ie_gate"]}')]
+    # both scored with an IE gate in front; its version may differ (a new gate is a model change)
+    checks = [("both scored with the IE gate", status(candidate["ie_gate"] == champion["ie_gate"]),
+               f'{candidate.get("ie_gate_version", candidate["ie_gate"])} vs '
+               f'{champion.get("ie_gate_version", champion["ie_gate"])}')]
     for name, floor in rules["floors"].items():
         value = cand.get(name)
         checks.append((f"{name} >= {floor}", status(value is not None and value >= floor), f"{value}"))

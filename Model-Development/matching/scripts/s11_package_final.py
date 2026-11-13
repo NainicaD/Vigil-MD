@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from ci.publish import next_patch, publish  # noqa: E402
 from vigil_model import predict  # noqa: E402
+from vigil_model.same_device_features import IE_GATE_VERSION  # noqa: E402
 from vigil_model.tracking import run_outputs, tracking_uri  # noqa: E402
 
 parser = argparse.ArgumentParser(description="Package a trained model as a bundle")
@@ -116,7 +117,7 @@ shutil.copyfile(args.tfidf, bundle_dir / "tfidf.pkl")
 meta = {
     "version": version, "model_name": args.model, "cutoff": float(cutoff),
     "feature_columns": list(model.get_booster().feature_names),
-    "feature_set": run.get("tags.feature_set"), "ie_gate": "e6_e3b",
+    "feature_set": run.get("tags.feature_set"), "ie_gate": IE_GATE_VERSION,
     "mlflow_run_id": run_id, "git_commit_at_training": run.get("tags.git_commit"),
     "git_commit_at_packaging": sha,
     "label_set_manifest_sha256": hashlib.sha256(args.manifest.read_bytes()).hexdigest(),
@@ -150,13 +151,14 @@ meta["hand_sheet_v1"] = {
 print(f"round trip ok (max score diff {worst:.1e}); hand sheet: {meta['hand_sheet_v1']}")
 
 (bundle_dir / "README.txt").write_text(f"""Vigil MD same-device linkage model {version}
-Model {args.model}, label_set_v2 (E1 + E3), feature set {meta['feature_set']}, IE gate e6_e3b, cutoff {cutoff:.6f}.
+Model {args.model}, label_set_v2 (E1 + E3), feature set {meta['feature_set']}, IE gate {IE_GATE_VERSION}, cutoff {cutoff:.6f}.
 Load: from vigil_model.predict import load; bundle = load("<this folder>"); bundle.decide(features_df)
-Decisions: MATCH / NON_MATCH / INSUFFICIENT_EVIDENCE (gate: no usable MAUDE identifier, or prefix_related).
+Decisions: MATCH / NON_MATCH / INSUFFICIENT_EVIDENCE (gate: no usable MAUDE identifier, prefix_related, or a
+contains hit in the middle of the GUDID identifier with disagreeing product codes).
 
 For team testing, not validated. The hand labels follow the same rule tree the model learns, so the
 hand-sheet precision measures agreement with the labeling guide, not independent ground truth. The sheet
-is small (83 NON_MATCH pairs): 2-3 false positives are within noise. Known misses: contains pairs with
+is small (83 NON_MATCH pairs): 2-3 false positives are within noise. Known misses: other contains pairs with
 short numeric keys, and some INSUFFICIENT_EVIDENCE pairs with agreeing identifiers are still accepted.
 tfidf.pkl is a pickle: only load bundles from the team registry.
 """)

@@ -1,6 +1,7 @@
 {
   "model_name": "xgb_no_match_kind",
   "ie_gate": true,
+  "ie_gate_version": "e6_e3b",
   "cutoff": 0.6179018616676331,
   "metrics": {
     "ie_count": 48.0,
