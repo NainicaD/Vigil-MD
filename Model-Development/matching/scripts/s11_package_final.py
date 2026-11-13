@@ -13,7 +13,8 @@ Versioning: the MLflow registered model <package> gets an auto-incremented versi
 annotations mlflow=mlflow-v<N> and git=git-<sha7>. Generic repositories do not support tags.
 
 Publishing (ci/publish.py): uploads only if ci/gate.py passed (gate.json in the scores dir) and the whole
-working tree is committed; skips a version that already exists. --print-only prints the commands instead.
+working tree is committed; skips a version that already exists, and a bundle with the same model.json,
+tfidf.pkl, cutoff and IE gate as the newest published version. --print-only prints the commands instead.
 In CI (--lineage ci) the MLflow store is thrown away after the job, so the mlflow annotation names the
 GitHub run (gh-run-<id>, whose artifact keeps mlflow.db) and --semver auto bumps the newest PATCH.
 

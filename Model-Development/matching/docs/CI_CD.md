@@ -41,10 +41,15 @@ code runs, and (on the shared branches) retrains the models on the real BigQuery
   than the champion by more than the tolerances. A ceiling the champion already breaks only warns if the
   new model is no worse (v1.0.0 broke the precision-gap ceiling with 0.158; v1.1.0's gap is 0).
   If a rule fails, the job fails and nothing is published: the champion stays. That is the rollback.
+  The champion's hand numbers (precision 1.000, 0 FP) are optimistic: the C1 rule was written after
+  looking at v1.0.0's false positives on the same hand sheet. So a new model loses 0.04 hand precision
+  (about 3 false positives) against an inflated reference before the tolerance fails it.
 - **Publish** (`s11 --semver auto --lineage ci`, push only, after the gate passed): the next PATCH
   version of `matching-same-device` in `vigil-md-models`, annotated `mlflow=gh-run-<id>`,
   `git=git-<sha7>`. `ci/publish.py` refuses again if `gate.json` did not pass or the tree has
-  uncommitted files, and skips a version that already exists.
+  uncommitted files. It skips a version that already exists, and it skips a bundle that decides like the
+  newest published version (same `model.json` and `tfidf.pkl` checksums, cutoff and IE gate): a retrain that
+  reproduces the model gets no new version. v1.1.1 was such a copy of v1.1.0, published before this check.
 
 ## 3. One-time GCP setup (done 2026-11-13)
 
@@ -117,9 +122,10 @@ inputs) are not available. Training runs on a push to `model-dev-integration` th
 ## 4. Cost
 
 - `s03` downloads the label set through the row-listing API: **no query cost**.
-- `s04` runs two small queries, **0.62 GiB billed on the first CI run** (2026-11-13). Its answers
-  and the downloaded label set are cached in GitHub Actions, keyed on `labels/label_set_v1.manifest.json` and `s04`'s code. Later
-  runs reuse them and **query nothing** until the label set is rebuilt or `s04` changes.
+- `s04` runs two small queries on `label_set_v2`, **0.62 GiB billed on the first CI run** (2026-11-13).
+  Its answers and the downloaded label set are cached in GitHub Actions, keyed on
+  `labels/label_set_v2.manifest.json` and `s04`'s code. Later runs reuse them and **query nothing** until
+  the label set is rebuilt or `s04` changes.
 - Every `s04` call is dry-run first and refused above `--max-gb 2` (the job fails with exit 3).
 - `refresh_data` on a manual run ignores the cache and re-queries.
 - GitHub Actions minutes: a training run takes 20-60 minutes. Lower `trials` on a manual run for a

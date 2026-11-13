@@ -149,7 +149,7 @@ jobs:
       - name: s04 dry run (free; stops here if over budget)
         run: python scripts/s04_build_feature_table.py --project "$PROJECT" --estimate-only --max-gb 2 $S04_ARGS
 
-      - name: s04 build the feature table (about 0.3 GB the first time, then cached)
+      - name: s04 build the feature table (0.62 GiB billed on the first run, then cached)
         run: |
           if [ "$REFRESH" = "true" ]; then
             python scripts/s04_build_feature_table.py --project "$PROJECT" --max-gb 2 --refresh $S04_ARGS
