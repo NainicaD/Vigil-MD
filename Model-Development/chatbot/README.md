@@ -594,6 +594,39 @@ gcloud run services update-traffic vigil-md --to-revisions <revision>=100 \
 
 or deploy an image built from an older published version.
 
+**Automatic deploy (CI).** The `deploy` job of `.github/workflows/chatbot-publish.yml` does the
+steps above after every publish on a push to `model-dev-integration` (chatbot or website changes):
+it downloads the router version just published, restores or rebuilds the `vigil_md_prod` index
+(rebuilt at most once a week or when `device_search/` changes, about 0.2 GB), builds and pushes
+`app:<commit>`, and deploys it as a new revision **with no traffic** under the tag `ci-<commit>`.
+`api/deploy_check.py` then calls that revision: `/api/health` must report the published router
+version, `vigil_md_prod` and a built index, and a search must find something. Only then does all
+traffic move to the new revision. If anything fails, the previous revision keeps serving. The
+service's access is not changed (it stays private). The job runs once the repository variable
+`GCP_DEPLOY_SA` is set; one-time setup (Owner on the project):
+
+```bash
+P=vigil-md-1792696816; SA=github-ci-deployer@$P.iam.gserviceaccount.com
+gcloud iam service-accounts create github-ci-deployer --project $P --display-name "GitHub Actions chatbot deploy"
+gcloud artifacts repositories add-iam-policy-binding vigil-md --project $P --location us-central1 \
+  --member serviceAccount:$SA --role roles/artifactregistry.writer          # push the image
+gcloud artifacts repositories add-iam-policy-binding vigil-md-models --project $P --location us-central1 \
+  --member serviceAccount:$SA --role roles/artifactregistry.reader          # download the router
+for R in run.developer run.invoker; do                                      # deploy, then check it
+  gcloud run services add-iam-policy-binding vigil-md --region us-central1 --project $P \
+    --member serviceAccount:$SA --role roles/$R
+done
+gcloud iam service-accounts add-iam-policy-binding vigil-md-chatbot@$P.iam.gserviceaccount.com --project $P \
+  --member serviceAccount:$SA --role roles/iam.serviceAccountUser           # run revisions as the service's account
+gcloud projects add-iam-policy-binding $P --member serviceAccount:$SA --role roles/bigquery.jobUser --condition=None
+bq query --use_legacy_sql=false "GRANT \`roles/bigquery.dataViewer\` ON SCHEMA \`$P.vigil_md_prod\` TO \"serviceAccount:$SA\""
+gcloud iam service-accounts add-iam-policy-binding $SA --project $P --role roles/iam.workloadIdentityUser \
+  --member "principalSet://iam.googleapis.com/projects/292904548224/locations/global/workloadIdentityPools/github/attribute.repository/NainicaD/Vigil-MD"
+```
+
+Then add the repository variable `GCP_DEPLOY_SA` = `github-ci-deployer@vigil-md-1792696816.iam.gserviceaccount.com`
+(it uses the same `GCP_WIF_PROVIDER` as the publish step).
+
 **Make it public:** with the BigQuery daily query quota and budget alerts in place, grant
 `gcloud run services add-iam-policy-binding vigil-md --region us-central1 --project
 vigil-md-1792696816 --member=allUsers --role=roles/run.invoker` (undo with
