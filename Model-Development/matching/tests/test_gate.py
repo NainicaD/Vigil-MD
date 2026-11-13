@@ -111,7 +111,8 @@ def test_committed_champion_matches_the_released_model():
     champ = json.loads((ROOT / "ci/champion_metrics.json").read_text())
     m = champ["metrics"]
     assert champ["ie_gate"] is True and champ["model_name"] == "xgb_no_match_kind"
-    assert m["all_precision"] == pytest.approx(71 / 74) and m["all_false_pos"] == 3 and m["all_recall"] == 1.0
+    assert champ["ie_gate_version"] == "e6_e3b_c1"                     # release v1.1.0
+    assert m["all_precision"] == 1.0 and m["all_false_pos"] == 0 and m["all_recall"] == 1.0
     assert m["ie_accepted"] == 14 and m["test_precision"] == pytest.approx(0.9925, abs=1e-4)
 
 

@@ -35,11 +35,11 @@ code runs, and (on the shared branches) retrains the models on the real BigQuery
   without scores, scores that do not match the hand sheet, a score outside [0, 1], or a model with no
   MLflow run. That check does not look at metric values.
 - **Model gate** (`ci/gate.py`, rules in `ci/gate.json`, reference numbers in `ci/champion_metrics.json`
-  = release v1.0.0): `xgb_no_match_kind` must meet the floors (hand recall ≥ 0.99, strict hand precision
+  = release v1.1.0, IE gate `e6_e3b_c1`): `xgb_no_match_kind` must meet the floors (hand recall ≥ 0.99, strict hand precision
   ≥ 0.90, test precision ≥ 0.98), stay under the ceilings (IE and NON_MATCH accept rates, and the widest
   precision / recall gap between the `strat_model_usable` and `strat_mfr_size` slices), and be no worse
   than the champion by more than the tolerances. A ceiling the champion already breaks only warns if the
-  new model is no worse (the champion's precision gap is 0.158 against a 0.15 ceiling: top_10 0.842).
+  new model is no worse (v1.0.0 broke the precision-gap ceiling with 0.158; v1.1.0's gap is 0).
   If a rule fails, the job fails and nothing is published: the champion stays. That is the rollback.
 - **Publish** (`s11 --semver auto --lineage ci`, push only, after the gate passed): the next PATCH
   version of `matching-same-device` in `vigil-md-models`, annotated `mlflow=gh-run-<id>`,

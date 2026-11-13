@@ -137,7 +137,12 @@ Each release has three identifiers:
 Generic repositories reject tags (HTTP 501), so the `mlflow` and `git` identifiers are version annotations. See them with
 `gcloud artifacts versions describe v1.0.0 ...`.
 
-`v1.0.0` is the first release: experiment `final_v1`, alias `@challenger`. Its config is the one the experiments recommend (`reports/Vigil_MD_Label_Feature_Experiments.pdf`): label_set_v2, feature set fs2 and xgb_no_match_kind, with the IE gate applied before the cutoff. A version has these files:
+| Version | MLflow | Git | What |
+|---|---|---|---|
+| `v1.0.0` | `mlflow-v1` | `git-6afe449` | First release: experiment `final_v1`. The config the experiments recommend (`reports/Vigil_MD_Label_Feature_Experiments.pdf`): label_set_v2, feature set fs2 and xgb_no_match_kind, with the IE gate `e6_e3b` applied before the cutoff. Hand sheet 0.959 (3 FP). |
+| `v1.1.0` | `mlflow-v2` (`@challenger`) | `git-6270fda` | **Use this one.** The same model, with IE gate `e6_e3b_c1`: a `contains` hit in the middle of the GUDID identifier with disagreeing product codes is INSUFFICIENT_EVIDENCE (`docs/EXPERIMENTS.md` C1). Hand sheet 1.000 (0 FP), recall 1.000; the rule was written after seeing those FPs, so this is optimistic until hand batch 2. |
+
+`meta.json` names the bundle's IE gate (`ie_gate`), and `predict.load` applies that version, so v1.0.0 keeps its decisions with newer code. A version has these files:
 - `model.json`: XGBoost
 - `tfidf.pkl`: the F1 encoder s04 fitted on the training GUDID texts
 - `meta.json`: cutoff, feature columns, lineage and hand-sheet results
@@ -146,12 +151,12 @@ Generic repositories reject tags (HTTP 501), so the `mlflow` and `git` identifie
 
 ```bash
 gcloud artifacts generic download --project vigil-md-1792696816 --location us-central1 \
-  --repository vigil-md-models --package matching-same-device --version v1.0.0 --destination models/v1.0.0
+  --repository vigil-md-models --package matching-same-device --version v1.1.0 --destination models/v1.1.0
 ```
 
 ```python
 from vigil_model.predict import load
-bundle = load("models/v1.0.0")
+bundle = load("models/v1.1.0")
 feats = bundle.features(maude_side, gudid_side, ctx)   # DeviceSide, DeviceSide, MatchContext
 bundle.decide(pd.DataFrame([feats]))                 # score + MATCH / NON_MATCH / INSUFFICIENT_EVIDENCE
 ```
