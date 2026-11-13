@@ -11,7 +11,7 @@ Exit 2 means a bad argument or an unreadable input path.
 It writes a Markdown summary (each model's 99%-precision cutoff, and the metrics s06 logged) to
 --summary, e.g. $GITHUB_STEP_SUMMARY, so the numbers show on the workflow run page. It reads
 mlflow.db with sqlite3 from the standard library, so it needs no MLflow install. It never fails on
-a metric value: whether a model is good enough is decided in the validation step, not here.
+a metric value: whether a model is good enough is decided by ci/gate.py, not here.
 
 Usage (from Model-Development/matching/):
     python ci/check_training_outputs.py --hand data/hand_features.csv --summary "$GITHUB_STEP_SUMMARY"

@@ -132,10 +132,10 @@ Each release has three identifiers:
 | Artifact Registry version | `v1.0.0` | Semantic version. MAJOR: the input/output schema changes. MINOR: new features or architecture. PATCH: routine retraining. |
 | Artifact Registry annotation `mlflow` | `mlflow-v<N>` | Version N of the MLflow registered model `matching-same-device`. |
 | Artifact Registry annotation `git` | `git-<sha7>` | The commit of the serving code (`vigil_model/predict.py`). |
-
-Generic repositories reject tags (HTTP 501), so these two are version annotations. See them with
-`gcloud artifacts versions describe v1.0.0 ...`.
 | MLflow | `matching-same-device` version N | Auto-incremented. Carries the alias `@challenger`, `@champion` or `@baseline`, and the tags `semver` and `git_sha`. |
+
+Generic repositories reject tags (HTTP 501), so the `mlflow` and `git` identifiers are version annotations. See them with
+`gcloud artifacts versions describe v1.0.0 ...`.
 
 `v1.0.0` is the first release: experiment `final_v1`, alias `@challenger`. Its config is the one the experiments recommend (`reports/Vigil_MD_Label_Feature_Experiments.pdf`): label_set_v2, feature set fs2 and xgb_no_match_kind, with the IE gate applied before the cutoff. A version has these files:
 - `model.json`: XGBoost

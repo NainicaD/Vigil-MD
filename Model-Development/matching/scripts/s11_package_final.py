@@ -10,11 +10,15 @@ the scores s06 wrote for the same run, so the bundle reproduces the evaluated mo
 
 Versioning: the MLflow registered model <package> gets an auto-incremented version with an alias
 (challenger/champion/baseline) and tags semver + git_sha. Artifact Registry gets version v<semver> plus
-annotations mlflow=mlflow-v<N> and git=git-<sha7>. Generic repositories do not support tags. The upload
-commands are printed at the end, not run.
+annotations mlflow=mlflow-v<N> and git=git-<sha7>. Generic repositories do not support tags.
 
-Usage (from anywhere, after s06 with VIGIL_EXP=final_v1; serving code must be committed):
-    python scripts/s11_package_final.py --exp final_v1 --semver 1.0.0
+Publishing (ci/publish.py): uploads only if ci/gate.py passed (gate.json in the scores dir) and the whole
+working tree is committed; skips a version that already exists. --print-only prints the commands instead.
+In CI (--lineage ci) the MLflow store is thrown away after the job, so the mlflow annotation names the
+GitHub run (gh-run-<id>, whose artifact keeps mlflow.db) and --semver auto bumps the newest PATCH.
+
+Usage (from anywhere, after s06, s08 and ci/gate.py with VIGIL_EXP=final_v1; code must be committed):
+    python scripts/s11_package_final.py --exp final_v1 --semver 1.0.0 [--print-only]
 """
 import argparse
 import hashlib
@@ -25,11 +29,14 @@ import subprocess
 import sys
 from pathlib import Path
 
+import os
+
 import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from ci.publish import next_patch, publish  # noqa: E402
 from vigil_model import predict  # noqa: E402
 from vigil_model.tracking import run_outputs, tracking_uri  # noqa: E402
 
@@ -37,7 +44,8 @@ parser = argparse.ArgumentParser(description="Package a trained model as a bundl
 parser.add_argument("--exp", required=True)
 parser.add_argument("--model", default="xgb_no_match_kind")
 parser.add_argument("--semver", required=True,
-                    help="MAJOR: input/output schema change, MINOR: new features or architecture, PATCH: retraining")
+                    help="MAJOR: input/output schema change, MINOR: new features or architecture, PATCH: retraining; "
+                         "'auto': newest registry version with PATCH + 1")
 parser.add_argument("--package", default="matching-same-device",
                     help="Artifact Registry package and MLflow registered model name")
 parser.add_argument("--alias", default="challenger", choices=["challenger", "champion", "baseline"])
@@ -45,7 +53,14 @@ parser.add_argument("--tfidf", type=Path, default=ROOT / "data/label_set_v2_fs2_
 parser.add_argument("--hand", type=Path, default=ROOT / "data/hand_features_v2_fs2.csv")
 parser.add_argument("--manifest", type=Path, default=ROOT / "labels/label_set_v2.manifest.json")
 parser.add_argument("--out", type=Path, default=ROOT / "dist")
+parser.add_argument("--print-only", action="store_true", help="print the gcloud commands, upload nothing")
+parser.add_argument("--lineage", default="local", choices=["local", "ci"],
+                    help="ci: annotate mlflow=gh-run-$GITHUB_RUN_ID instead of the MLflow model version")
+parser.add_argument("--gate", type=Path, help="ci/gate.py's gate.json (default: <scores dir>/gate.json)")
 args = parser.parse_args()
+if args.semver == "auto":
+    args.semver = next_patch(args.package)
+    print(f"--semver auto: {args.semver}")
 if not re.fullmatch(r"\d+\.\d+\.\d+", args.semver):
     sys.exit(f"--semver {args.semver!r}: use MAJOR.MINOR.PATCH, e.g. 1.0.0")
 semver, version = args.semver, f"v{args.semver}"
@@ -180,12 +195,12 @@ manifest = {
     "test_data": "labels/hand_label_sample_v1.csv", "test_metrics": meta["hand_sheet_v1"],
     "sha256": {f: hashlib.sha256((bundle_dir / f).read_bytes()).hexdigest() for f in files},
 }
+mlflow_ref, git_ref = manifest["tags"]
+if args.lineage == "ci":
+    # CI's MLflow store lives only for the job; the run's artifact keeps it (model-training.yml)
+    mlflow_ref = f"gh-run-{os.environ.get('GITHUB_RUN_ID', 'unknown')}"
+    manifest["tags"][0] = mlflow_ref
 (bundle_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
 print(f"bundle ready: {bundle_dir}  ({', '.join(files)}, manifest.json)")
-ar = (f"--project vigil-md-1792696816 --location us-central1 --repository vigil-md-models "
-      f"--package {args.package}")
-print("\nPublish (not run here; check the names first):")
-print(f"  gcloud artifacts generic upload {ar} --version {version} --source-directory {bundle_dir}")
-# generic repositories reject tags (HTTP 501), so the cross-references go in as version annotations
-mlflow_ref, git_ref = manifest["tags"]
-print(f"  gcloud artifacts versions update {version} {ar} --annotations=mlflow={mlflow_ref},git={git_ref}")
+sys.exit(publish(bundle_dir, version, args.package, {"mlflow": mlflow_ref, "git": git_ref},
+                 gate_json=args.gate or scores_dir / "gate.json", root=ROOT, print_only=args.print_only))

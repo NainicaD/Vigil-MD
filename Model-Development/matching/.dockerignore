@@ -1,0 +1,10 @@
+data/
+dist/
+mlruns/
+mlartifacts/
+mlflow.db
+reports/
+docs/
+tests/
+**/__pycache__/
+.pytest_cache/

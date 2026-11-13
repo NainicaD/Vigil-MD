@@ -38,6 +38,7 @@ parser.add_argument("--ie-gate", action="store_true",
 parser.add_argument("--hand-features", default=ROOT / "data/hand_features.csv", help="feat_* columns for --ie-gate")
 parser.add_argument("--exp", help="experiment id from docs/EXPERIMENTS.md (default: $VIGIL_EXP)")
 parser.add_argument("--no-mlflow", action="store_true")
+parser.add_argument("--out-json", help="also write every metric to this file (read by ci/gate.py)")
 args = parser.parse_args()
 
 
@@ -151,7 +152,28 @@ if len(false_pos):
     cols = ["pair_id", "hard_case_reason", "cand_match_kind", "score", "cand_split"]
     print(false_pos[cols].to_string(index=False))
 
-# --- MLflow --------------------------------------------------------------------------------------
+# --- outputs -------------------------------------------------------------------------------------
+non_match = int((scored["y"] == 0).sum())
+flat = {"ie_count": len(ie), "ie_accepted": ie_accepted, "ie_accept_rate": ie_accept_rate, "ie_gated": gated,
+        "retrieval_recall_at1": retrieval_at1,
+        "non_match_accept_rate": m_all["false_pos"] / non_match if non_match else float("nan")}
+for scope, m in (("all", m_all), ("strict", m_strict)):
+    for k, v in m.items():
+        flat[f"{scope}_{k}"] = v
+for name, m in slice_metrics.items():
+    flat[f"slice_{name}_precision"] = m["precision"]
+    flat[f"slice_{name}_recall"] = m["recall"]
+    flat[f"slice_{name}_accepted"] = m["accepted"]
+    flat[f"slice_{name}_n"] = m["pairs"]
+    flat[f"slice_{name}_matches"] = m["matches"]
+flat = {k: float(v) for k, v in flat.items() if pd.notna(v)}
+
+if args.out_json:
+    Path(args.out_json).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.out_json).write_text(json.dumps(
+        {"model_name": model_name, "cutoff": args.cutoff, "ie_gate": args.ie_gate, "metrics": flat}, indent=2))
+    print(f"\nwrote {args.out_json}")
+
 if args.no_mlflow:
     print("\nSkipped MLflow logging")
 else:
@@ -161,17 +183,6 @@ else:
     if os.path.exists(args.manifest):
         with open(args.manifest) as f:
             manifest = json.load(f)
-
-    flat = {"ie_count": len(ie), "ie_accepted": ie_accepted, "ie_accept_rate": ie_accept_rate, "ie_gated": gated,
-            "retrieval_recall_at1": retrieval_at1}
-    for scope, m in (("all", m_all), ("strict", m_strict)):
-        for k, v in m.items():
-            flat[f"{scope}_{k}"] = v
-    for name, m in slice_metrics.items():
-        flat[f"slice_{name}_precision"] = m["precision"]
-        flat[f"slice_{name}_recall"] = m["recall"]
-        flat[f"slice_{name}_accepted"] = m["accepted"]
-    flat = {k: float(v) for k, v in flat.items() if pd.notna(v)}
 
     mlflow.set_tracking_uri(tracking_uri())
     mlflow.set_experiment("vigil-md-linkage")
