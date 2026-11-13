@@ -125,16 +125,32 @@ def test_committed_champion_passes_the_committed_rules():
 # ---------------------------------------------------------------------------- publish
 
 class FakeRun:
-    """Records gcloud/git calls; `describe` returns `exists`."""
+    """Records gcloud/git calls; `describe` returns `exists`, `list` returns `versions`, and `download --name f`
+    writes published[f] (the newest version's manifest.json / meta.json) to the destination."""
 
-    def __init__(self, exists=False, versions=""):
-        self.calls, self.exists, self.versions = [], exists, versions
+    def __init__(self, exists=False, versions="", published=None):
+        self.calls, self.exists, self.versions, self.published = [], exists, versions, published or {}
 
     def __call__(self, cmd, **kw):
         self.calls.append(cmd)
         if "describe" in cmd:
             return subprocess.CompletedProcess(cmd, 0 if self.exists else 1, "", "")
+        if "download" in cmd:
+            name, dest = cmd[cmd.index("--name") + 1], cmd[cmd.index("--destination") + 1]
+            (Path(dest) / name).write_text(json.dumps(self.published[name]))
         return subprocess.CompletedProcess(cmd, 0, self.versions, "")
+
+
+def _bundle(path, model="m1", tfidf="t1", cutoff=0.6, ie_gate="e6_e3b_c1"):
+    """manifest.json + meta.json of a bundle; returns them as published{} for FakeRun."""
+    files = {"manifest.json": {"sha256": {"model.json": model, "tfidf.pkl": tfidf, "meta.json": "differs-per-run"}},
+             "meta.json": {"cutoff": cutoff, "ie_gate": ie_gate, "git_commit_at_packaging": "abc"}}
+    for name, content in files.items():
+        (path / name).write_text(json.dumps(content))
+    return files
+
+
+LATEST = "projects/p/locations/l/repositories/r/packages/matching-same-device/versions/v1.1.0"
 
 
 def _gate_file(tmp_path, passed=True, report_only=False):
@@ -151,10 +167,28 @@ def _publish(tmp_path, run, monkeypatch, dirty=(), **gate_kw):
 
 
 def test_publish_uploads_then_annotates(tmp_path, monkeypatch):
-    run = FakeRun()
+    _bundle(tmp_path)
+    run = FakeRun()                                                             # empty registry
     assert _publish(tmp_path, run, monkeypatch) == 0
-    assert [c[2] for c in run.calls] == ["versions", "generic", "versions"]      # describe, upload, update
+    assert [c[3] for c in run.calls] == ["describe", "list", "upload", "update"]
     assert "--annotations=mlflow=gh-run-7,git=git-abc1234" in run.calls[-1]
+
+
+def test_publish_skips_a_bundle_that_decides_like_the_newest_version(tmp_path, monkeypatch):
+    published = _bundle(tmp_path)              # same model.json, tfidf.pkl, cutoff and gate as v1.1.0
+    run = FakeRun(versions=LATEST, published=published)
+    assert _publish(tmp_path, run, monkeypatch) == 0
+    assert not any("upload" in c for c in run.calls)
+    assert all("v1.1.0" in c for c in run.calls if "download" in c)
+
+
+@pytest.mark.parametrize("change", [{"model": "m2"}, {"tfidf": "t2"}, {"cutoff": 0.7}, {"ie_gate": "e6_e3b"}])
+def test_publish_uploads_when_anything_that_decides_differs(tmp_path, monkeypatch, change):
+    published = _bundle(tmp_path, **change)    # what v1.1.0 holds
+    _bundle(tmp_path)                          # the new bundle
+    run = FakeRun(versions=LATEST, published=published)
+    assert _publish(tmp_path, run, monkeypatch) == 0
+    assert any("upload" in c for c in run.calls)
 
 
 @pytest.mark.parametrize("gate_kw", [{"passed": False}, {"report_only": True}])

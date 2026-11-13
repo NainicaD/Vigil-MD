@@ -140,7 +140,7 @@ Generic repositories reject tags (HTTP 501), so the `mlflow` and `git` identifie
 | Version | MLflow | Git | What |
 |---|---|---|---|
 | `v1.0.0` | `mlflow-v1` | `git-6afe449` | First release: experiment `final_v1`. The config the experiments recommend (`reports/Vigil_MD_Label_Feature_Experiments.pdf`): label_set_v2, feature set fs2 and xgb_no_match_kind, with the IE gate `e6_e3b` applied before the cutoff. Hand sheet 0.959 (3 FP). |
-| `v1.1.0` | `mlflow-v2` (`@challenger`) | `git-6270fda` | **Use this one.** The same model, with IE gate `e6_e3b_c1`: a `contains` hit in the middle of the GUDID identifier with disagreeing product codes is INSUFFICIENT_EVIDENCE (`docs/EXPERIMENTS.md` C1). Hand sheet 1.000 (0 FP), recall 1.000; the rule was written after seeing those FPs, so this is optimistic until hand batch 2. |
+| `v1.1.0` | `mlflow-v2` (`@challenger`) | `git-6270fda` | **Use this one.** The same model, with IE gate `e6_e3b_c1`: a `contains` hit in the middle of the GUDID identifier with disagreeing product codes is INSUFFICIENT_EVIDENCE (`docs/EXPERIMENTS.md` C1). Hand sheet 1.000 (0 FP), recall 1.000; the rule was written after seeing those FPs, on the only hand set there is, so this is optimistic. |
 
 `meta.json` names the bundle's IE gate (`ie_gate`), and `predict.load` applies that version, so v1.0.0 keeps its decisions with newer code. A version has these files:
 - `model.json`: XGBoost
