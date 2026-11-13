@@ -251,11 +251,34 @@ def _truthy(value: Any) -> bool:
     return value is True or str(value).strip().upper() in ("TRUE", "1", "1.0")
 
 
-def insufficient_evidence(feat: Mapping[str, Any]) -> bool:
-    """E4 gate in front of the model: the pair is INSUFFICIENT_EVIDENCE, never MATCH, when MAUDE has no
-    usable identifier (HAND_LABEL_GUIDE E6) or the identifiers are only prefix-related (E3b)."""
+def _explicit_false(value: Any) -> bool:
+    """A feat_* flag that is known and False; None/NaN (not computed) is not False."""
+    return value is False or str(value).strip().upper() in ("FALSE", "0", "0.0")
+
+
+# Versions of the IE gate. A bundle names the one it was evaluated with (meta.json "ie_gate"), so an older
+# bundle keeps its decisions when newer code loads it.
+IE_GATE_VERSIONS = ("e6_e3b", "e6_e3b_c1")
+IE_GATE_VERSION = "e6_e3b_c1"
+
+
+def insufficient_evidence(feat: Mapping[str, Any], version: str = IE_GATE_VERSION) -> bool:
+    """IE gate in front of the model: the pair is INSUFFICIENT_EVIDENCE, never MATCH, when
+    e6_e3b (E4): MAUDE has no usable identifier (HAND_LABEL_GUIDE E6), or the identifiers are only
+        prefix-related (E3b);
+    e6_e3b_c1 adds C1: the MAUDE key is only found in the middle of a longer GUDID identifier and the product
+        codes disagree (HAND_LABEL_GUIDE DEF; the label rule id_contains_same_labeler calls these MATCH, so the
+        model learns to accept them; docs/EXPERIMENTS.md C1)."""
+    if version not in IE_GATE_VERSIONS:
+        raise ValueError(f"unknown IE gate version {version!r}; known: {IE_GATE_VERSIONS}")
+    kind = str(feat["feat_match_kind"])
     no_identifier = _truthy(feat["feat_maude_model_missing"]) and _truthy(feat["feat_maude_catalog_missing"])
-    return no_identifier or str(feat["feat_match_kind"]) == MatchKind.PREFIX_RELATED.value
+    if no_identifier or kind == MatchKind.PREFIX_RELATED.value:
+        return True
+    if version == "e6_e3b":
+        return False
+    return (kind == MatchKind.CONTAINS.value and _explicit_false(feat.get("feat_contains_at_end"))
+            and _explicit_false(feat.get("feat_product_code_agree")))
 
 
 def has_conflicting_identifier(maude: DeviceSide, gudid: DeviceSide,

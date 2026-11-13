@@ -45,6 +45,8 @@ parser.add_argument("--manifest", default=ROOT / "labels/label_set_v1.manifest.j
 parser.add_argument("--trials", type=int, default=10, help="random-search trials per XGBoost variant")
 parser.add_argument("--exp", help="experiment id from docs/EXPERIMENTS.md (default: $VIGIL_EXP)")
 parser.add_argument("--no-mlflow", action="store_true")
+parser.add_argument("--sample-weight", metavar="CSV",
+                    help="IPW mitigation: the data pipeline's mitigation_weights.csv (see vigil_model/ipw.py)")
 args = parser.parse_args()
 
 KIND_DERIVED = ["feat_match_kind", "feat_identifier_exact", "feat_identifier_cross_field", "feat_prefix_related",
@@ -157,6 +159,11 @@ train = data[data["meta_split"] == "train"].reset_index(drop=True)
 y = (train["label"] == "MATCH").astype(int).to_numpy()
 X = encode(train)
 print(f"train rows: {len(train)} (of {len(data)}), match rate {y.mean():.1%}")
+W = None   # sample weights over train rows; None trains unweighted, as before
+if args.sample_weight:
+    from vigil_model.ipw import row_weights
+    W = row_weights(train, args.sample_weight)
+    print(f"sample weights from {args.sample_weight}: min {W.min():.3f}, max {W.max():.3f}")
 
 # validation inside train, grouped by device so no device sits on both sides
 splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
@@ -229,8 +236,11 @@ common_tags = {
     "constants_sha256": manifest.get("constants_sha256", "unknown"),
     "alias_table_sha256": manifest.get("alias_table_sha256", "unknown"),
     "snapshot_date": manifest.get("snapshot_date", "unknown"),
+    "sample_weight_source": args.sample_weight or "none",
 }
 cutoffs = {}
+train_metrics = {}   # per model: what MLflow gets, also on disk for ci/gate.py (works with --no-mlflow)
+trial_rows = []      # every random-search trial, for eval/hparam_sensitivity.py
 SCORES, CUTOFFS = run_outputs(args.exp)   # data/runs/<exp>/ with an experiment id, else data/scores
 print(f"outputs: {SCORES.relative_to(ROOT)}, {CUTOFFS.relative_to(ROOT)}")
 
@@ -255,18 +265,19 @@ def finish(name, track, val_scores, test_scores, hand_scores, params, model=None
             tp, tr = at_cutoff(y_test[idx], test_scores[idx], cutoff)
             print(f"    {tier}: n={int(idx.sum())}, precision={tp:.4f}, recall={tr:.4f}")
 
+    m = {"val_average_precision": float(avg_prec), "val_recall_at_p99": recall,
+         "val_match_rate": float(y[cut_idx].mean()), "test_average_precision": float(test_ap),
+         "test_match_rate": float(y_test.mean())}
+    if cutoff is not None:
+        m.update({"cutoff_p99": cutoff, "test_precision": test_prec, "test_recall": test_rec})
+    train_metrics[name] = m
+
     run_id = "none"
     if not args.no_mlflow:
         with mlflow.start_run(run_name=name) as run:
             mlflow.set_tags({**common_tags, "track": track, "model_name": name})
             mlflow.log_params(params)
-            mlflow.log_metrics({"val_average_precision": avg_prec, "val_recall_at_p99": recall,
-                                "val_match_rate": float(y[cut_idx].mean()),
-                                "test_average_precision": test_ap,
-                                "test_match_rate": float(y_test.mean())})
-            if cutoff is not None:
-                mlflow.log_metrics({"cutoff_p99": cutoff, "test_precision": test_prec,
-                                    "test_recall": test_rec})
+            mlflow.log_metrics(m)
             if model is not None:
                 # the registry gives each run's model a version number under a stable name;
                 # its files live in the run's artifact folder, which is on GCS
@@ -287,7 +298,7 @@ M = lr_matrix(X)
 M_hand = lr_matrix(X_hand).reindex(columns=M.columns, fill_value=0.0)
 M_test = lr_matrix(X_test).reindex(columns=M.columns, fill_value=0.0)
 lr = LogisticRegression(max_iter=2000)
-lr.fit(M.iloc[fit_idx], y[fit_idx])
+lr.fit(M.iloc[fit_idx], y[fit_idx], sample_weight=None if W is None else W[fit_idx])
 finish("logreg_v1", "baseline", lr.predict_proba(M.iloc[cut_idx])[:, 1],
        lr.predict_proba(M_test)[:, 1], lr.predict_proba(M_hand)[:, 1],
        {"model": "LogisticRegression", "max_iter": 2000})
@@ -307,10 +318,11 @@ for name, cols in VARIANTS.items():
             "min_child_weight": int(rng.integers(1, 10)),
         }
         model = XGBClassifier(**params, tree_method="hist", enable_categorical=True, random_state=42, n_jobs=-1)
-        model.fit(X.iloc[fit_idx][cols], y[fit_idx])
+        model.fit(X.iloc[fit_idx][cols], y[fit_idx], sample_weight=None if W is None else W[fit_idx])
         sel_scores = model.predict_proba(X.iloc[sel_idx][cols])[:, 1]
         avg_prec = average_precision_score(y[sel_idx], sel_scores)
         print(f"  trial {trial:02d}: avg_precision={avg_prec:.4f}")
+        trial_rows.append({"model": name, "trial": trial, **params, "val_select_average_precision": avg_prec})
         if best is None or avg_prec > best["avg_prec"]:
             best = {"avg_prec": avg_prec, "model": model, "params": params}
     cut_scores = best["model"].predict_proba(X.iloc[cut_idx][cols])[:, 1]
@@ -323,6 +335,8 @@ for name, cols in VARIANTS.items():
 SCORES.mkdir(parents=True, exist_ok=True)
 with open(CUTOFFS, "w") as f:
     json.dump(cutoffs, f, indent=2)
+(SCORES / "train_metrics.json").write_text(json.dumps(train_metrics, indent=2))
+pd.DataFrame(trial_rows).to_csv(SCORES / "trials.csv", index=False)
 
 print("\nNext, score each model on the hand labels with its validation cutoff:")
 for name, cutoff in cutoffs.items():

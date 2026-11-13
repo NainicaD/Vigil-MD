@@ -171,7 +171,7 @@ def _run_lines(job):
 
 def test_triggers(wf):
     on = wf["on"]
-    assert set(on["push"]["branches"]) == {"main", "same-device-profiling"}
+    assert set(on["push"]["branches"]) == {"main", "model-dev-integration", "same-device-profiling"}
     assert "Model-Development/matching/**" in on["push"]["paths"] and "Model-Development/matching/**" in on["pull_request"]["paths"]
     assert "workflow_dispatch" in on
 
@@ -199,7 +199,8 @@ def test_smoke_train_uses_synthetic_data_and_no_mlflow(wf):
 def test_train_runs_the_chain_in_order_with_cost_guards(wf):
     run = _run_lines(wf["jobs"]["train"])
     order = ["s03_export_label_set", "s04_build_feature_table.py --project \"$PROJECT\" --estimate-only",
-             "s05_build_hand_features", "s06_train_models", "s08_evaluate_hand", "check_training_outputs.py --require-mlflow"]
+             "s05_build_hand_features", "s06_train_models", "s08_all", "check_training_outputs.py --require-mlflow",
+             "ci/gate.py", "s11_package_final"]
     positions = [run.index(s) for s in order]
     assert positions == sorted(positions)
     assert run.count("--max-gb 2") == 3                     # dry run and both real-run branches
@@ -214,7 +215,26 @@ def test_train_uses_the_released_recipe(wf):
     assert "--table label_set_v2" in job["env"]["S04_ARGS"] and "--feature-set fs2" in job["env"]["S04_ARGS"]
     assert "--tfidf data/label_set_v2_fs2_features.tfidf.pkl" in run
     assert "--data data/label_set_v2_fs2_features.parquet" in run
-    assert '"--ie-gate"' in run                             # s08 scores with the E4 gate, as the release does
+    assert "s08_all.py --exp none --ie-gate" in run         # s08 scores with the E4 gate, as the release does
+
+
+def test_gate_blocks_publishing(wf):
+    steps = wf["jobs"]["train"]["steps"]
+    names = [s.get("name", s.get("uses", "")) for s in steps]
+    gate = next(i for i, s in enumerate(steps) if "ci/gate.py" in s.get("run", ""))
+    publish = next(i for i, s in enumerate(steps) if "s11_package_final" in s.get("run", ""))
+    assert gate < publish, names
+    assert "--report-only" not in steps[gate]["run"]        # a worse model fails the job
+    assert "if" not in steps[gate]                          # the gate always runs after training
+    assert steps[publish]["if"] == "success() && github.event_name == 'push'"
+    assert "--lineage ci" in steps[publish]["run"] and "--semver auto" in steps[publish]["run"]
+    assert "--print-only" not in steps[publish]["run"]
+
+
+def test_smoke_runs_the_gate_report_only(wf):
+    run = _run_lines(wf["jobs"]["smoke-train"])
+    assert "s08_all.py --exp none" in run and "--no-mlflow" in run.split("s08_all.py")[1]
+    assert "ci/gate.py --report-only" in run
 
 
 def test_train_uploads_the_models(wf):

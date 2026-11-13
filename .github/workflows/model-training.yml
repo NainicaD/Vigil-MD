@@ -3,9 +3,12 @@
 #   test         every pull request and push that touches Model-Development/: the offline tests.
 #   smoke-train  same trigger: runs the real training code (s05 + s06) on a small synthetic feature
 #                table and the committed hand sheet. No GCP. Catches broken training code before merge.
-#   train        push to main or same-device-profiling, or by hand (Actions -> model-training ->
-#                Run workflow): the real chain s03 -> s04 -> s05 -> s06 -> s08 on BigQuery data,
-#                then uploads the models, MLflow data and scores as a workflow artifact.
+#   train        push to main, model-dev-integration or same-device-profiling, or by hand (Actions ->
+#                model-training -> Run workflow): the real chain s03 -> s04 -> s05 -> s06 -> s08 on
+#                BigQuery data, then the model gate (ci/gate.py: metric floors, no worse than the
+#                champion, bias gaps; a failure keeps the champion), uploads the models, MLflow data,
+#                scores and gate report as a workflow artifact, and on a push publishes the gated
+#                model to Artifact Registry (s11).
 #
 # GCP access is keyless (Workload Identity Federation): no service-account key is stored in GitHub.
 # Pull requests never get it, so a fork cannot spend the team's query budget. One-time setup and
@@ -14,7 +17,7 @@ name: model-training
 
 on:
   push:
-    branches: [main, same-device-profiling]
+    branches: [main, model-dev-integration, same-device-profiling]
     paths:
       - "Model-Development/matching/**"
       - ".github/workflows/model-training.yml"
@@ -85,6 +88,11 @@ jobs:
         run: python scripts/s06_train_models.py --data data/ci/features.csv --trials 1 --no-mlflow
       - name: Check the outputs
         run: python ci/check_training_outputs.py --title "Smoke training (synthetic data, numbers mean nothing)" --summary "$GITHUB_STEP_SUMMARY"
+      - name: s08 on the hand labels (no MLflow)
+        run: python eval/s08_all.py --exp none --ie-gate --hand-features data/hand_features.csv --no-mlflow
+      # synthetic numbers mean nothing: this only proves the gate code runs; it never fails the job
+      - name: Model gate, report only
+        run: python ci/gate.py --report-only --summary "$GITHUB_STEP_SUMMARY"
 
   train:
     needs: [test, smoke-train]
@@ -166,31 +174,23 @@ jobs:
         run: python scripts/s06_train_models.py --data data/label_set_v2_fs2_features.parquet --manifest labels/label_set_v2.manifest.json --trials "$TRIALS"
 
       - name: s08 score every model on the hand labels at its validation cutoff
-        run: |
-          python - <<'EOF'
-          import json, subprocess, sys
-          cutoffs = json.load(open("data/cutoffs.json"))
-          for name, cutoff in cutoffs.items():
-              if cutoff is None:
-                  print(f"{name}: no 99%-precision cutoff on validation; not scored on the hand labels")
-                  continue
-              track = "baseline" if name.startswith("logreg") else "xgb"
-              cmd = [sys.executable, "eval/s08_evaluate_hand.py", "--scores",
-                     f"data/scores/{name}_hand_scores.csv", "--cutoff", str(cutoff), "--track", track,
-                     "--ie-gate", "--hand-features", "data/hand_features.csv"]
-              print("+", " ".join(cmd), flush=True)
-              subprocess.run(cmd, check=True)
-          EOF
+        run: python eval/s08_all.py --exp none --ie-gate --hand-features data/hand_features.csv --manifest labels/label_set_v2.manifest.json
 
       - name: Check the outputs and write the run summary
         run: python ci/check_training_outputs.py --require-mlflow --title "Training run ${{ github.sha }} (trials=${{ env.TRIALS }})" --summary "$GITHUB_STEP_SUMMARY"
+
+      # Fails the job when the new model is worse than ci/champion_metrics.json or a bias gap is too
+      # wide, so nothing is published and the champion stays (the rollback).
+      - name: Model gate (metrics and bias vs the champion)
+        id: gate
+        run: python ci/gate.py --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload models, MLflow data and scores
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: training-${{ github.run_number }}-${{ github.sha }}
-          retention-days: 30
+          retention-days: 90      # a published version's mlflow=gh-run-<id> annotation points here
           if-no-files-found: warn
           path: |
             Model-Development/matching/mlflow.db
@@ -200,3 +200,13 @@ jobs:
             Model-Development/matching/data/scores/
             Model-Development/matching/data/label_set_v2_fs2_features.manifest.json
             Model-Development/matching/data/label_set_v2_fs2_features.tfidf.pkl
+
+      # Only after the gate passed (a failed step skips this), only on a push. s11 refuses again if
+      # gate.json did not pass or the tree has uncommitted files, and skips an existing version.
+      - uses: google-github-actions/setup-gcloud@v2
+        if: success() && github.event_name == 'push'
+      - name: Publish the gated model to Artifact Registry (s11)
+        if: success() && github.event_name == 'push'
+        run: |
+          python scripts/s11_package_final.py --exp none --semver auto --lineage ci --hand data/hand_features.csv
+          gcloud artifacts versions list --project vigil-md-1792696816 --location us-central1 --repository vigil-md-models --package matching-same-device --sort-by=~createTime --limit 5 | tee -a "$GITHUB_STEP_SUMMARY"

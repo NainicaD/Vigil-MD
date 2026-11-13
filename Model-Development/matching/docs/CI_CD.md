@@ -9,8 +9,8 @@ code runs, and (on the shared branches) retrains the models on the real BigQuery
 | Job | Runs on | Uses GCP | What it does | Time |
 |---|---|---|---|---|
 | `test` | every pull request and push that touches `Model-Development/` | no | `python -m pytest`: the mocked tests | ~2 min |
-| `smoke-train` | same | no | `ci/make_ci_feature_table.py` makes a synthetic feature table, `s05` builds the hand-sheet features from the committed sheet, `s06` trains all four models on the synthetic table (1 trial, no MLflow), `ci/check_training_outputs.py` checks the outputs | ~3 min |
-| `train` | push to `main` or `same-device-profiling` (a merged PR), or **Actions → model-training → Run workflow** | yes | `s03 → s04 → s05 → s06 → s08` on the real label set, checks the outputs, uploads the results | 20-60 min |
+| `smoke-train` | same | no | `ci/make_ci_feature_table.py` makes a synthetic feature table, `s05` builds the hand-sheet features from the committed sheet, `s06` trains all four models on the synthetic table (1 trial, no MLflow), `ci/check_training_outputs.py` checks the outputs, `s08` scores the hand sheet, `ci/gate.py --report-only` proves the gate runs (never fails here) | ~3 min |
+| `train` | push to `main`, `model-dev-integration` or `same-device-profiling` (a merged PR), or **Actions → model-training → Run workflow** | yes | `s03 → s04 → s05 → s06 → s08` on the real label set, checks the outputs, runs the **model gate**, uploads the results; on a push, if the gate passed, **publishes** the model to Artifact Registry (`s11`) | 20-60 min |
 
 - `train` needs `test` and `smoke-train` to pass first.
 - A newer push to the same branch cancels the older run (`concurrency`).
@@ -21,9 +21,11 @@ code runs, and (on the shared branches) retrains the models on the real BigQuery
 
 - **Run page summary:** each model's 99%-precision cutoff, its validation and test metrics, and its
   hand-label metrics from `s08`.
-- **Artifact** `training-<run number>-<commit>` (kept 30 days): `mlflow.db` and `mlruns/` (the
-  MLflow runs, with the XGBoost models), `data/cutoffs.json`, `data/scores/*_hand_scores.csv`, and the
-  feature-table manifest. To look at the runs, download the artifact, then from that folder:
+- **Artifact** `training-<run number>-<commit>` (kept 90 days): `mlflow.db` and `mlruns/` (the
+  MLflow runs, with the XGBoost models), `data/cutoffs.json`, `data/scores/` (hand scores, the s08
+  `*_hand.json`, `gate.json`, `bias_report.md`, `bias_slices.png`), and the feature-table manifest.
+  A version that CI publishes carries the annotation `mlflow=gh-run-<run id>`: this artifact is its
+  MLflow record. To look at the runs, download the artifact, then from that folder:
 
   ```bash
   mlflow ui --backend-store-uri sqlite:///mlflow.db
@@ -31,8 +33,18 @@ code runs, and (on the shared branches) retrains the models on the real BigQuery
 
 - The job **fails** (exit 3) if training leaves incomplete or broken outputs: no `cutoffs.json`, a model
   without scores, scores that do not match the hand sheet, a score outside [0, 1], or a model with no
-  MLflow run. It does **not** fail on a low metric. Whether a model is good enough is decided in the
-  validation step, before anything is pushed to the model registry.
+  MLflow run. That check does not look at metric values.
+- **Model gate** (`ci/gate.py`, rules in `ci/gate.json`, reference numbers in `ci/champion_metrics.json`
+  = release v1.1.0, IE gate `e6_e3b_c1`): `xgb_no_match_kind` must meet the floors (hand recall ≥ 0.99, strict hand precision
+  ≥ 0.90, test precision ≥ 0.98), stay under the ceilings (IE and NON_MATCH accept rates, and the widest
+  precision / recall gap between the `strat_model_usable` and `strat_mfr_size` slices), and be no worse
+  than the champion by more than the tolerances. A ceiling the champion already breaks only warns if the
+  new model is no worse (v1.0.0 broke the precision-gap ceiling with 0.158; v1.1.0's gap is 0).
+  If a rule fails, the job fails and nothing is published: the champion stays. That is the rollback.
+- **Publish** (`s11 --semver auto --lineage ci`, push only, after the gate passed): the next PATCH
+  version of `matching-same-device` in `vigil-md-models`, annotated `mlflow=gh-run-<id>`,
+  `git=git-<sha7>`. `ci/publish.py` refuses again if `gate.json` did not pass or the tree has
+  uncommitted files, and skips a version that already exists.
 
 ## 3. One-time GCP setup (someone with Owner on the project)
 
@@ -64,6 +76,12 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$S
 `dataViewer` at project level is read-only on every dataset. To limit it to `vigil_md_prod` and
 `vigil_md_model`, grant it on those two datasets instead (BigQuery console → dataset → Sharing →
 Permissions). The training chain never writes to BigQuery, so no write role is needed.
+
+Two more roles, for writes outside BigQuery:
+- `s06` (with MLflow) copies the training table to `gs://vigil-md-raw-nd/mlflow/data/`: grant
+  `roles/storage.objectCreator` and `roles/storage.objectViewer` on that bucket.
+- The publish step uploads to Artifact Registry: grant `roles/artifactregistry.writer` on the
+  repository `vigil-md-models` (us-central1).
 
 **2. A workload identity pool and a provider that trusts only this repository:**
 
@@ -115,9 +133,15 @@ python ci/make_ci_feature_table.py --out data/ci/features.csv          # the smo
 python scripts/s05_build_hand_features.py
 python scripts/s06_train_models.py --data data/ci/features.csv --trials 1 --no-mlflow
 python ci/check_training_outputs.py
+python eval/s08_all.py --exp none --ie-gate --hand-features data/hand_features.csv --no-mlflow
+python ci/gate.py --report-only
 ```
 
-The real chain is in the Model-Development README ("The training chain").
+These overwrite `data/hand_features.csv`, `data/scores/` and `data/cutoffs.json`. The same chain in a
+container: see the `Dockerfile` (it runs `ci/train_chain.sh`).
+
+The real chain is in the Model-Development README ("The training chain"). To gate an experiment:
+`python ci/gate.py --scores-dir data/runs/<exp>/scores` after `eval/s08_all.py --exp <exp>`.
 
 ## 6. Changing it
 
@@ -125,4 +149,7 @@ The real chain is in the Model-Development README ("The training chain").
   "FEATURE_COLUMNS has columns this generator does not know".
 - A new model in `s06`: add its name to `EXPECTED_MODELS` in `ci/check_training_outputs.py`.
 - `tests/test_ci_training.py` checks the workflow itself: triggers, that only `train` can reach GCP,
-  the order of the stages, the cost guards, the cache key and the uploaded files.
+  the order of the stages, the cost guards, the cache key, the uploaded files, and that publishing
+  comes after the gate. `tests/test_gate.py` checks the gate, publishing and the IPW weights.
+- The gate rules (`ci/gate.json`): change them only before looking at a new result, and write the date
+  in `_comment`. A new champion: `python ci/gate.py --scores-dir <its scores> --write-champion --source "<release>"`.

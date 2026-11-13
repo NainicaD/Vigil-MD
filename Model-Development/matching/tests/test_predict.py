@@ -50,6 +50,14 @@ def test_gate_beats_a_high_score_and_cutoff_decides_the_rest(bundle):
     assert out["score"].iloc[0] > 0.5 > out["score"].iloc[1]
 
 
+def test_bundle_applies_the_gate_version_it_names(bundle):
+    c1 = dict(row(0.95, kind=MatchKind.CONTAINS.value), feat_contains_at_end="False", feat_product_code_agree="False")
+    feats = pd.DataFrame([c1])
+    assert bundle.decide(feats)["decision"].tolist() == [predict.MATCH]      # no "ie_gate": v1.0.0's e6_e3b
+    bundle.meta["ie_gate"] = "e6_e3b_c1"
+    assert bundle.decide(feats)["decision"].tolist() == [predict.IE]
+
+
 def test_features_use_the_bundle_encoder_for_the_cosine(bundle):
     side = DeviceSide("medtronic", "pacemaker", "A1", None, ("DXY",))
     feats = bundle.features(side, side, MatchContext(alias_pairs=frozenset(), n_dis_for_model=1,

@@ -22,7 +22,7 @@ from scipy.stats import beta
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from vigil_model.same_device_features import insufficient_evidence  # noqa: E402
+from vigil_model.same_device_features import IE_GATE_VERSION, IE_GATE_VERSIONS, insufficient_evidence  # noqa: E402
 from vigil_model.tracking import lineage_tags, tracking_uri  # noqa: E402
 
 parser = argparse.ArgumentParser(description="Evaluate scores on the hand-labeled sheet")
@@ -35,9 +35,12 @@ parser.add_argument("--threshold-version", default="t1")
 parser.add_argument("--normalization-version", default="n1")
 parser.add_argument("--ie-gate", action="store_true",
                     help="E4: rows the IE gate catches are never accepted (same_device_features.insufficient_evidence)")
+parser.add_argument("--ie-gate-version", default=IE_GATE_VERSION, choices=IE_GATE_VERSIONS,
+                    help="with --ie-gate: which gate (e6_e3b = v1.0.0's)")
 parser.add_argument("--hand-features", default=ROOT / "data/hand_features.csv", help="feat_* columns for --ie-gate")
 parser.add_argument("--exp", help="experiment id from docs/EXPERIMENTS.md (default: $VIGIL_EXP)")
 parser.add_argument("--no-mlflow", action="store_true")
+parser.add_argument("--out-json", help="also write every metric to this file (read by ci/gate.py)")
 args = parser.parse_args()
 
 
@@ -95,7 +98,7 @@ if args.ie_gate:
     feats = pd.read_csv(args.hand_features, dtype=str).set_index("pair_id")
     absent = set(cands["pair_id"]) - set(feats.index)
     assert not absent, f"{len(absent)} candidate rows have no features in {args.hand_features}"
-    gate = cands["pair_id"].map(lambda p: insufficient_evidence(feats.loc[p]))
+    gate = cands["pair_id"].map(lambda p: insufficient_evidence(feats.loc[p], args.ie_gate_version))
     cands.loc[gate, "score"] = float("-inf")   # routed to IE: below any cutoff, still counts as a missed MATCH
     gated = int(gate.sum())
     print(f"IE gate caught {gated} candidate rows: {cands.loc[gate, 'label'].value_counts().to_dict()}")
@@ -151,7 +154,29 @@ if len(false_pos):
     cols = ["pair_id", "hard_case_reason", "cand_match_kind", "score", "cand_split"]
     print(false_pos[cols].to_string(index=False))
 
-# --- MLflow --------------------------------------------------------------------------------------
+# --- outputs -------------------------------------------------------------------------------------
+non_match = int((scored["y"] == 0).sum())
+flat = {"ie_count": len(ie), "ie_accepted": ie_accepted, "ie_accept_rate": ie_accept_rate, "ie_gated": gated,
+        "retrieval_recall_at1": retrieval_at1,
+        "non_match_accept_rate": m_all["false_pos"] / non_match if non_match else float("nan")}
+for scope, m in (("all", m_all), ("strict", m_strict)):
+    for k, v in m.items():
+        flat[f"{scope}_{k}"] = v
+for name, m in slice_metrics.items():
+    flat[f"slice_{name}_precision"] = m["precision"]
+    flat[f"slice_{name}_recall"] = m["recall"]
+    flat[f"slice_{name}_accepted"] = m["accepted"]
+    flat[f"slice_{name}_n"] = m["pairs"]
+    flat[f"slice_{name}_matches"] = m["matches"]
+flat = {k: float(v) for k, v in flat.items() if pd.notna(v)}
+
+if args.out_json:
+    Path(args.out_json).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.out_json).write_text(json.dumps(
+        {"model_name": model_name, "cutoff": args.cutoff, "ie_gate": args.ie_gate,
+         "ie_gate_version": args.ie_gate_version if args.ie_gate else "off", "metrics": flat}, indent=2))
+    print(f"\nwrote {args.out_json}")
+
 if args.no_mlflow:
     print("\nSkipped MLflow logging")
 else:
@@ -162,23 +187,12 @@ else:
         with open(args.manifest) as f:
             manifest = json.load(f)
 
-    flat = {"ie_count": len(ie), "ie_accepted": ie_accepted, "ie_accept_rate": ie_accept_rate, "ie_gated": gated,
-            "retrieval_recall_at1": retrieval_at1}
-    for scope, m in (("all", m_all), ("strict", m_strict)):
-        for k, v in m.items():
-            flat[f"{scope}_{k}"] = v
-    for name, m in slice_metrics.items():
-        flat[f"slice_{name}_precision"] = m["precision"]
-        flat[f"slice_{name}_recall"] = m["recall"]
-        flat[f"slice_{name}_accepted"] = m["accepted"]
-    flat = {k: float(v) for k, v in flat.items() if pd.notna(v)}
-
     mlflow.set_tracking_uri(tracking_uri())
     mlflow.set_experiment("vigil-md-linkage")
     with mlflow.start_run(run_name=f"{model_name}_hand"):
         mlflow.set_tags({
             **lineage_tags(args.manifest, args.exp),
-            "ie_gate": "e6_e3b" if args.ie_gate else "off",
+            "ie_gate": args.ie_gate_version if args.ie_gate else "off",
             "track": args.track, "model_name": model_name, "eval_set": "hand_label_sample_v1",
             "threshold_version": args.threshold_version, "normalization_version": args.normalization_version,
             "constants_sha256": manifest.get("constants_sha256", "unknown"),

@@ -1,0 +1,35 @@
+{
+  "run_name": "st-models",
+  "data": "data/embedding/vigil-emb-v1",
+  "fields": [
+    "mfr",
+    "name",
+    "model",
+    "catalog",
+    "pc"
+  ],
+  "results": {
+    "st:sentence-transformers/all-MiniLM-L6-v2": {
+      "recall@1": 0.15535,
+      "recall@5": 0.2771,
+      "recall@10": 0.3289,
+      "recall@50": 0.44645,
+      "mrr": 0.21293577101438127,
+      "n_queries": 20000,
+      "n_index": 254369,
+      "encode_seconds": 331.0,
+      "search_seconds": 58.5
+    },
+    "st:BAAI/bge-small-en-v1.5": {
+      "recall@1": 0.24805,
+      "recall@5": 0.378,
+      "recall@10": 0.43365,
+      "recall@50": 0.56285,
+      "mrr": 0.3096224031538168,
+      "n_queries": 20000,
+      "n_index": 254369,
+      "encode_seconds": 509.8,
+      "search_seconds": 52.0
+    }
+  }
+}
