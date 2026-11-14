@@ -1,12 +1,14 @@
 """Artifact Registry publishing for scripts/s11_package_final.py (Guidelines 2.6, 7.4, 8.7).
 
 publish() refuses (exit 1) when ci/gate.py did not pass, refuses (exit 2) when the working tree has
-uncommitted files, skips (exit 0) a version that already exists, then uploads the bundle and writes
-the mlflow/git annotations. print_only=True only prints the commands, as s11 did before.
+uncommitted files, skips (exit 0) a version that already exists or a bundle that decides exactly like
+the newest published version, then uploads the bundle and writes the mlflow/git annotations.
+print_only=True only prints the commands, as s11 did before.
 """
 import json
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 PROJECT, LOCATION, REPOSITORY = "vigil-md-1792696816", "us-central1", "vigil-md-models"
@@ -33,15 +35,38 @@ def dirty_files(root: Path) -> list[str]:
                           check=True).stdout.splitlines()
 
 
-def next_patch(package: str, run=subprocess.run) -> str:
-    """Newest v<MAJOR.MINOR.PATCH> in the registry with PATCH + 1 (routine retraining)."""
+def newest(package: str, run=subprocess.run) -> tuple[int, int, int] | None:
+    """The highest v<MAJOR.MINOR.PATCH> in the registry, or None."""
     out = run(["gcloud", "artifacts", "versions", "list", *ar_args(package), "--format=value(name)"],
               capture_output=True, text=True, check=True).stdout
     found = [tuple(map(int, m.groups())) for m in re.finditer(r"v(\d+)\.(\d+)\.(\d+)\s*$", out, re.M)]
-    if not found:
+    return max(found) if found else None
+
+
+def next_patch(package: str, run=subprocess.run) -> str:
+    """Newest version in the registry with PATCH + 1 (routine retraining)."""
+    top = newest(package, run)
+    if top is None:
         raise SystemExit(f"no v<semver> version of {package} in the registry: pass --semver")
-    major, minor, patch = max(found)
+    major, minor, patch = top
     return f"{major}.{minor}.{patch + 1}"
+
+
+def decisions(manifest: dict, meta: dict) -> tuple:
+    """What decides a pair: the model and encoder files, the cutoff and the IE gate version. The gate counts
+    because v1.1.0 reused v1.0.0's files with a new gate, and that is a real change."""
+    return (manifest["sha256"].get("model.json"), manifest["sha256"].get("tfidf.pkl"),
+            meta.get("cutoff"), meta.get("ie_gate", "e6_e3b"))
+
+
+def published_decisions(version: str, package: str, run=subprocess.run) -> tuple:
+    """decisions() of a published version, from its manifest.json and meta.json only."""
+    with tempfile.TemporaryDirectory() as tmp:
+        for name in ("manifest.json", "meta.json"):
+            run(["gcloud", "artifacts", "generic", "download", *ar_args(package), "--version", version,
+                 "--name", name, "--destination", tmp], capture_output=True, text=True, check=True)
+        read = {name: json.loads(next(Path(tmp).rglob(name)).read_text()) for name in ("manifest.json", "meta.json")}
+    return decisions(read["manifest.json"], read["meta.json"])
 
 
 def publish(bundle_dir: Path, version: str, package: str, annotations: dict, *, gate_json: Path, root: Path,
@@ -70,6 +95,14 @@ def publish(bundle_dir: Path, version: str, package: str, annotations: dict, *, 
     if exists.returncode == 0:
         print(f"{package} {version} is already published: skipped")
         return 0
+    top = newest(package, run)
+    if top is not None:
+        latest = "v{}.{}.{}".format(*top)
+        mine = decisions(json.loads((bundle_dir / "manifest.json").read_text()),
+                         json.loads((bundle_dir / "meta.json").read_text()))
+        if published_decisions(latest, package, run) == mine:
+            print(f"not published: same model, encoder, cutoff and IE gate as {package} {latest}: skipped")
+            return 0
     for cmd in (upload, annotate):
         print("+ " + " ".join(cmd), flush=True)
         run(cmd, check=True)

@@ -66,5 +66,6 @@
     "bias_max_gap_recall": 0.0
   },
   "source": "final_v1 + IE gate e6_e3b_c1 (release v1.1.0, MLflow matching-same-device v2)",
-  "written": "2026-11-13"
+  "written": "2026-11-13",
+  "_note": "Hand metrics are optimistic: the C1 rule in IE gate e6_e3b_c1 was written after looking at v1.0.0's 3 false positives on this same hand sheet, which is the only hand set (hand batch 2 dropped). Test-split metrics are not affected."
 }
