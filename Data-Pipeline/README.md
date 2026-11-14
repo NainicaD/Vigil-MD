@@ -134,6 +134,10 @@ check_manifest ─┬─ fetch.<changed sources> ─ validate_gcs ─ log_summar
                                                                             after every source: build_summaries, build_links (only tables whose inputs changed)
 ```
 
+![Graph view of a vigil_md_acquisition run in Airflow](docs/images/acquisition_dag.png)
+
+*A daily `vigil_md_acquisition` run in Airflow: GUDID had no new release, so `fetch_gudid` was skipped; the three changed sources were fetched and checked, and `trigger_load` started the load. `no_update` and `alert_on_failure` were skipped because there was work to do and nothing failed.*
+
 When does `vigil_md_load` run?
 
 | Day | Loading run? |
