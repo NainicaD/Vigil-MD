@@ -203,6 +203,8 @@ jobs:
           echo "revision=$(describe --format='value(status.latestCreatedRevisionName)')" >> "$GITHUB_OUTPUT"
           url=$(describe --format=json | python -c "import json, os, sys; print(next(t['url'] for t in json.load(sys.stdin)['status']['traffic'] if t.get('tag') == os.environ['REV_TAG']))")
           echo "url=$url" >> "$GITHUB_OUTPUT"
+          # a token for a tag URL must still name the service's main URL as its audience
+          echo "audience=$(describe --format='value(status.url)')" >> "$GITHUB_OUTPUT"
 
       - name: Identity token for the private service
         id: idtoken
@@ -211,7 +213,7 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOY_SA }}
           token_format: id_token
-          id_token_audience: ${{ steps.deploy.outputs.url }}
+          id_token_audience: ${{ steps.deploy.outputs.audience }}
           id_token_include_email: true
 
       - name: Check the new revision (router version, dataset, index, a search)
