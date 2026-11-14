@@ -1,0 +1,51 @@
+{
+  "status": "answered",
+  "text": "**AcmeAir CPAP** (Example Medical Inc.): 1,234 reports linked by UDI in FDA MAUDE (2021–2025).\n\n**Reports by event type:** 3 deaths, 120 injuries and 1,111 malfunctions.\nReports per year (latest 5 years with reports): 2021: 180, 2022: 260, 2023: 310, 2024: 280, 2025: 204.\n\n**Most reported device problems:** Example Problem A (410), Example Problem B (220) and Example Problem C (95).\n**Most reported patient problems:** Example Symptom X (60), Example Symptom Y (31) and Example Symptom Z (12).\n900 said there was no patient harm.\n\n**Recalls:** 2 found whose product description names this device. Newest first:\n- Class II, 2024-05-02 (ongoing): \"Example recall reason (mock data).\" Action: \"Example corrective action (mock data).\"\n- Class III, 2022-09-14 (terminated): \"Another example recall reason (mock data).\"\n\nMAUDE reports are sent in by manufacturers, health professionals and patients. A report does not prove that the device caused the event, and report counts are not failure rates.\nReports without a UDI are not linked to a device, so the real number can be higher.\n**Sources:** FDA MAUDE and GUDID, FDA MAUDE reports, MAUDE problem codes, FDA recalls and enforcement (BigQuery, data as of 2026-11-08).",
+  "sections": [
+    {
+      "kind": "headline",
+      "entity": "dev:000000acme01",
+      "text": "**AcmeAir CPAP** (Example Medical Inc.): 1,234 reports linked by UDI in FDA MAUDE (2021–2025)."
+    },
+    {
+      "kind": "counts",
+      "entity": "dev:000000acme01",
+      "text": "**Reports by event type:** 3 deaths, 120 injuries and 1,111 malfunctions.\nReports per year (latest 5 years with reports): 2021: 180, 2022: 260, 2023: 310, 2024: 280, 2025: 204."
+    },
+    {
+      "kind": "problems",
+      "entity": "dev:000000acme01",
+      "text": "**Most reported device problems:** Example Problem A (410), Example Problem B (220) and Example Problem C (95).\n**Most reported patient problems:** Example Symptom X (60), Example Symptom Y (31) and Example Symptom Z (12).\n900 said there was no patient harm."
+    },
+    {
+      "kind": "recalls",
+      "entity": "dev:000000acme01",
+      "text": "**Recalls:** 2 found whose product description names this device. Newest first:\n- Class II, 2024-05-02 (ongoing): \"Example recall reason (mock data).\" Action: \"Example corrective action (mock data).\"\n- Class III, 2022-09-14 (terminated): \"Another example recall reason (mock data).\""
+    },
+    {
+      "kind": "footer",
+      "text": "MAUDE reports are sent in by manufacturers, health professionals and patients. A report does not prove that the device caused the event, and report counts are not failure rates.\nReports without a UDI are not linked to a device, so the real number can be higher.\n**Sources:** FDA MAUDE and GUDID, FDA MAUDE reports, MAUDE problem codes, FDA recalls and enforcement (BigQuery, data as of 2026-11-08)."
+    }
+  ],
+  "search": {
+    "status": "resolved",
+    "phrase": "acmeair",
+    "matches": [
+      {
+        "type": "device",
+        "id": "dev:000000acme01",
+        "title": "AcmeAir CPAP",
+        "score": 1.0
+      }
+    ]
+  },
+  "entities": [
+    {
+      "type": "device",
+      "id": "dev:000000acme01",
+      "title": "AcmeAir CPAP",
+      "found": true,
+      "total_reports": 1234
+    }
+  ]
+}

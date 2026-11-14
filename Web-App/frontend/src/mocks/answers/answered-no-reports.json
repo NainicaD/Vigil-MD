@@ -1,0 +1,41 @@
+{
+  "status": "answered",
+  "text": "No FDA MAUDE reports were found for **Acme Infusion Pump**.\n\n**Recalls:** none found whose product description names this device.\n\nMAUDE reports are sent in by manufacturers, health professionals and patients. A report does not prove that the device caused the event, and report counts are not failure rates.\nReports without a UDI are not linked to a device, so the real number can be higher.\n**Sources:** FDA MAUDE and GUDID, FDA MAUDE reports, MAUDE problem codes, FDA recalls and enforcement (BigQuery, data as of 2026-11-08).",
+  "sections": [
+    {
+      "kind": "headline",
+      "entity": "dev:000000acme02",
+      "text": "No FDA MAUDE reports were found for **Acme Infusion Pump**."
+    },
+    {
+      "kind": "recalls",
+      "entity": "dev:000000acme02",
+      "text": "**Recalls:** none found whose product description names this device."
+    },
+    {
+      "kind": "footer",
+      "text": "MAUDE reports are sent in by manufacturers, health professionals and patients. A report does not prove that the device caused the event, and report counts are not failure rates.\nReports without a UDI are not linked to a device, so the real number can be higher.\n**Sources:** FDA MAUDE and GUDID, FDA MAUDE reports, MAUDE problem codes, FDA recalls and enforcement (BigQuery, data as of 2026-11-08)."
+    }
+  ],
+  "search": {
+    "status": "resolved",
+    "phrase": "acme infusion",
+    "matches": [
+      {
+        "type": "device",
+        "id": "dev:000000acme02",
+        "title": "Acme Infusion Pump",
+        "score": 1.0
+      }
+    ]
+  },
+  "entities": [
+    {
+      "type": "device",
+      "id": "dev:000000acme02",
+      "title": "Acme Infusion Pump",
+      "found": true,
+      "total_reports": 0
+    }
+  ]
+}

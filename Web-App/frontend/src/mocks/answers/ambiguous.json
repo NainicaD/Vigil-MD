@@ -1,0 +1,29 @@
+{
+  "status": "ambiguous",
+  "text": "\"acme pumps\" matches more than one entry. Which one do you mean?\n- Acme Infusion Pump (0 reports)\n- Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations), Acme Diabetes Care Holdings, Incorporated, a subsidiary of Example Medical Technologies International (98,765 reports)",
+  "sections": [
+    {
+      "kind": "ambiguous",
+      "text": "\"acme pumps\" matches more than one entry. Which one do you mean?\n- Acme Infusion Pump (0 reports)\n- Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations), Acme Diabetes Care Holdings, Incorporated, a subsidiary of Example Medical Technologies International (98,765 reports)"
+    }
+  ],
+  "search": {
+    "status": "ambiguous",
+    "phrase": "acme pumps",
+    "matches": [
+      {
+        "type": "device",
+        "id": "dev:000000acme02",
+        "title": "Acme Infusion Pump",
+        "score": 0.93
+      },
+      {
+        "type": "device",
+        "id": "dev:000000acme03",
+        "title": "Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations)",
+        "score": 0.93
+      }
+    ]
+  },
+  "entities": []
+}

@@ -1,4 +1,5 @@
-# Runs the unit tests on GitHub's servers for every pull request and every push to main.
+# Runs the unit tests on GitHub's servers for every pull request and every push to main:
+# the data pipeline, the chatbot (tests and the model gate) and the website.
 # No GCP credentials: pytest.ini excludes the integration tests (-m "not integration"),
 # the data-contract tests skip without the DVC samples, and the DAG tests skip
 # without Airflow. -rs prints the reason for each skip.
@@ -8,6 +9,11 @@ on:
   push:
     branches: [main]
   pull_request:
+
+# A newer push to the same branch or PR cancels the run it replaces.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pytest:
@@ -29,3 +35,73 @@ jobs:
       - name: Run the tests
         working-directory: Data-Pipeline
         run: pytest -q -rs
+
+  chatbot-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Model-Development/chatbot/requirements.txt
+
+      - name: Install dependencies
+        working-directory: Model-Development/chatbot
+        run: pip install -r requirements.txt
+
+      - name: Run the tests
+        working-directory: Model-Development/chatbot
+        run: pytest -q -rs
+
+      # Model gate: retrain the router from the code in this commit and compare it with the
+      # champion's numbers in git (query_router/champion_metrics.json) on the hand-written test
+      # set. Fails if safety or accuracy got worse beyond gate.json's tolerances, so a change
+      # that makes the router worse cannot merge and the champion stays. MLflow writes to a
+      # throwaway store on the runner.
+      - name: Retrain the router and run the model gate
+        working-directory: Model-Development/chatbot
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///${{ runner.temp }}/mlflow.db
+          VIGIL_MLFLOW_ARTIFACTS: ${{ runner.temp }}/mlflow-artifacts
+        run: |
+          python -m query_router.generate
+          python -m query_router.train
+          python -m query_router.gate --candidate models/baseline --regression-only
+
+  # The website (Web-App/frontend/): from a clean checkout, as the Docker image builds it, so a
+  # file that never reached git (as src/lib/ once did) fails here and not only in Docker.
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Web-App/frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Web-App/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Build (real API, no example data, as in the Docker image)
+        env:
+          VITE_USE_MOCKS: "false"
+          VITE_API_BASE_URL: /api
+        run: npm run build

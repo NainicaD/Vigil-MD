@@ -1,0 +1,23 @@
+{
+  "status": "error",
+  "text": "I can't reach the FDA data right now. Please try again in a few minutes.",
+  "sections": [
+    {
+      "kind": "error",
+      "text": "I can't reach the FDA data right now. Please try again in a few minutes."
+    }
+  ],
+  "search": {
+    "status": "resolved",
+    "phrase": "acmeair",
+    "matches": [
+      {
+        "type": "device",
+        "id": "dev:000000acme01",
+        "title": "AcmeAir CPAP",
+        "score": 1.0
+      }
+    ]
+  },
+  "entities": []
+}

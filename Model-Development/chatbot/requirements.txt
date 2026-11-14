@@ -1,0 +1,22 @@
+# Python 3.10+ (CI uses 3.12). Runs on a CPU. The query layer reads BigQuery; the tests do not.
+numpy>=1.26
+scikit-learn==1.7.2
+joblib>=1.4
+
+# Query layer (BigQuery; same version as Data-Pipeline/requirements.txt)
+google-cloud-bigquery==3.46.2
+
+# Testing
+pytest==9.1.1
+
+# Experiment tracking and model registry (conventions: ../MLFLOW.md)
+mlflow==3.18.0
+
+# Router tuning and the sensitivity plot (query_router/tune.py, sensitivity.py)
+optuna==4.5.0
+matplotlib==3.10.7
+
+# The website's API (api/app.py); httpx only for FastAPI's test client
+fastapi==0.162.2
+uvicorn==0.54.0
+httpx==0.28.1

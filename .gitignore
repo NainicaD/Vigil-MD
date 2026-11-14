@@ -3,6 +3,9 @@ Data-Pipeline/data/raw/*
 # keep the DVC pointer visible to git and DVC
 !Data-Pipeline/data/raw/samples.dvc
 
+# MLflow store for Model-Development (one per machine; see Model-Development/MLFLOW.md)
+Model-Development/mlflow/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -240,3 +243,23 @@ __marimo__/
 /*.ndjson
 # Per-user Claude Code settings
 .claude/settings.local.json
+# Airflow logs and data written at the repo root by docker compose
+/data/
+/logs/
+# Handovers are sent to a person, not committed: they go stale and contradict the docs
+HANDOFF*
+# Matching workstream local outputs (Model-Development/matching/). Scoped to that folder: as
+# Model-Development/**/... these rules also hid Model-Development/chatbot/data/, where the
+# chatbot's test sets live (the same trap as the website's src/lib/).
+Model-Development/matching/**/data/
+Model-Development/matching/**/*.csv
+Model-Development/matching/**/*.parquet
+Model-Development/**/mlflow.db
+mlruns/
+mlartifacts/
+# Short-lived GCP credentials written by google-github-actions/auth in CI (never commit)
+gha-creds-*.json
+
+# The website's source is all code: the Python template rules above (lib/, build/, env/,
+# var/, parts/, ...) must not hide any folder under it. Last, so it overrides them.
+!Web-App/frontend/src/**/

@@ -1,0 +1,8 @@
+shape,n_unmatched,n_would_match_normalized
+well_formed_not_in_gudid,2503355,0
+unexpected_chars,838,0
+gs1_prefix_(01),67,0
+longer_than_23,37,0
+shorter_than_6,29,0
+gs1_prefix_01_no_parens,19,19
+lower_case,1,1

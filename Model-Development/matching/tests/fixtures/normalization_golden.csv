@@ -1,0 +1,49 @@
+# Golden fixture: Python / BigQuery parity (H4). Empty cell = NULL, <EMPTY> = empty string, \uXXXX = that character.
+# Expected columns are written by golden_fixture.py --regen. Review them by hand. Verify on BigQuery: build_labels.py --fixture
+# constants_sha256=3eb8385ec6b5f256954788701c8f79a001a66b33419c1738024d280931ece92e
+case_id,note,mfr,m_model_raw,m_cat_raw,g_model_raw,g_cat_raw,mdr_report_key,device_seq,udi_di,role,m_model_key,m_cat_key,g_model_key,g_cat_key,match_kind,device_key,split,pair_id
+c01,plain same key,acme,GP-200,,gp 200,,1000001,1,00811111111101,udi_link,GP200,,GP200,,same_model_key,acme|GP200,train,0d548ee993179aff80b1ec9ec24b5f54
+c02,hyphen collision keeps the same key,acme,142-200,,14-2200,,1000002,1,00811111111102,udi_link,142200,,142200,,same_model_key,acme|142200,test,127bc4f337098ae57e71eb326c29956b
+c03,maude model equals gudid catalog,acme,ABC123,,X9,abc-123,1000003,1,00811111111103,udi_link,ABC123,,X9,ABC123,maude_model_eq_gudid_catalog,acme|X9,train,0710b625146266ae0d91b9a1d68772f2
+c04,maude catalog equals gudid model,acme,ZZ9,Q-77,q77,,1000004,2,00811111111104,suffix_sibling,ZZ9,Q77,Q77,,maude_catalog_eq_gudid_model,acme|Q77,train,64e9c98ff36032cda6d4d3c5445dfebc
+c05,catalog equals catalog,acme,AA1,C-5,BB2,c5,1000005,1,00811111111105,udi_link,AA1,C5,BB2,C5,catalog_eq_catalog,acme|BB2,train,ddf7269087096c475e6d5c954d1f65a9
+c06,maude model N/A is missing,acme,N/A,,ABC,,1000006,1,00811111111106,same_labeler_hard,NA,,ABC,,maude_model_missing_or_placeholder,acme|ABC,test,ad795687db0c7f9aeacbc2419f827b47
+c07,maude model UNKNOWN is missing,acme,UNKNOWN,,ABC,,1000007,1,00811111111107,same_labeler_hard,UNKNOWN,,ABC,,maude_model_missing_or_placeholder,acme|ABC,test,ca4e9c379f70bc64a2556ec367adb870
+c08,maude model zeros is missing,acme,000,,ABC,,1000008,1,00811111111108,same_labeler_hard,000,,ABC,,maude_model_missing_or_placeholder,acme|ABC,test,424cb3d80343a352f816b8ae99dd395c
+c09,maude model NULL is missing,acme,,,ABC,,1000009,1,00811111111109,same_labeler_hard,,,ABC,,maude_model_missing_or_placeholder,acme|ABC,test,876b690caffe044c8b38dfcee5ee51aa
+c10,maude model one character is missing,acme,A,,ABC,,1000010,1,00811111111110,same_labeler_hard,A,,ABC,,maude_model_missing_or_placeholder,acme|ABC,test,c433669e8024cda5f9f8ffabe1e96b91
+c11,gudid model empty,acme,ABC123,,<EMPTY>,,1000011,1,00811111111111,udi_link,ABC123,,<EMPTY>,,gudid_model_missing,,,071086d6a81bd1dfcb4d3deba70afa7b
+c12,gudid model placeholder is not missing,acme,ABC123,,N/A,,1000012,1,00811111111112,udi_link,ABC123,,NA,,conflict,,,6028fb8acc2b19495a06dfc226e4393c
+c13,prefix related,acme,GP200,,GP200S,,1000013,1,00811111111113,suffix_sibling,GP200,,GP200S,,prefix_related,acme|GP200S,train,972c6655056359abe2ffe1d3d218faa6
+c14,prefix related reversed,acme,GP200S,,GP200,,1000014,1,00811111111114,suffix_sibling,GP200S,,GP200,,prefix_related,acme|GP200,train,2e8e65adea08355b7e429e1097238f9f
+c15,contains,acme,200,,GP2000,,1000015,1,00811111111115,udi_link,200,,GP2000,,contains,acme|GP2000,train,78b317b37f8f4137aadc2d3ac3d49783
+c16,contains needs 3 characters,acme,20,,GP200,,1000016,1,00811111111116,udi_link,20,,GP200,,conflict,acme|GP200,train,684bda34b9d6542a4f647239130eff0a
+c17,plain conflict,acme,ABC,,XYZ,,1000017,1,00811111111117,random_labeler,ABC,,XYZ,,conflict,acme|XYZ,train,3b7b6630be6bebe92e5e7ab96cee7365
+c18,tab and punctuation are stripped,acme,G P\u00092-00,,GP200,,1000018,1,00811111111118,udi_link,GP200,,GP200,,same_model_key,acme|GP200,train,69c133351f61252cca71fcb9e231a1d4
+c19,vertical tab inside is kept (RE2 whitespace has no vertical tab),acme,GP\u000b200,,GP200,,1000019,1,00811111111119,udi_link,GP\u000b200,,GP200,,conflict,acme|GP200,train,aaa82e93bbc6e81c895602aeabc6160b
+c20,non-breaking space inside is kept,acme,GP\u00a0200,,GP200,,1000020,1,00811111111120,udi_link,GP\u00a0200,,GP200,,conflict,acme|GP200,train,9ea3a0130a7d32999c144cd8f9446f8d
+c21,PROBE non-breaking space at the ends (str.strip vs TRIM),acme,\u00a0GP200\u00a0,,GP200,,1000021,1,00811111111121,udi_link,GP200,,GP200,,same_model_key,acme|GP200,train,ef03ec92995b89eebc044315c2bb3489
+c22,accented letters,acme,caf\u00e9-1,,CAF\u00c9 1,,1000022,1,00811111111122,udi_link,CAF\u00c91,,CAF\u00c91,,same_model_key,acme|CAF\u00c91,train,48af46050c0b6b810376f864b47fcc05
+c23,PROBE sharp s uppercases to SS in Python,acme,stra\u00dfe1,,STRASSE1,,1000023,1,00811111111123,udi_link,STRASSE1,,STRASSE1,,same_model_key,acme|STRASSE1,train,9ffead50c09e0f6dae3aa72d1eccabb8
+c24,dots slashes underscores,acme,GP.200/A_B,,gp200ab,,1000024,1,00811111111124,udi_link,GP200AB,,GP200AB,,same_model_key,acme|GP200AB,train,fa22c07d6d0e9d337d26745b61682cfc
+c25,labeler NULL,,ABC123,,ABC123,,1000025,1,00811111111125,udi_link,ABC123,,ABC123,,same_model_key,|ABC123,train,7dfee723a1028972dcdaaeb107ae1bcc
+c26,device key falls back to the catalog,acme,ABC,,N/A,CAT-9,1000026,1,00811111111126,udi_link,ABC,,NA,CAT9,conflict,acme|CAT9,train,0aa18c163baac0c81f2da7280d22b24a
+c27,device key is NULL with no identifier,acme,ABC,,,<EMPTY>,1000027,1,00811111111127,udi_link,ABC,,,<EMPTY>,gudid_model_missing,,,51a7af0fa05e3805477d059ce8ef6fb9
+c28,device_seq NULL,acme,ABC,,ABC,,1000028,,00811111111128,udi_link,ABC,,ABC,,same_model_key,acme|ABC,test,d996472d9184004363bd7fd9a1a1d284
+c29,device_seq zero,acme,ABC,,ABC,,1000029,0,00811111111129,udi_link,ABC,,ABC,,same_model_key,acme|ABC,test,d9ce38652742a20b0a216f8a0631a9eb
+c30,maude catalog placeholder does not count,acme,ABC,UNK,UNK,,1000030,1,00811111111130,udi_link,ABC,UNK,UNK,,conflict,,,31ef4ff3f12be86a4a1d0319742ab06a
+c31,maude model only a space,acme, ,,ABC,,1000031,1,00811111111131,same_labeler_hard,<EMPTY>,,ABC,,maude_model_missing_or_placeholder,acme|ABC,test,d1311451824a029a29e3722b1bd90085
+c32,gudid model only blanks,acme,ABC,, \u0009 ,,1000032,1,00811111111132,udi_link,ABC,,<EMPTY>,,gudid_model_missing,,,2d7092d993c0e7eddca395fdef298b66
+c33,split probe 1,acme,A100,,A100,,1000033,1,00811111111133,udi_link,A100,,A100,,same_model_key,acme|A100,train,d81557991347123aa157f421a0aa0c79
+c34,split probe 2,globex,B200,,B200,,1000034,1,00811111111134,udi_link,B200,,B200,,same_model_key,globex|B200,train,1950ecf0b185a4836e54f70c37312062
+c35,split probe 3,initech,C300,,C300,,1000035,1,00811111111135,udi_link,C300,,C300,,same_model_key,initech|C300,train,26e798b7a9341ac1ab0ebac9c3ed980b
+c36,split probe 4,umbrella,D400,,D400,,1000036,1,00811111111136,udi_link,D400,,D400,,same_model_key,umbrella|D400,train,866a51ed3220189086da2633752ec5cb
+c37,split probe 5,hooli,E500,,E500,,1000037,1,00811111111137,udi_link,E500,,E500,,same_model_key,hooli|E500,train,ef7748c042a16526b122c359ff6a0463
+c38,split probe 6,stark,F600,,F600,,1000038,1,00811111111138,udi_link,F600,,F600,,same_model_key,stark|F600,train,4550f72b1f92978373cf374387b5ffb9
+c39,split probe 7,wayne,G700,,G700,,1000039,1,00811111111139,udi_link,G700,,G700,,same_model_key,wayne|G700,train,d45c1933fdc30fa20e24a0718f51b46e
+c40,split probe 8,wonka,H800,,H800,,1000040,1,00811111111140,udi_link,H800,,H800,,same_model_key,wonka|H800,test,3a1217954d798a0e8d5e68077b4c8a41
+c41,split probe 9,cyberdyne,J900,,J900,,1000041,1,00811111111141,udi_link,J900,,J900,,same_model_key,cyberdyne|J900,test,84c7f97baa783d5217d09ee1650189a3
+c42,split probe 10,soylent,K110,,K110,,1000042,1,00811111111142,udi_link,K110,,K110,,same_model_key,soylent|K110,train,68f31c2db5b24df9848e38f358817d13
+c43,split probe 11,tyrell,L220,,L220,,1000043,1,00811111111143,udi_link,L220,,L220,,same_model_key,tyrell|L220,train,07545971d000c0432aef56b4ff9ed56f
+c44,split probe 12,oscorp,M330,,M330,,1000044,1,00811111111144,udi_link,M330,,M330,,same_model_key,oscorp|M330,test,c96b01b10a5b5cafe69754521f248ab7
+c45,PROBE vertical tab at the ends (str.strip vs TRIM),acme,\u000bGP200\u000b,,GP200,,1000045,1,00811111111145,udi_link,GP200,,GP200,,same_model_key,acme|GP200,train,e9b635dc6037fc782d9341457c5e05d8

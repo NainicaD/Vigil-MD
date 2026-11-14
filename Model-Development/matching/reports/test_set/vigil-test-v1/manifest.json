@@ -1,0 +1,113 @@
+{
+  "run_at": "2026-11-06T18:00:55+00:00",
+  "project": "vigil-md-1792696816",
+  "seed": "vigil-test-v1",
+  "per_stratum": 35,
+  "double_label_share": 0.2,
+  "caps": {
+    "cap_id_exact": 10,
+    "cap_other": 5,
+    "cap_name_any": 3,
+    "cap_random": 2
+  },
+  "bytes_processed": {
+    "01_sample": 3123027037,
+    "02_candidates": 839363546
+  },
+  "tuples": 420,
+  "pairs": 2761,
+  "strata": {
+    "cand_0|101_plus_or_missing": {
+      "pool_tuples": 140321,
+      "pool_rows": 734718,
+      "drawn": 35,
+      "no_candidates": 10,
+      "double_label": 7
+    },
+    "cand_0|11_100": {
+      "pool_tuples": 56096,
+      "pool_rows": 1814257,
+      "drawn": 35,
+      "no_candidates": 10,
+      "double_label": 6
+    },
+    "cand_0|top_10": {
+      "pool_tuples": 14771,
+      "pool_rows": 3097850,
+      "drawn": 35,
+      "no_candidates": 3,
+      "double_label": 4
+    },
+    "cand_1|101_plus_or_missing": {
+      "pool_tuples": 30784,
+      "pool_rows": 155694,
+      "drawn": 35,
+      "no_candidates": 0,
+      "double_label": 12
+    },
+    "cand_1|11_100": {
+      "pool_tuples": 11371,
+      "pool_rows": 291844,
+      "drawn": 35,
+      "no_candidates": 0,
+      "double_label": 7
+    },
+    "cand_1|top_10": {
+      "pool_tuples": 4832,
+      "pool_rows": 406018,
+      "drawn": 35,
+      "no_candidates": 0,
+      "double_label": 4
+    },
+    "cand_2plus|101_plus_or_missing": {
+      "pool_tuples": 5149,
+      "pool_rows": 23914,
+      "drawn": 35,
+      "no_candidates": 0,
+      "double_label": 5
+    },
+    "cand_2plus|11_100": {
+      "pool_tuples": 6119,
+      "pool_rows": 250831,
+      "drawn": 35,
+      "no_candidates": 0,
+      "double_label": 7
+    },
+    "cand_2plus|top_10": {
+      "pool_tuples": 203,
+      "pool_rows": 1954,
+      "drawn": 35,
+      "no_candidates": 0,
+      "double_label": 8
+    },
+    "no_model|101_plus_or_missing": {
+      "pool_tuples": 206035,
+      "pool_rows": 1037285,
+      "drawn": 35,
+      "no_candidates": 10,
+      "double_label": 9
+    },
+    "no_model|11_100": {
+      "pool_tuples": 117726,
+      "pool_rows": 1451887,
+      "drawn": 35,
+      "no_candidates": 8,
+      "double_label": 5
+    },
+    "no_model|top_10": {
+      "pool_tuples": 8188,
+      "pool_rows": 1434399,
+      "drawn": 35,
+      "no_candidates": 0,
+      "double_label": 6
+    }
+  },
+  "pairs_by_source": {
+    "id_fuzzy": 1256,
+    "id_exact": 496,
+    "random_same_mfr": 670,
+    "name_same_mfr": 222,
+    "id_contains": 176,
+    "name_any_mfr": 74
+  }
+}

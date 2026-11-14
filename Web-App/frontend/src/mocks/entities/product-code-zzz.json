@@ -1,0 +1,91 @@
+{
+  "entity": {
+    "type": "product_code",
+    "id": "ZZZ",
+    "found": true,
+    "title": "Example positive airway pressure device",
+    "subtitle": null,
+    "product_codes": [
+      "ZZZ"
+    ]
+  },
+  "counts": {
+    "total_reports": 1500,
+    "by_event_type": {
+      "Malfunction": 1370,
+      "Injury": 127,
+      "Death": 3
+    },
+    "by_year": {
+      "2025": {
+        "Malfunction": 1370,
+        "Injury": 127,
+        "Death": 3
+      }
+    }
+  },
+  "counts_note": null,
+  "problems": {
+    "device": [
+      {
+        "term": "Example Problem A",
+        "reports": 500
+      }
+    ],
+    "patient": [
+      {
+        "term": "Example Symptom X",
+        "reports": 70
+      }
+    ],
+    "no_harm_reports": 1200
+  },
+  "recalls": {
+    "total": 1,
+    "shown": [
+      {
+        "recall_number": "Z-0001-2024",
+        "recall_class": "Class II",
+        "record_date": "2024-05-02",
+        "recall_status": "Ongoing",
+        "product": "Example product description (mock data)",
+        "firm": "Example Medical Inc.",
+        "reason_text": "Example recall reason (mock data).",
+        "root_cause": "Example root cause (mock data).",
+        "action": null
+      }
+    ]
+  },
+  "data_as_of": {
+    "entity_catalog": "2026-11-08T06:30:00",
+    "entity_counts": "2026-11-08T06:30:00",
+    "entity_problems": "2026-11-08T06:30:00",
+    "entity_recalls": "2026-11-08T06:30:00"
+  },
+  "sources": [
+    {
+      "query": "catalog",
+      "tables": [
+        "entity_catalog"
+      ]
+    },
+    {
+      "query": "counts",
+      "tables": [
+        "entity_counts"
+      ]
+    },
+    {
+      "query": "problems",
+      "tables": [
+        "entity_problems"
+      ]
+    },
+    {
+      "query": "recalls",
+      "tables": [
+        "entity_recalls"
+      ]
+    }
+  ]
+}

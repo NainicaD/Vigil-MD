@@ -1,0 +1,8 @@
+# What the API container installs (Dockerfile): the serving path only, no MLflow or Optuna.
+# Versions match requirements.txt, which trains the model in the image's first stage.
+numpy>=1.26
+scikit-learn==1.7.2
+joblib>=1.4
+google-cloud-bigquery==3.46.2
+fastapi==0.162.2
+uvicorn==0.54.0

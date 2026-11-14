@@ -382,7 +382,7 @@ SELECT COUNT(*) FROM `vigil-md-1792696816.vigil_md_staging.maude_stg`
 WHERE _ingest_date >= '1900-01-01';
 
 -- What was loaded, per source
-SELECT source, COUNT(*) AS files, SUM(row_count) AS rows, MAX(loaded_at) AS last_load
+SELECT source, COUNT(*) AS files, SUM(row_count) AS row_total, MAX(loaded_at) AS last_load
 FROM `vigil-md-1792696816.vigil_md_ops.load_log`
 GROUP BY source;
 ```
@@ -547,7 +547,7 @@ pytest -m integration                            # real-GCS checks of the raw fi
 
 - **DAG tests** (`tests/dags`) skip where Airflow is not installed, so run them in the worker. They use a temporary SQLite database and refuse to reset any other. (Before 2026-10-27, `tests/dags/conftest.py` could reset the real Airflow database when run inside a container: run history, pools and pause settings.)
 - **Integration tests** are excluded by default (`pytest.ini`: `-m "not integration"`).
-- **CI:** `.github/workflows/tests.yml` runs `pytest` on GitHub Actions (Python 3.12) for every pull request and every push to `main`. It has no GCP credentials: the integration tests are excluded, and the data-contract and DAG tests skip; the log lists each skip reason.
+- **CI:** `.github/workflows/tests.yml` runs three jobs on GitHub Actions for every pull request and every push to `main`: `pytest` (this pipeline, Python 3.12), `chatbot-models` (the chatbot's tests and its model gate, `Model-Development/chatbot/`) and `website` (lint, type check, tests and build of `Web-App/frontend/`, Node 22). A newer push cancels the run it replaces. It has no GCP credentials: the integration tests are excluded, and the data-contract and DAG tests skip; the log lists each skip reason.
 - The BigQuery SQL is checked by hand with free dry runs (see "Manual checks" in `tests/TEST_CASES.md`).
 
 ---
@@ -585,7 +585,7 @@ Vigil-MD/
 │   ├── pytest.ini
 │   └── README.md                    # this file
 ├── .dvc/                            # DVC settings (remote); stays at the root
-├── .github/workflows/tests.yml      # CI (runs in Data-Pipeline/)
+├── .github/workflows/tests.yml      # CI: pipeline, chatbot and website jobs
 ├── docker-compose.yaml              # Airflow (CeleryExecutor, Postgres, Redis); stays at the root
 ├── docker-compose.elk.yml           # Elasticsearch, Logstash, Kibana, Filebeat
 ├── elk/                             # Logstash pipeline and Filebeat config

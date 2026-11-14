@@ -1,0 +1,238 @@
+# Publishes the approved chatbot router to Google Cloud Artifact Registry (vigil-md-models,
+# package chatbot-query-router) after it passes the tests and the model gate.
+#
+#   1. tests          the chatbot unit tests (no GCP)
+#   2. gate           retrain the router from this commit; compare with the champion in git
+#                     (query_router/champion_metrics.json). Worse safety or accuracy fails here.
+#   3. publish        query_router/publish.py uploads the model only if its test numbers equal the
+#                     approved champion's; a version that already exists is skipped.
+#   4. deploy         (job "deploy", after a publish on a push) builds the website + API image with
+#                     that published router and the vigil_md_prod search index, starts it on Cloud
+#                     Run as a new revision with NO traffic, checks it (api/deploy_check.py), and
+#                     only then moves all traffic to it. If the check fails, the revision that was
+#                     serving keeps serving (rollback without a step). The service stays private.
+#
+# Runs on pushes to model-dev-integration that touch the chatbot or the website (manual runs need
+# the file on main, so none). GCP access is keyless (Workload Identity Federation). The publish
+# account can only write to the vigil-md-models repository; the deploy account (GCP_DEPLOY_SA) can
+# push images to vigil-md, deploy and call the vigil-md service, and read vigil_md_prod for the
+# index. Until GCP_WIF_PROVIDER and GCP_PUBLISH_SA are set, steps 1 and 2 run and 3-4 are
+# skipped; until GCP_DEPLOY_SA is set, step 4 is skipped.
+# GitHub e-mails the person who pushed when a run fails.
+name: chatbot-publish
+
+on:
+  push:
+    branches: [model-dev-integration]
+    paths:
+      - "Model-Development/chatbot/**"
+      - "Web-App/frontend/**"
+      - ".github/workflows/chatbot-publish.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: chatbot-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: Model-Development/chatbot
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write          # lets the job ask GCP for a short-lived token (no stored key)
+    env:
+      MLFLOW_DISABLE_AGENT_HINT: "1"
+    outputs:
+      version: ${{ steps.publish.outputs.version }}     # empty unless published (or already there)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Model-Development/chatbot/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the tests
+        run: pytest -q -rs
+
+      # MLflow writes to the runner's temp folder (outside the checkout, so publish.py sees a
+      # clean tree); the store is kept below as the run's "mlflow-ci" artifact.
+      - name: Retrain the router and run the model gate
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///${{ runner.temp }}/mlflow-ci/mlflow.db
+          VIGIL_MLFLOW_ARTIFACTS: ${{ runner.temp }}/mlflow-ci/artifacts
+        run: |
+          mkdir -p "$RUNNER_TEMP/mlflow-ci"
+          python -m query_router.generate
+          python -m query_router.train
+          python -m query_router.gate --candidate models/baseline --regression-only
+
+      - name: Keep this run's MLflow record (training run, model version, metrics)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-ci
+          path: ${{ runner.temp }}/mlflow-ci
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Check it is the approved champion (no upload)
+        run: python -m query_router.publish --model-dir models/baseline --print-only
+
+      - name: Say why nothing is published
+        if: vars.GCP_WIF_PROVIDER == '' || vars.GCP_PUBLISH_SA == ''
+        run: |
+          msg="Not published: repository variables GCP_WIF_PROVIDER and GCP_PUBLISH_SA are not set (Settings -> Secrets and variables -> Actions -> Variables)."
+          echo "::warning::$msg"
+          echo "**$msg**" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        if: vars.GCP_WIF_PROVIDER != '' && vars.GCP_PUBLISH_SA != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_PUBLISH_SA }}
+
+      - name: Set up gcloud
+        if: vars.GCP_WIF_PROVIDER != '' && vars.GCP_PUBLISH_SA != ''
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Publish to Artifact Registry
+        id: publish
+        if: vars.GCP_WIF_PROVIDER != '' && vars.GCP_PUBLISH_SA != ''
+        run: |
+          python -m query_router.publish --model-dir models/baseline
+          version=$(python -c "import json, os; from query_router.publish import version_name; print(version_name(json.load(open('models/baseline/meta.json'))['rules_fingerprint'], os.environ['GITHUB_SHA']))")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          { echo '### Published versions of chatbot-query-router'; echo '```';
+            python -m query_router.publish --list; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: publish
+    if: >-
+      github.event_name == 'push' && needs.publish.outputs.version != ''
+      && vars.GCP_WIF_PROVIDER != '' && vars.GCP_DEPLOY_SA != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PROJECT: vigil-md-1792696816
+      REGION: us-central1
+      SERVICE: vigil-md
+      RUNTIME_SA: vigil-md-chatbot@vigil-md-1792696816.iam.gserviceaccount.com
+      DATASET: vigil_md_prod
+      VERSION: ${{ needs.publish.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Model-Development/chatbot/requirements-serve.txt
+
+      - name: Install the serving dependencies (index build, router download, deploy check)
+        run: pip install -r requirements-serve.txt
+
+      - name: Names for this deploy
+        run: |
+          short=${GITHUB_SHA::7}
+          {
+            echo "IMAGE=$REGION-docker.pkg.dev/$PROJECT/vigil-md/app:$short"
+            echo "REV_TAG=ci-$short"
+            echo "WEEK=$(date -u +%G-W%V)"
+          } >> "$GITHUB_ENV"
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Download the published router (checksums verified)
+        run: python -m query_router.publish --download "$VERSION" --out models/published
+
+      # The index only changes when the daily summary tables or the index code change. Rebuilding it
+      # at most once a week (or when device_search/ changes) keeps most deploys free of queries.
+      - name: Restore the search index
+        id: index-cache
+        uses: actions/cache@v4
+        with:
+          path: Model-Development/chatbot/data/search/${{ env.DATASET }}.sqlite
+          key: search-index-${{ env.DATASET }}-${{ hashFiles('Model-Development/chatbot/device_search/**') }}-${{ env.WEEK }}
+
+      - name: Build the search index (about 0.2 GB of BigQuery; refused above 0.5 GB)
+        if: steps.index-cache.outputs.cache-hit != 'true'
+        run: python -m device_search.build_index --dataset "$DATASET" --max-gb 0.5
+
+      - name: Build and push the image
+        working-directory: ${{ github.workspace }}
+        run: |
+          gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
+          docker build -f Model-Development/chatbot/Dockerfile \
+            --build-arg DATASET="$DATASET" --build-arg MODEL=published -t "$IMAGE" .
+          docker push "$IMAGE"
+
+      # Same settings as the README's manual deploy, except: no traffic yet, and its own tag URL.
+      # The service's access (private) is not touched.
+      - name: Deploy a new revision with no traffic
+        id: deploy
+        run: |
+          gcloud run deploy "$SERVICE" --image "$IMAGE" --region "$REGION" --project "$PROJECT" \
+            --service-account "$RUNTIME_SA" --min-instances 0 --max-instances 2 \
+            --memory 2Gi --cpu 1 --cpu-boost --concurrency 20 --timeout 60 \
+            --set-env-vars VIGIL_BQ_DATASET="$DATASET" --no-traffic --tag "$REV_TAG" --quiet
+          describe() { gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT" "$@"; }
+          echo "revision=$(describe --format='value(status.latestCreatedRevisionName)')" >> "$GITHUB_OUTPUT"
+          url=$(describe --format=json | python -c "import json, os, sys; print(next(t['url'] for t in json.load(sys.stdin)['status']['traffic'] if t.get('tag') == os.environ['REV_TAG']))")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          # a token for a tag URL must still name the service's main URL as its audience
+          echo "audience=$(describe --format='value(status.url)')" >> "$GITHUB_OUTPUT"
+
+      - name: Identity token for the private service
+        id: idtoken
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+          token_format: id_token
+          id_token_audience: ${{ steps.deploy.outputs.audience }}
+          id_token_include_email: true
+
+      - name: Check the new revision (router version, dataset, index, a search)
+        env:
+          ID_TOKEN: ${{ steps.idtoken.outputs.id_token }}
+        run: python -m api.deploy_check --url "${{ steps.deploy.outputs.url }}" --version "$VERSION" --dataset "$DATASET"
+
+      - name: Move all traffic to the new revision
+        env:
+          REVISION: ${{ steps.deploy.outputs.revision }}
+        run: |
+          gcloud run services update-traffic "$SERVICE" --to-revisions "$REVISION=100" \
+            --region "$REGION" --project "$PROJECT"
+          # drop the tag URLs of earlier CI deploys (their revisions stay, for a manual rollback)
+          old=$(gcloud run services describe "$SERVICE" --region "$REGION" --project "$PROJECT" --format=json \
+            | python -c "import json, os, sys; print(','.join(t['tag'] for t in json.load(sys.stdin)['status']['traffic'] if t.get('tag', '').startswith('ci-') and t['tag'] != os.environ['REV_TAG']))")
+          if [ -n "$old" ]; then
+            gcloud run services update-traffic "$SERVICE" --remove-tags "$old" --region "$REGION" --project "$PROJECT"
+          fi
+          { echo "### Deployed to Cloud Run (private)"; echo "";
+            echo "- revision \`$REVISION\`, image \`$IMAGE\`"; echo "- router \`$VERSION\`, dataset \`$DATASET\`";
+            echo "- the previous revision stays available: \`gcloud run services update-traffic $SERVICE --to-revisions <revision>=100\`"; } >> "$GITHUB_STEP_SUMMARY"

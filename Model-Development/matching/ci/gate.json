@@ -1,0 +1,22 @@
+{
+  "_comment": "Promotion rules for the matching model, fixed 2026-11-13 before any new model was scored against them (the champion is final_v1). Higher is better unless listed in lower_is_better. all_precision tolerance 0.04 is about 3 false positives on the hand sheet, the noise EXPERIMENTS.md reports. A ceiling the champion already breaks only warns if the candidate is no worse. See ci/gate.py.",
+  "floors": {
+    "all_recall": 0.99,
+    "strict_precision": 0.90,
+    "test_precision": 0.98
+  },
+  "ceilings": {
+    "ie_accept_rate": 0.35,
+    "non_match_accept_rate": 0.08,
+    "bias_max_gap_precision": 0.15,
+    "bias_max_gap_recall": 0.10
+  },
+  "tolerance": {
+    "all_precision": 0.04,
+    "all_recall": 0.01,
+    "test_precision": 0.005,
+    "test_recall": 0.02,
+    "ie_accept_rate": 0.05
+  },
+  "lower_is_better": ["ie_accept_rate", "non_match_accept_rate", "bias_max_gap_precision", "bias_max_gap_recall"]
+}

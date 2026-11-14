@@ -1,0 +1,76 @@
+{
+  "status": "answered",
+  "text": "I can compare up to 3 devices at a time; here are the first 3.\n\n**AcmeAir CPAP** (Example Medical Inc.): 1,234 reports linked by UDI in FDA MAUDE (2021–2025).\n\nNo FDA MAUDE reports were found for **Acme Infusion Pump**.\n\nI found **Acme Legacy Nebulizer** in the device list, but no FDA MAUDE reports or recalls for it.\n\nMAUDE reports are sent in by manufacturers, health professionals and patients. A report does not prove that the device caused the event, and report counts are not failure rates.\nReports without a UDI are not linked to a device, so the real number can be higher.\n**Sources:** FDA MAUDE and GUDID, FDA MAUDE reports, MAUDE problem codes, FDA recalls and enforcement (BigQuery, data as of 2026-11-08).",
+  "sections": [
+    {
+      "kind": "note",
+      "text": "I can compare up to 3 devices at a time; here are the first 3."
+    },
+    {
+      "kind": "headline",
+      "entity": "dev:000000acme01",
+      "text": "**AcmeAir CPAP** (Example Medical Inc.): 1,234 reports linked by UDI in FDA MAUDE (2021–2025)."
+    },
+    {
+      "kind": "headline",
+      "entity": "dev:000000acme02",
+      "text": "No FDA MAUDE reports were found for **Acme Infusion Pump**."
+    },
+    {
+      "kind": "headline",
+      "entity": "dev:000000acme04",
+      "text": "I found **Acme Legacy Nebulizer** in the device list, but no FDA MAUDE reports or recalls for it."
+    },
+    {
+      "kind": "footer",
+      "text": "MAUDE reports are sent in by manufacturers, health professionals and patients. A report does not prove that the device caused the event, and report counts are not failure rates.\nReports without a UDI are not linked to a device, so the real number can be higher.\n**Sources:** FDA MAUDE and GUDID, FDA MAUDE reports, MAUDE problem codes, FDA recalls and enforcement (BigQuery, data as of 2026-11-08)."
+    }
+  ],
+  "search": {
+    "status": "several",
+    "phrase": "acmeair vs acme infusion vs nebulizer vs zzz",
+    "matches": [
+      {
+        "type": "device",
+        "id": "dev:000000acme01",
+        "title": "AcmeAir CPAP",
+        "score": 1.0
+      },
+      {
+        "type": "device",
+        "id": "dev:000000acme02",
+        "title": "Acme Infusion Pump",
+        "score": 1.0
+      },
+      {
+        "type": "device",
+        "id": "dev:000000acme04",
+        "title": "Acme Legacy Nebulizer",
+        "score": 1.0
+      }
+    ]
+  },
+  "entities": [
+    {
+      "type": "device",
+      "id": "dev:000000acme01",
+      "title": "AcmeAir CPAP",
+      "found": true,
+      "total_reports": 1234
+    },
+    {
+      "type": "device",
+      "id": "dev:000000acme02",
+      "title": "Acme Infusion Pump",
+      "found": true,
+      "total_reports": 0
+    },
+    {
+      "type": "device",
+      "id": "dev:000000acme04",
+      "title": "Acme Legacy Nebulizer",
+      "found": false,
+      "total_reports": 0
+    }
+  ]
+}

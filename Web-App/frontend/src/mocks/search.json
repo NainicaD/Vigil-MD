@@ -1,0 +1,85 @@
+{
+  "query": "",
+  "hits": [
+    {
+      "id": "device|dev:000000acme01",
+      "kind": "device",
+      "entity_id": "dev:000000acme01",
+      "title": "AcmeAir CPAP",
+      "subtitle": "Example Medical Inc.",
+      "reports": 1234,
+      "deaths": 3,
+      "injuries": 120,
+      "product_codes": [
+        "ZZZ"
+      ]
+    },
+    {
+      "id": "device|dev:000000acme03",
+      "kind": "device",
+      "entity_id": "dev:000000acme03",
+      "title": "Acme GlucoSense Continuous Insulin Delivery System with Extended-Wear Infusion Set, Model AX-2000 Series (Pediatric and Adult Configurations)",
+      "subtitle": "Acme Diabetes Care Holdings, Incorporated, a subsidiary of Example Medical Technologies International",
+      "reports": 98765,
+      "deaths": 52,
+      "injuries": 8000,
+      "product_codes": [
+        "ZZX",
+        "ZZW",
+        "ZZV"
+      ]
+    },
+    {
+      "id": "device|dev:000000acme02",
+      "kind": "device",
+      "entity_id": "dev:000000acme02",
+      "title": "Acme Infusion Pump",
+      "subtitle": null,
+      "reports": 0,
+      "deaths": 0,
+      "injuries": 0,
+      "product_codes": []
+    },
+    {
+      "id": "device|dev:000000acme04",
+      "kind": "device",
+      "entity_id": "dev:000000acme04",
+      "title": "Acme Legacy Nebulizer",
+      "subtitle": "Example Medical Inc.",
+      "reports": null,
+      "deaths": null,
+      "injuries": null,
+      "product_codes": [
+        "ZZU"
+      ]
+    },
+    {
+      "id": "manufacturer|example medical",
+      "kind": "manufacturer",
+      "entity_id": "example medical",
+      "title": "Example Medical Inc.",
+      "subtitle": null,
+      "reports": 2046,
+      "deaths": 4,
+      "injuries": 242,
+      "product_codes": [
+        "ZZZ",
+        "ZZY",
+        "ZZU"
+      ]
+    },
+    {
+      "id": "product_code|ZZZ",
+      "kind": "product_code",
+      "entity_id": "ZZZ",
+      "title": "Example positive airway pressure device",
+      "subtitle": null,
+      "reports": 1500,
+      "deaths": 3,
+      "injuries": 127,
+      "product_codes": [
+        "ZZZ"
+      ]
+    }
+  ]
+}
