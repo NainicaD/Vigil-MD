@@ -15,6 +15,10 @@ Matching layout: `docs/ sql/ scripts/ eval/ reports/ tests/`, plus `vigil_model/
 package), `labels/`, `ci/`. Chatbot layout: `query_router/ device_search/ query_layer/ answer/
 api/ scripts/ tests/ data/` (`chatbot/README.md`).
 
-CI: `.github/workflows/tests.yml` (pipeline, chatbot tests and model gate, website) and
-`.github/workflows/model-training.yml` (matching: offline tests and a smoke training on every pull
-request; real training on BigQuery only on pushes to `main` or `same-device-profiling`).
+CI (GitHub Actions):
+
+| Workflow | Runs on | What it does |
+|---|---|---|
+| `.github/workflows/tests.yml` | Every pull request and push to `main` | Pipeline and chatbot tests, the chatbot model gate, the website build |
+| `.github/workflows/model-training.yml` | Changes under `matching/` | Offline tests and a smoke training on every pull request; on a push to `main`, `model-dev-integration` or `same-device-profiling`, real training on BigQuery, the model gate, and publishing to Artifact Registry (`vigil-md-models`) |
+| `.github/workflows/chatbot-publish.yml` | Pushes to `model-dev-integration` that change the chatbot or the website | Tests, retraining and the gate, publishing the router to Artifact Registry, then a Cloud Run deploy that gets traffic only after a health check |
