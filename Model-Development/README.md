@@ -20,5 +20,5 @@ CI (GitHub Actions):
 | Workflow | Runs on | What it does |
 |---|---|---|
 | `.github/workflows/tests.yml` | Every pull request and push to `main` | Pipeline and chatbot tests, the chatbot model gate, the website build |
-| `.github/workflows/model-training.yml` | Changes under `matching/` | Offline tests and a smoke training on every pull request; on a push to `main`, `model-dev-integration` or `same-device-profiling`, real training on BigQuery, the model gate, and publishing to Artifact Registry (`vigil-md-models`) |
-| `.github/workflows/chatbot-publish.yml` | Pushes to `model-dev-integration` that change the chatbot or the website | Tests, retraining and the gate, publishing the router to Artifact Registry, then a Cloud Run deploy that gets traffic only after a health check |
+| `.github/workflows/model-training.yml` | Changes under `matching/` | Offline tests and a smoke training on every pull request; on a push to `main`, real training on BigQuery, the model gate, and publishing to Artifact Registry (`vigil-md-models`) |
+| `.github/workflows/chatbot-publish.yml` | Pushes to `main` that change the chatbot or the website | Tests, retraining and the gate, publishing the router to Artifact Registry, then a Cloud Run deploy that gets traffic only after a health check |

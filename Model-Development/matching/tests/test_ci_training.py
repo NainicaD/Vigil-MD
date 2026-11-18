@@ -171,7 +171,7 @@ def _run_lines(job):
 
 def test_triggers(wf):
     on = wf["on"]
-    assert set(on["push"]["branches"]) == {"main", "model-dev-integration", "same-device-profiling"}
+    assert set(on["push"]["branches"]) == {"main"}
     assert "Model-Development/matching/**" in on["push"]["paths"] and "Model-Development/matching/**" in on["pull_request"]["paths"]
     assert "workflow_dispatch" in on
 

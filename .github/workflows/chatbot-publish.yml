@@ -12,9 +12,10 @@
 #                     only then moves all traffic to it. If the check fails, the revision that was
 #                     serving keeps serving (rollback without a step). The service stays private.
 #
-# Runs on pushes to model-dev-integration that touch the chatbot or the website (manual runs need
-# the file on main, so none). GCP access is keyless (Workload Identity Federation). The publish
-# account can only write to the vigil-md-models repository; the deploy account (GCP_DEPLOY_SA) can
+# Runs on pushes to main that touch the chatbot or the website (a merged pull request), or by hand
+# (Actions -> chatbot-publish -> Run workflow; a manual run publishes but does not deploy).
+# GCP access is keyless (Workload Identity Federation). The publish account can only write to the
+# vigil-md-models repository; the deploy account (GCP_DEPLOY_SA) can
 # push images to vigil-md, deploy and call the vigil-md service, and read vigil_md_prod for the
 # index. Until GCP_WIF_PROVIDER and GCP_PUBLISH_SA are set, steps 1 and 2 run and 3-4 are
 # skipped; until GCP_DEPLOY_SA is set, step 4 is skipped.
@@ -23,7 +24,7 @@ name: chatbot-publish
 
 on:
   push:
-    branches: [model-dev-integration]
+    branches: [main]
     paths:
       - "Model-Development/chatbot/**"
       - "Web-App/frontend/**"

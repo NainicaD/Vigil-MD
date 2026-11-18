@@ -10,7 +10,7 @@ code runs, and (on the shared branches) retrains the models on the real BigQuery
 |---|---|---|---|---|
 | `test` | every pull request and push that touches `Model-Development/` | no | `python -m pytest`: the mocked tests | ~2 min |
 | `smoke-train` | same | no | `ci/make_ci_feature_table.py` makes a synthetic feature table, `s05` builds the hand-sheet features from the committed sheet, `s06` trains all four models on the synthetic table (1 trial, no MLflow), `ci/check_training_outputs.py` checks the outputs, `s08` scores the hand sheet, `ci/gate.py --report-only` proves the gate runs (never fails here) | ~3 min |
-| `train` | push to `main`, `model-dev-integration` or `same-device-profiling` (a merged PR), or **Actions → model-training → Run workflow** | yes | `s03 → s04 → s05 → s06 → s08` on the real label set, checks the outputs, runs the **model gate**, uploads the results; on a push, if the gate passed, **publishes** the model to Artifact Registry (`s11`) | 20-60 min |
+| `train` | push to `main` (a merged PR), or **Actions → model-training → Run workflow** | yes | `s03 → s04 → s05 → s06 → s08` on the real label set, checks the outputs, runs the **model gate**, uploads the results; on a push, if the gate passed, **publishes** the model to Artifact Registry (`s11`) | 20-60 min |
 
 - `train` needs `test` and `smoke-train` to pass first.
 - A newer push to the same branch cancels the older run (`concurrency`).
@@ -115,9 +115,10 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID"
 | `GCP_SERVICE_ACCOUNT` | `github-ci-trainer@vigil-md-1792696816.iam.gserviceaccount.com` |
 
 **Running it.** GitHub shows **Run workflow** only for workflows on the default branch (`main`).
-This file is only on `model-dev-integration`, so manual runs (and the `trials` and `refresh_data`
-inputs) are not available. Training runs on a push to `model-dev-integration` that touches
-`Model-Development/matching/`, and a push run publishes the next patch version when the gate passes.
+The file is on `main`, so manual runs (with the `trials` and `refresh_data` inputs) are available;
+a manual run trains and gates but does not publish. Training also runs on a push to `main` that touches
+`Model-Development/matching/` (a merged pull request), and a push run publishes the next patch version
+when the gate passes.
 
 ## 4. Cost
 
