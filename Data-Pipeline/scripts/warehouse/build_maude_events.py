@@ -51,7 +51,7 @@ log = get_logger("build_maude_events")
 
 SQL_FILE = Path(__file__).resolve().parent / "sql" / "staging_maude_events.sql"
 STEPS = ["staging", "problems", "text"]
-DEFAULT_MAX_GB = {"staging": 60.0, "problems": 10.0, "text": 40.0}   # full export: 48.8 / 2.7 / 32.3 GB (2026-11-07)
+DEFAULT_MAX_GB = {"staging": 60.0, "problems": 10.0, "text": 50.0}   # full export: 48.8 / 2.7 / 32.3 GB (2026-11-07); text 44.5 GB (export 2026-11-17)
 SENTINEL = f"DATE '{schemas.PART_DATE_SENTINEL}'"
 EXIT_OVER_BUDGET = 2
 
