@@ -3,7 +3,7 @@
 #   test         every pull request and push that touches Model-Development/: the offline tests.
 #   smoke-train  same trigger: runs the real training code (s05 + s06) on a small synthetic feature
 #                table and the committed hand sheet. No GCP. Catches broken training code before merge.
-#   train        push to main, model-dev-integration or same-device-profiling, or by hand (Actions ->
+#   train        push to main (a merged pull request), or by hand (Actions ->
 #                model-training -> Run workflow): the real chain s03 -> s04 -> s05 -> s06 -> s08 on
 #                BigQuery data, then the model gate (ci/gate.py: metric floors, no worse than the
 #                champion, bias gaps; a failure keeps the champion), uploads the models, MLflow data,
@@ -17,7 +17,7 @@ name: model-training
 
 on:
   push:
-    branches: [main, model-dev-integration, same-device-profiling]
+    branches: [main]
     paths:
       - "Model-Development/matching/**"
       - ".github/workflows/model-training.yml"

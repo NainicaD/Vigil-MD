@@ -182,7 +182,7 @@ bundle.decide(pd.DataFrame([feats]))                 # score + MATCH / NON_MATCH
 
 How a release is built:
 
-**By CI (the normal way).** A push to `model-dev-integration` that touches `Model-Development/matching/` runs the chain above on the real data, then `ci/gate.py`, then `s11 --semver auto --lineage ci`. If the gate fails, the job fails and nothing is published: the champion stays. Otherwise CI publishes the next PATCH version, unless the model is identical to the newest one. Setup and roles: `docs/CI_CD.md`. **Run workflow** (a manual run) is not available, because the workflow is not on `main`.
+**By CI (the normal way).** A push to `main` (a merged pull request) that touches `Model-Development/matching/` runs the chain above on the real data, then `ci/gate.py`, then `s11 --semver auto --lineage ci`. If the gate fails, the job fails and nothing is published: the champion stays. Otherwise CI publishes the next PATCH version, unless the model is identical to the newest one. Setup and roles: `docs/CI_CD.md`. **Actions → model-training → Run workflow** starts a manual run, which trains and runs the gate but does not publish.
 
 **By hand.**
 1. Run the training chain above with `VIGIL_EXP=<exp>`, up to and including `ci/gate.py`.

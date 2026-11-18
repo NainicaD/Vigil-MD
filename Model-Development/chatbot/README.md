@@ -315,7 +315,7 @@ failed. Every version is kept, so a rollback deploys an older version.
 | Workflow | Runs on | What it does |
 |---|---|---|
 | `.github/workflows/tests.yml`, job `chatbot-models` | Pull requests and pushes to `main` | Unit tests; retrains the router; `gate --regression-only` against `champion_metrics.json` |
-| `.github/workflows/chatbot-publish.yml` | Pushes to `model-dev-integration` that touch the chatbot, or by hand | Unit tests; retrain; gate; approval check; keyless GCP sign-in; publish to Artifact Registry; lists the versions on the run page; keeps the run's MLflow store as artifact `mlflow-ci` (90 days) |
+| `.github/workflows/chatbot-publish.yml` | Pushes to `main` that touch the chatbot or the website, or by hand | Unit tests; retrain; gate; approval check; keyless GCP sign-in; publish to Artifact Registry; lists the versions on the run page; keeps the run's MLflow store as artifact `mlflow-ci` (90 days) |
 
 - **Regression mode:** a retrain of the same recipe cannot beat itself, so no gain is needed;
   floors and tolerances fail the build, ceilings show as warnings. A change that makes the router
@@ -595,7 +595,7 @@ gcloud run services update-traffic vigil-md --to-revisions <revision>=100 \
 or deploy an image built from an older published version.
 
 **Automatic deploy (CI).** The `deploy` job of `.github/workflows/chatbot-publish.yml` does the
-steps above after every publish on a push to `model-dev-integration` (chatbot or website changes):
+steps above after every publish on a push to `main` (chatbot or website changes):
 it downloads the router version just published, restores or rebuilds the `vigil_md_prod` index
 (rebuilt at most once a week or when `device_search/` changes, about 0.2 GB), builds and pushes
 `app:<commit>`, and deploys it as a new revision **with no traffic** under the tag `ci-<commit>`.
