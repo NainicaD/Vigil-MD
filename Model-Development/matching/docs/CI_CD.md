@@ -2,7 +2,7 @@
 
 Workflow: [`.github/workflows/model-training.yml`](../../.github/workflows/model-training.yml).
 When code under `Model-Development/` is committed, GitHub Actions tests it, checks that the training
-code runs, and (on the shared branches) retrains the models on the real BigQuery data.
+code runs, and (on main) retrains the models on the real BigQuery data.
 
 ## 1. What runs when
 
@@ -49,7 +49,7 @@ code runs, and (on the shared branches) retrains the models on the real BigQuery
   `git=git-<sha7>`. `ci/publish.py` refuses again if `gate.json` did not pass or the tree has
   uncommitted files. It skips a version that already exists, and it skips a bundle that decides like the
   newest published version (same `model.json` and `tfidf.pkl` checksums, cutoff and IE gate): a retrain that
-  reproduces the model gets no new version. v1.1.1 was such a copy of v1.1.0, published before this check.
+  reproduces the model gets no new version. v1.1.1 and v1.1.2 are such copies of v1.1.0, published before this check.
 
 ## 3. One-time GCP setup (done 2026-11-13)
 
@@ -116,7 +116,7 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID"
 
 **Running it.** GitHub shows **Run workflow** only for workflows on the default branch (`main`).
 The file is on `main`, so manual runs (with the `trials` and `refresh_data` inputs) are available;
-a manual run trains and gates but does not publish. Training also runs on a push to `main` that touches
+a manual run trains and gates but does not publish, unless it is started with `publish=true` on `main` (the retraining trigger of `matching-monitoring.yml`; see the README, "Data monitor and retraining trigger"). Training also runs on a push to `main` that touches
 `Model-Development/matching/` (a merged pull request), and a push run publishes the next patch version
 when the gate passes.
 

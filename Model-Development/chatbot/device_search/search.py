@@ -13,9 +13,12 @@ company first and "philips dreamstation" still finds the DreamStation.
 """
 from __future__ import annotations
 
+import collections
+import copy
 import json
 import re
 import sqlite3
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -134,10 +137,14 @@ def _matched_only_in_suffix(hit: "Hit", typed: set[str]) -> bool:
 
 
 class DeviceIndex:
+    SEARCH_CACHE = 2000     # recent searches kept (the index is read-only, so they stay valid)
+
     def __init__(self, con: sqlite3.Connection):
         self.con = con
         self.con.row_factory = sqlite3.Row
         self.meta = dict(self.con.execute("SELECT key, value FROM meta").fetchall())
+        self._searches: collections.OrderedDict = collections.OrderedDict()
+        self._searches_lock = threading.Lock()
 
     @classmethod
     def open(cls, dataset_or_path: str | Path) -> "DeviceIndex":
@@ -169,7 +176,24 @@ class DeviceIndex:
 
         candidates: entries taken from the trigram index before exact scoring. On the PROD
         index (337,729 devices) 300 missed "t:slim x2 control iq", crowded out by entries
-        sharing common trigrams; 3,000 finds it (about 0.4 s instead of 0.07 s)."""
+        sharing common trigrams; 3,000 finds it (about 0.4 s instead of 0.07 s).
+        Recent results are kept (SEARCH_CACHE, by normalized words): typing and a question's
+        device resolution repeat searches. Callers get copies."""
+        key = (tuple(words(text)), limit, candidates)
+        with self._searches_lock:
+            cached = self._searches.get(key)
+            if cached is not None:
+                self._searches.move_to_end(key)
+        if cached is not None:
+            return copy.deepcopy(cached)
+        hits = self._search(text, limit, candidates)
+        with self._searches_lock:
+            self._searches[key] = copy.deepcopy(hits)
+            while len(self._searches) > self.SEARCH_CACHE:
+                self._searches.popitem(last=False)
+        return hits
+
+    def _search(self, text: str, limit: int, candidates: int) -> list[Hit]:
         q = words(text)
         if not q:
             return []

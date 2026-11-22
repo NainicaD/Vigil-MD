@@ -8,7 +8,8 @@
 #                BigQuery data, then the model gate (ci/gate.py: metric floors, no worse than the
 #                champion, bias gaps; a failure keeps the champion), uploads the models, MLflow data,
 #                scores and gate report as a workflow artifact, and on a push publishes the gated
-#                model to Artifact Registry (s11).
+#                model to Artifact Registry (s11). A run started with publish=true on main (the
+#                retraining trigger of matching-monitoring) publishes too; other manual runs do not.
 #
 # GCP access is keyless (Workload Identity Federation): no service-account key is stored in GitHub.
 # Pull requests never get it, so a fork cannot spend the team's query budget. One-time setup and
@@ -32,6 +33,10 @@ on:
         default: "10"
       refresh_data:
         description: "Re-download the label set and re-run the s04 queries (ignores the cache)"
+        type: boolean
+        default: false
+      publish:
+        description: "Publish the gated model (main only). Set by matching-monitoring on drift; off for manual runs"
         type: boolean
         default: false
 
@@ -201,12 +206,13 @@ jobs:
             Model-Development/matching/data/label_set_v2_fs2_features.manifest.json
             Model-Development/matching/data/label_set_v2_fs2_features.tfidf.pkl
 
-      # Only after the gate passed (a failed step skips this), only on a push. s11 refuses again if
+      # Only after the gate passed (a failed step skips this), only on a push or a publish=true run
+      # on main (matching-monitoring's retraining trigger). s11 refuses again if
       # gate.json did not pass or the tree has uncommitted files, and skips an existing version.
       - uses: google-github-actions/setup-gcloud@v2
-        if: success() && github.event_name == 'push'
+        if: success() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'))
       - name: Publish the gated model to Artifact Registry (s11)
-        if: success() && github.event_name == 'push'
+        if: success() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'))
         run: |
           python scripts/s11_package_final.py --exp none --semver auto --lineage ci --hand data/hand_features.csv
           gcloud artifacts versions list --project vigil-md-1792696816 --location us-central1 --repository vigil-md-models --package matching-same-device --sort-by=~createTime --limit 5 | tee -a "$GITHUB_STEP_SUMMARY"

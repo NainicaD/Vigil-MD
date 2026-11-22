@@ -1,0 +1,126 @@
+# Daily drift check of the chatbot's query router (Model-Development/chatbot/monitoring/).
+#
+# Reads the last 7 days of monitoring events from BigQuery (vigil_md_monitoring, filled by the
+# log sink vigil-md-monitoring-events from the Cloud Run service) and compares them with the
+# router's baseline (monitoring/baseline.json, limits in monitoring/thresholds.json).
+#
+#   ok / warn     the run passes; the job summary shows the checks that warn
+#   no decision   fewer than min_events events, no event of the baseline's router, or no events
+#                 table yet: the run passes with a warning
+#   drift         the run FAILS, so GitHub e-mails the alert; the report is kept as an artifact,
+#                 and the retraining trigger opens one issue "Router drift detected" (label
+#                 router-drift) with the report and the retraining checklist. While that issue is
+#                 open, later drift runs add a comment to it instead of opening another.
+#
+# Scheduled workflows run from the default branch (main) only. GCP access is keyless (Workload
+# Identity Federation) with its own service account (GCP_MONITOR_SA): it can only read
+# vigil_md_monitoring and run queries. Until GCP_MONITOR_SA is set, the run says so and passes.
+# Cost: the window scans a few MB (dry run first, capped at 0.1 GB).
+name: router-monitoring
+
+on:
+  schedule:
+    - cron: "30 7 * * *"          # daily 07:30 UTC
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Window in days"
+        default: "7"
+
+concurrency:
+  group: router-monitoring
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: Model-Development/chatbot
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write          # short-lived GCP token, no stored key
+      issues: write            # the retraining trigger: open or comment the drift issue
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Say why nothing is checked
+        if: vars.GCP_WIF_PROVIDER == '' || vars.GCP_MONITOR_SA == ''
+        run: |
+          msg="Not checked: repository variables GCP_WIF_PROVIDER and GCP_MONITOR_SA are not set (Settings -> Secrets and variables -> Actions -> Variables)."
+          echo "::warning::$msg"
+          echo "**$msg**" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/setup-python@v5
+        if: vars.GCP_WIF_PROVIDER != '' && vars.GCP_MONITOR_SA != ''
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Model-Development/chatbot/requirements-serve.txt
+
+      - name: Install dependencies
+        if: vars.GCP_WIF_PROVIDER != '' && vars.GCP_MONITOR_SA != ''
+        run: pip install -r requirements-serve.txt
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        if: vars.GCP_WIF_PROVIDER != '' && vars.GCP_MONITOR_SA != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_MONITOR_SA }}
+
+      - name: Drift check
+        id: drift
+        if: vars.GCP_WIF_PROVIDER != '' && vars.GCP_MONITOR_SA != ''
+        env:
+          DAYS: ${{ inputs.days || '7' }}
+        run: |
+          set +e
+          python -m monitoring.drift --from-bigquery --days "$DAYS" --max-gb 0.1 \
+            --out report.json --summary summary.md --issue-body issue.md \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          code=$?
+          set -e
+          [ -f summary.md ] && cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "No drift." ;;
+            2) echo "::warning::Router monitoring: no decision (see the summary)." ;;
+            3) echo "::error::Router monitoring: DRIFT. Consider retraining (see the summary)."; exit 1 ;;
+            *) echo "::error::Router monitoring failed (exit $code)."; exit 1 ;;
+          esac
+
+      # The retraining trigger. GitHub's own token for this run, limited to issues; no GCP.
+      - name: Open the retraining issue (or comment on the open one)
+        if: always() && steps.drift.outputs.code == '3'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create router-drift --color B60205 \
+            --description "Router monitoring found drift: retraining needed" --force
+          open=$(gh issue list --state open --label router-drift --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body-file issue.md
+            echo "Drift again: comment added to issue #$open" >> "$GITHUB_STEP_SUMMARY"
+          else
+            url=$(gh issue create --title "Router drift detected ($(date -u +%F))" \
+              --label router-drift --body-file issue.md)
+            echo "Retraining issue opened: $url" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Keep the report
+        if: always() && steps.drift.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: router-drift-report
+          path: |
+            Model-Development/chatbot/report.json
+            Model-Development/chatbot/summary.md
+            Model-Development/chatbot/issue.md
+          retention-days: 90
+          if-no-files-found: ignore

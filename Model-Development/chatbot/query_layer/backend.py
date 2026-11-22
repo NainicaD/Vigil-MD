@@ -5,9 +5,17 @@ runs, every query of the step is dry-run (free); if together they would scan mor
 budget has left, nothing runs (QueryBudgetExceeded). Each job also carries
 maximum_bytes_billed, so BigQuery itself refuses to bill more. What each query read and
 billed is recorded for the answer's sources.
+
+Result cache (off unless cache_size > 0; the API turns it on): a query's rows are kept with
+the last-modified times of the tables it reads (table metadata, free). A cached result is used
+only while those times are unchanged, so it expires by itself when the daily load updates the
+tables. A cached query costs nothing and needs no dry run. Keys are the SQL and its
+parameters (entity ids, dates), never the user's question.
 """
 from __future__ import annotations
 
+import collections
+import copy
 import datetime as dt
 import math
 import threading
@@ -68,12 +76,16 @@ def _parallel(fn, items: list) -> list:
 
 class BigQueryBackend:
     def __init__(self, project: str = config.PROJECT, dataset: str = config.DATASET,
-                 client=None, clock=time.monotonic):
+                 client=None, clock=time.monotonic, cache_size: int = 0):
         self.project, self.dataset = project, dataset
         self._client = client
         self._clock = clock
         self._as_of: dict[str, tuple[float, str | None]] = {}
         self._as_of_lock = threading.Lock()
+        self.cache_size = cache_size
+        self._cache: collections.OrderedDict = collections.OrderedDict()   # key -> (version, rows, rec)
+        self._cache_lock = threading.Lock()
+        self.cache_hits = self.cache_misses = 0
 
     @property
     def client(self):
@@ -109,7 +121,53 @@ class BigQueryBackend:
             return int(job.total_bytes_processed or 0)
         return _parallel(dry, queries)
 
+    @staticmethod
+    def _key(q: Query) -> tuple:
+        return (q.sql, tuple(sorted((k, repr(v)) for k, v in q.params.items())))
+
+
     def run(self, queries: list[Query], budget: Budget) -> tuple[list[list[dict]], list[QueryRecord]]:
+        """Cached results first; the rest: dry-run all, refuse above the budget, then run each
+        with maximum_bytes_billed. Results are in the queries' order."""
+        if not self.cache_size:
+            return self._run(queries, budget)
+        # A query's version is its tables' last-modified times (one metadata call for all,
+        # remembered DATA_AS_OF_TTL_SECONDS): a cached result is valid while they are the same.
+        as_of = self.data_as_of([t for q in queries for t in q.tables])
+        versions = [tuple((t, as_of[t]) for t in sorted(set(q.tables))) if q.tables else None
+                    for q in queries]
+        found: dict[int, tuple] = {}
+        with self._cache_lock:
+            for i, (q, ver) in enumerate(zip(queries, versions)):
+                hit = self._cache.get(self._key(q)) if ver is not None else None
+                if hit and hit[0] == ver:
+                    self._cache.move_to_end(self._key(q))
+                    found[i] = hit
+        self.cache_hits += len(found)
+        self.cache_misses += len(queries) - len(found)
+        todo = [i for i in range(len(queries)) if i not in found]
+        fresh_rows, fresh_recs = self._run([queries[i] for i in todo], budget) if todo else ([], [])
+        with self._cache_lock:
+            for i, rows, rec in zip(todo, fresh_rows, fresh_recs):
+                if versions[i] is not None:
+                    self._cache[self._key(queries[i])] = (versions[i], copy.deepcopy(rows), rec)
+                    self._cache.move_to_end(self._key(queries[i]))
+            while len(self._cache) > self.cache_size:
+                self._cache.popitem(last=False)
+        out_rows, out_recs, fresh = [], [], iter(zip(fresh_rows, fresh_recs))
+        for i in range(len(queries)):
+            if i in found:
+                _, rows, rec = found[i]
+                out_rows.append(copy.deepcopy(rows))
+                out_recs.append(QueryRecord(rec.name, rec.sql, dict(rec.params), rec.tables,
+                                            0, 0, rec.rows, {**rec.extra, "cached": True}))
+            else:
+                rows, rec = next(fresh)
+                out_rows.append(rows)
+                out_recs.append(rec)
+        return out_rows, out_recs
+
+    def _run(self, queries: list[Query], budget: Budget) -> tuple[list[list[dict]], list[QueryRecord]]:
         """Dry-run all, refuse above the budget, then run each with maximum_bytes_billed."""
         from google.cloud import bigquery
         estimates = self.estimate(queries)

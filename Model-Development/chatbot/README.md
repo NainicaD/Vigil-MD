@@ -496,11 +496,26 @@ FastAPI around the device search, the query layer and the chatbot.
 - **Rate limit:** questions and device pages, 30 a minute per visitor
   (`VIGIL_RATE_LIMIT_PER_MINUTE`); search is not limited. Behind Cloud Run, uvicorn trusts the
   proxy's `X-Forwarded-For` (`--forwarded-allow-ips`), so the limit applies per visitor.
-- **Questions are not logged.**
+- **Questions are not logged.** Each answer writes one monitoring event with numbers and labels
+  only; see [Monitoring events](#monitoring-events-apieventspy).
 - **Website:** `VIGIL_WEB_DIST=<dist/>` serves the front end from `/`; any non-API path returns
   `index.html`, so device links work when opened directly; unknown `/api/...` paths stay JSON 404s,
   and nothing outside `dist/` is read. `VIGIL_CORS_ORIGINS=http://localhost:5173` allows the
   front end's dev server.
+- **Startup:** the server loads the chatbot (router, search index, BigQuery client) and runs one
+  search and one routing before it accepts requests, and logs the step times
+  (`"event": "startup"`). Before, this happened on the first request: in the Cloud Run logs
+  (10–19 Nov) the first search or answer after a container start took 15–37 s, and two answers
+  timed out at 60 s. Cloud Run's default startup check waits for it. `VIGIL_WARM_UP=0` skips it.
+  It does not remove the wait when the service starts from zero (min-instances 0); only
+  `--min-instances 1` does that (about $10–20 a month; planned for launch).
+- **Caches:** BigQuery results are kept until a table they read changes (its last-modified
+  time, checked at most every 5 minutes), so a repeated device page or answer costs nothing
+  and needs no BigQuery round trip (`VIGIL_RESULT_CACHE`, default 2,000 results; 0 turns it
+  off). The cache key is the SQL and its parameters, never the question. Search results
+  (2,000) and word similarities (200,000 pairs) are cached in memory too: on the PROD index,
+  10 new searches took 3.2 s before and 2.3 s after on a laptop, a repeated search about 1 ms.
+  Each container has its own caches; they start empty after a deploy or a cold start.
 - **Typical latency** on `vigil_md_dev`: a device page 1.6–2.8 s, a counts or recall answer
   1.3–1.8 s, a narratives answer about 4 s.
 
@@ -509,6 +524,86 @@ VIGIL_BQ_DATASET=vigil_md_dev uvicorn api.app:app --port 8000
 curl 'localhost:8000/api/search?q=dreamstation'
 open http://localhost:8000/api/docs
 ```
+
+### Monitoring events ([`api/events.py`](api/events.py))
+
+Every `POST /api/answer` that reaches the chatbot writes one JSON line on stdout
+(`"message": "router_decision"`). Cloud Run sends it to Cloud Logging, which stores the fields
+as `jsonPayload`, so no deploy setting changes. Requests rejected before the chatbot (422, 429)
+write none. These events are the input for model monitoring: label mix, `out_of_scope` share,
+top score and unknown-word share compared with the router's test-set baseline.
+
+| Field | Meaning |
+|---|---|
+| `request_id`, `ts`, `schema_version` | one id per answer, UTC time, event format (1) |
+| `model_version`, `rules_fingerprint`, `template_fingerprint`, `dataset` | which router, rules and templates answered |
+| `status`, `reply_kind`, `labels`, `rule_hits` | the decision; `rule_hits` are pattern names; `status` is `exception` if the chatbot raised |
+| `scores`, `top_score`, `unclear` | router score per label |
+| `unknown_word_share` | share of the question's words not in the router's word vocabulary (drift signal) |
+| `question_chars`, `question_words` | size of the question |
+| `entity_given`, `entity_types_found`, `n_entities` | device page or not; entity *types* found |
+| `budget_gb_spent`, `latency_ms` | BigQuery GB used, time in the chatbot |
+
+- **Never in an event:** the question text, the search phrase, entity ids, the answer text, the
+  visitor's address or headers. Tests check this with a question that contains a name.
+- **Monitoring cannot break an answer:** an error while writing the event is logged and the
+  answer is returned as usual.
+- **In BigQuery:** the log sink `vigil-md-monitoring-events` (created 2026-11-19) copies the
+  `router_decision` and `startup` events of the `vigil-md` service into the dataset
+  `vigil_md_monitoring` (partitioned by day, rows deleted after 400 days). The sink's account can
+  write to this dataset only. Undo: `gcloud logging sinks delete vigil-md-monitoring-events` and
+  `bq rm -r -d vigil-md-1792696816:vigil_md_monitoring`.
+- **Still to do:** the daily drift job. Storing question text (with notice to users, redaction and
+  30-day expiry) is a separate, later step that needs a privacy review.
+- **Search terms** (`GET /api/search?q=`) are in the URL, so Cloud Run's request log has them.
+  They are device and company names, but keep this in mind for the privacy review.
+
+### Drift check ([`monitoring/`](monitoring/))
+
+Compares a window of monitoring events with a baseline of the same router. No BigQuery, no cost.
+
+```bash
+python -m monitoring.baseline --model-dir models/published   # baseline from the test set (bootstrap)
+python -m monitoring.baseline --from-events reference.jsonl  # baseline from normal traffic (production)
+python -m monitoring.drift --events events.jsonl --out report.json
+```
+
+- **Checks** ([`stats.py`](monitoring/stats.py)): PSI (Population Stability Index) of `top_score`,
+  `unknown_word_share` and `question_words`; absolute change of each label's share, the refusal
+  share and the unclear share. Limits in [`thresholds.json`](monitoring/thresholds.json): PSI 0.1
+  warns, 0.25 is drift; a label share moving 0.15 (refusals or unclear 0.10) is drift.
+- **Result and exit code:** `ok` or `warn` → 0; `insufficient_data` → 2 (fewer than 200 events,
+  or none from the baseline's router); `drift` → 3, retraining should be considered.
+- **Only the baseline's router is compared** (same rules fingerprint): after a new router is
+  published, rebuild the baseline.
+- **Two baselines:** [`baseline.json`](monitoring/baseline.json) is built from the hand-written
+  test set (242 questions, router `5d1584bb53b3`). That set is about 40% medical-advice questions
+  by design, so real traffic will differ on the refusal share. Replace it with a reference window
+  of real traffic (for example the first 2–4 weeks after launch) once there is traffic; the
+  thresholds were set before any live traffic and should be reviewed then too.
+- **Checked with the real router:** the test-set questions as events give `ok`; 240 off-topic
+  and non-English questions give `drift` on 8 checks (e.g. unknown-word PSI 5.3).
+- **From BigQuery** ([`bq_events.py`](monitoring/bq_events.py)): `--from-bigquery --days 7`
+  reads the window from `vigil_md_monitoring.run_googleapis_com_stdout` (dry run first, capped
+  at `--max-gb`, default 0.1 GB; a window is a few MB). Before the first event, the table does
+  not exist: the result is `insufficient_data` (exit 2) with a note. `--summary` writes a short
+  Markdown report.
+- **Daily job** ([`.github/workflows/router-monitoring.yml`](../../.github/workflows/router-monitoring.yml)):
+  07:30 UTC and by hand (Actions → router-monitoring → Run workflow). Drift fails the run, so
+  GitHub e-mails the alert; no decision is a warning; the report is kept for 90 days. It uses its
+  own service account `vigil-md-monitor@vigil-md-1792696816.iam.gserviceaccount.com` (created
+  2026-11-19: `roles/bigquery.jobUser` on the project, READER on `vigil_md_monitoring` only,
+  keyless login for this repository's Actions), named in the repository variable
+  `GCP_MONITOR_SA`; until that variable is set it says so and passes. Scheduled workflows run
+  from `main` only. Undo: `gcloud iam service-accounts delete <account>` and remove its
+  `roles/bigquery.jobUser` binding.
+- **Retraining trigger:** on drift the daily job opens one GitHub issue "Router drift detected"
+  (label `router-drift`) with the report and a checklist, or comments on the one already open.
+  It does not retrain by itself: the router is trained on generated questions, so a retrain
+  without new examples gives the same model. The checklist: new templates or slot values for
+  the drifted kinds of questions and a fresh hand-written test set, then a pull request (CI
+  retrains and gates), then the merge (publish and deploy), then a new baseline. The workflow
+  uses GitHub's own token for this run, limited to `issues: write`.
 
 ## Container ([`Dockerfile`](Dockerfile))
 

@@ -53,6 +53,8 @@ def asked_event_types(question: str) -> tuple[str, ...]:
     named = tuple(et for et, pat in EVENT_PATTERNS if pat.search(question))
     return named or tuple(et for et, _ in EVENT_PATTERNS)
 MAX_ENTITIES = 3  # Devices compared in one answer ("X vs Y vs Z").
+# Internal key of answer(): router scores and drift signals for api/events.py. Not public.
+ROUTER_SIGNALS = 'router_signals'
 DEFAULT_MODEL_DIR = (
     pathlib.Path(__file__).resolve().parents[1] / 'models' / 'baseline')
 # BigQuery, login or network failures: the user gets SERVICE_DOWN. Anything
@@ -87,7 +89,7 @@ class Chatbot:
     @classmethod
     def open(cls, dataset: str | None = None,
              model_dir: str | pathlib.Path = DEFAULT_MODEL_DIR,
-             max_gb: float | None = None) -> 'Chatbot':
+             max_gb: float | None = None, cache_size: int = 0) -> 'Chatbot':
         """Loads the router model, the search index and a BigQuery backend.
 
         Args:
@@ -95,6 +97,8 @@ class Chatbot:
             VIGIL_BQ_DATASET (default vigil_md_prod).
           model_dir: The router model directory.
           max_gb: Cost cap per question.
+          cache_size: BigQuery results kept until their tables change (0: no cache; the
+            API sets it, evaluations leave it off so every question is measured).
 
         Returns:
           A ready Chatbot.
@@ -102,7 +106,7 @@ class Chatbot:
         dataset = dataset or config.DATASET
         return cls(predict.QueryRouter.load(model_dir),
                    search.DeviceIndex.open(dataset),
-                   ql_backend.BigQueryBackend(dataset=dataset), max_gb)
+                   ql_backend.BigQueryBackend(dataset=dataset, cache_size=cache_size), max_gb)
 
     def answer(self, question: str,
                entity: tuple[str, str] | None = None) -> dict:
@@ -125,7 +129,11 @@ class Chatbot:
                'sections': [], 'sources': [], 'data_as_of': {},
                'budget_gb': None, 'search': None,
                'template_fingerprint': templates.templates_fingerprint(),
-               'rules_fingerprint': guardrails.rules_fingerprint()}
+               'rules_fingerprint': guardrails.rules_fingerprint(),
+               # For monitoring (api/events.py); the API removes it before replying.
+               ROUTER_SIGNALS: {'scores': route.get('scores') or {},
+                                'unclear': route.get('unclear'),
+                                'unknown_word_share': route.get('unknown_word_share')}}
         sections = out['sections']
         if route['reply']:
             sections.append({'kind': route['reply_kind'],
@@ -191,7 +199,7 @@ class Chatbot:
             for key in keys:
                 sections.extend(self._entity_sections(key, asked, budget, out))
         except ql_backend.QueryBudgetExceeded:
-            logging.warning('Over budget: %s', question)
+            logging.warning('Over budget (question of %d characters)', len(question))
             sections.append({'kind': 'budget', 'text': templates.BUDGET})
             return done('budget')
         except DATA_ERRORS:
