@@ -1,0 +1,12 @@
+# Container metrics for the Kibana dashboard "Vigil MD matching" (panel: container memory and CPU).
+# Every container on this Docker host: Airflow, ELK, MLflow. 30 s keeps the index small.
+metricbeat.modules:
+  - module: docker
+    metricsets: ["container", "cpu", "memory", "diskio"]
+    hosts: ["unix:///var/run/docker.sock"]
+    period: 30s
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+
+logging.level: warning

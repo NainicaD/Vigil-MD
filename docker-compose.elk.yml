@@ -39,11 +39,29 @@ services:
     image: docker.elastic.co/beats/filebeat:8.13.0
     container_name: vigil-md-filebeat
     user: root
+    # --strict.perms=false: the mounted filebeat.yml belongs to the host user, not root, and
+    # Filebeat refuses such a file by default (it exited with "must be owned by ... root").
+    command: ["-e", "--strict.perms=false"]
     volumes:
       - ./elk/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
       - ./Data-Pipeline/logs:/airflow-logs:ro    # reads Airflow logs from your Mac
     depends_on:
       - logstash
+    restart: unless-stopped
+
+  # Container CPU, memory, disk I/O every 30 s → Elasticsearch (metricbeat-*).
+  # The Docker socket gives full control of Docker even when mounted read-only: local use only.
+  metricbeat:
+    image: docker.elastic.co/beats/metricbeat:8.13.0
+    container_name: vigil-md-metricbeat
+    user: root
+    command: ["-e", "--strict.perms=false"]
+    volumes:
+      - ./elk/metricbeat/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
     restart: unless-stopped
 
   kibana:
@@ -53,6 +71,9 @@ services:
       - "5601:5601"
     environment:
       - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      # Alert rules are encrypted saved objects: without this key Kibana refuses to create them.
+      # 32+ random characters in .env (see .env.example), e.g. `openssl rand -hex 32`.
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${KIBANA_ENCRYPTION_KEY:?set KIBANA_ENCRYPTION_KEY in .env (see .env.example)}
     depends_on:
       elasticsearch:
         condition: service_healthy

@@ -44,8 +44,9 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_build_maude_events.py` | MAUDE event tables: staging, problems, text (SQL, cost guard, filter) | 31 | pass |
 | `test_build_summaries.py` | Daily summary tables: SQL, partitioning, build order, rebuild only what changed, cost guard | 55 | pass |
 | `test_build_links.py` | Exact link tables and the `links` view: SQL, allowed datasets, checks, rebuild only what changed, cost guard, the view keeps the model links once their table exists | 25 | pass |
-| `test_load_model_links.py` | Model links: default dataset `vigil_md_dev`, allowed datasets, delete scope (incremental vs `--full`), rollback on duplicate pairs, checks (exit 3), the ELK record `matching_run_metrics` | 18 | pass |
-| `dags/test_matching_dag.py` | `vigil_md_matching`: manual only, default dataset, task order and pools, run folder passed between tasks, exit 4 skips the rest | 7 | not run here (needs the Airflow container) |
+| `test_load_model_links.py` | Model links: default dataset `vigil_md_dev`, allowed datasets, delete scope (incremental vs `--full`), rollback on duplicate pairs, checks (exit 3), the ELK records `matching_run_metrics` (with storage sizes) and `matching_chunk_scored` | 21 | pass |
+| `test_setup_kibana.py` | `elk/kibana/setup_kibana.py`: every Lens panel consistent, panels cover runs, chunks, UDI check, failures, containers and alerts; rules are ES queries to the alerts index; API call order (connector before rules, failed import stops) | 17 | pass |
+| `dags/test_matching_dag.py` | `vigil_md_matching` and `vigil_md_matching_check`: manual / weekly, default dataset, task order and pools, run folders, `score` retries and checkpoints, ELK callbacks on the working tasks only, exit 4 skips the rest | 14 | not run here (needs the Airflow container) |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 

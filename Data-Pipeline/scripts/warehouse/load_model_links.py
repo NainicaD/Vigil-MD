@@ -14,7 +14,9 @@ Steps:
      ROLLBACK + RAISE if a (left_id, right_id) pair occurs twice
   4. checks: no duplicate pair, method 'model' on every row, every score in [0, 1]
   5. rebuild the links view
-  6. one ELK record, "matching_run_metrics": the s12 report (--report), link counts, run_id
+  6. ELK records: one "matching_chunk_scored" per line of s12's chunks.jsonl (--chunks), and one
+     "matching_run_metrics": the s12 report (--report), link counts, run_id, and storage sizes
+     (link and candidate table bytes from table metadata, no query cost; run folder bytes)
 
 shortcut: the incremental delete only reaches MAUDE rows that s13 selected again, so a link whose
 MAUDE row later lost every candidate (or got an exact UDI link) stays until the next --full run.
@@ -131,11 +133,31 @@ def check_problems(counts: dict) -> list[str]:
 
 
 def run_metrics(report: dict, counts: dict, loaded: dict, dataset: str, full: bool,
-                run_id: str | None) -> dict:
+                run_id: str | None, storage: dict | None = None) -> dict:
     """The fields of the ELK record matching_run_metrics. Pure."""
     return {**report, "dataset": dataset, "full": full, "run_id": run_id,
             "links_deleted": loaded["n_deleted"], "links_inserted": loaded["n_inserted"],
-            "links_total": counts["links"]}
+            "links_total": counts["links"], **(storage or {})}
+
+
+def read_chunks(path: Path | None) -> list[dict]:
+    """s12's chunks.jsonl (one JSON object per scored chunk), or [] without a file."""
+    if path is None or not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+def dir_bytes(path: Path) -> int:
+    """Bytes of every file under a run folder (candidates, checkpoints, links, report)."""
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+def storage_sizes(client, project: str, dataset: str, run_dir: Path) -> dict:
+    """Table sizes from table metadata (no query cost) and the run folder's size on disk."""
+    links = client.get_table(target(project, dataset))
+    cands = client.get_table(candidates_table(project, dataset))
+    return {"link_table_bytes": int(links.num_bytes or 0), "link_table_rows": int(links.num_rows or 0),
+            "candidates_table_bytes": int(cands.num_bytes or 0), "run_dir_bytes": dir_bytes(run_dir)}
 
 
 # ── BigQuery ──────────────────────────────────────────────────────────────────
@@ -146,6 +168,7 @@ def main(argv=None) -> int:
     ap.add_argument("--dataset", default="vigil_md_dev")
     ap.add_argument("--links", type=Path, help="s12 output (parquet)")
     ap.add_argument("--report", type=Path, help="s12 --report (JSON), sent to ELK")
+    ap.add_argument("--chunks", type=Path, help="s12 chunks.jsonl: one ELK record per chunk")
     ap.add_argument("--full", action="store_true", help="replace every model link")
     ap.add_argument("--run-id", help="Airflow run_id, for the ELK record")
     ap.add_argument("--max-gb", type=float, default=MAX_GB)
@@ -195,7 +218,11 @@ def main(argv=None) -> int:
     client.query(view).result()
 
     report = json.loads(a.report.read_text()) if a.report else {}
-    log.info("matching_run_metrics", extra=run_metrics(report, counts, loaded, a.dataset, a.full, a.run_id))
+    for chunk in read_chunks(a.chunks):
+        log.info("matching_chunk_scored", extra={**chunk, "dataset": a.dataset, "run_id": a.run_id})
+    storage = storage_sizes(client, a.project, a.dataset, a.links.parent)
+    log.info("matching_run_metrics", extra=run_metrics(report, counts, loaded, a.dataset, a.full,
+                                                       a.run_id, storage))
     print(f"=== {a.dataset}.{TABLE}: {loaded['n_deleted']:,} links deleted, "
           f"{loaded['n_inserted']:,} inserted, {counts['links']:,} in total; view links updated ===")
     return 0

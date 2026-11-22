@@ -101,6 +101,57 @@ def test_psi_against_itself_is_zero_and_a_shift_warns_without_failing(files, cap
     assert "WARNING: score_psi" in capsys.readouterr().err
 
 
+def chunk_lines(work):
+    return [json.loads(line) for line in (work / "chunks.jsonl").read_text().splitlines()]
+
+
+def test_work_dir_saves_one_part_and_one_stat_per_chunk(files):
+    work = files / "work"
+    links = run(files, "--batch", "1", "--work-dir", str(work), "--report", str(files / "r.json"))
+    assert sorted(p.name for p in (work / "parts").glob("part-*.parquet")) == [
+        "part-00000.parquet", "part-00001.parquet", "part-00002.parquet"]
+    lines = chunk_lines(work)
+    assert [s["chunk"] for s in lines] == [0, 1, 2] and all(s["n_chunks"] == 3 for s in lines)
+    assert [(s["n_match"], s["n_non_match"], s["n_insufficient_evidence"]) for s in lines] == [
+        (1, 0, 0), (0, 1, 0), (0, 0, 1)]
+    assert all(not s["resumed"] and s["max_rss_mb"] > 0 and s["pairs"] == 1 for s in lines)
+    r = json.loads((files / "r.json").read_text())
+    assert (r["n_chunks"], r["n_chunks_resumed"]) == (3, 0) and r["peak_rss_mb"] > 0 and r["pairs_per_s"] > 0
+    assert links["left_id"].tolist() == ["same"]
+
+
+def test_rerun_continues_from_the_saved_chunks(files):
+    work = files / "work"
+    first = run(files, "--batch", "1", "--work-dir", str(work)).drop(columns="built_at")
+    (work / "parts" / "part-00001.parquet").unlink()               # chunk 1 was lost in a crash
+    again = run(files, "--batch", "1", "--work-dir", str(work)).drop(columns="built_at")
+    lines = sorted(chunk_lines(work), key=lambda s: s["chunk"])     # saved chunks are listed first
+    assert [s["resumed"] for s in lines] == [True, False, True]
+    pd.testing.assert_frame_equal(first, again)
+    run(files, "--batch", "1", "--work-dir", str(work))
+    assert all(s["resumed"] for s in chunk_lines(work))           # nothing left to score
+
+
+def test_checkpoints_of_other_input_are_never_mixed(files):
+    work = files / "work"
+    run(files, "--batch", "1", "--work-dir", str(work))
+    with pytest.raises(SystemExit, match="checkpoints of other input"):
+        run(files, "--batch", "2", "--work-dir", str(work))         # other chunking
+    pairs = pd.read_parquet(files / "pairs.parquet")
+    pd.concat([pairs, pairs.head(1).assign(maude_id="extra")]).to_parquet(files / "pairs.parquet")
+    with pytest.raises(SystemExit, match="checkpoints of other input"):
+        run(files, "--batch", "1", "--work-dir", str(work))         # other candidates
+
+
+def test_parallel_work_dir_gives_the_same_links_and_chunk_counts(files):
+    one = run(files, "--batch", "1", "--work-dir", str(files / "w1")).drop(columns="built_at")
+    two = run(files, "--batch", "1", "--workers", "2", "--work-dir", str(files / "w2")).drop(columns="built_at")
+    pd.testing.assert_frame_equal(one, two)
+    keep = ("chunk", "pairs", "n_match", "n_non_match", "n_insufficient_evidence", "resumed")
+    strip = lambda lines: [{k: s[k] for k in keep} for s in lines]   # noqa: E731
+    assert strip(chunk_lines(files / "w1")) == strip(chunk_lines(files / "w2"))
+
+
 def test_missing_input_column_fails_loudly(files):
     pd.read_parquet(files / "pairs.parquet").drop(columns="key_g_pcs").to_parquet(files / "pairs.parquet")
     with pytest.raises(SystemExit, match="key_g_pcs"):

@@ -8,7 +8,9 @@
 -- Why: The model scores pairs. This query gives it the pairs. The shared CTEs are copies of
 --   the test-set query, so scoring sees the same candidates the hand-labeled set was drawn
 --   with. tests/test_build_candidates.py checks that the copies stay identical.
--- Informs: vigil_md_model.match_candidates_<dataset> and the parquet file for s12.
+-- Informs: vigil_md_model.match_candidates_<dataset> and the parquet file for s12 (@mode 'pool');
+--   vigil_md_model.match_candidates_check_<dataset> for the weekly UDI agreement check
+--   (@mode 'udi_check': rows with an exact UDI link, plus true_group_key).
 WITH gudid_di AS (
   SELECT DISTINCT udi_di FROM `__GUDID__` WHERE udi_di IS NOT NULL
 ),
@@ -21,12 +23,21 @@ pool AS (
     t.model_number_raw,
     t.catalog_number,
     t.product_code,
+    t.udi_di,
     UPPER(REGEXP_REPLACE(TRIM(t.model_number_raw), r'[\s\-_./]', '')) AS model_key_raw,
     UPPER(REGEXP_REPLACE(TRIM(t.catalog_number), r'[\s\-_./]', '')) AS catalog_key_raw
   FROM `__MAUDE__` AS t
   LEFT JOIN gudid_di AS d ON t.udi_di = d.udi_di
-  WHERE d.udi_di IS NULL
-    AND (@since IS NULL OR t.last_updated_at > @since)
+  WHERE (@since IS NULL OR t.last_updated_at > @since)
+    -- 'pool': rows with no usable UDI link (the rows the model is for).
+    -- 'udi_check': a fixed sample of rows WITH an exact UDI link, whose device is known; the
+    -- model never sees the UDI (a banned feature), so these rows test it (s14_udi_agreement.py).
+    AND IF(@mode = 'udi_check',
+           d.udi_di IS NOT NULL
+             AND MOD(ABS(FARM_FINGERPRINT(CONCAT(t.source_record_id, '|',
+                                                 IFNULL(CAST(t.device_seq AS STRING), '')))), 10000)
+                 < @sample_per_10k,
+           d.udi_di IS NULL)
 ),
 keyed AS (
   -- Placeholder rule of sql/test_set/01_sample.sql: under 2 characters or a placeholder
@@ -194,7 +205,12 @@ SELECT
   gr.rep.catalog_number AS key_g_catalog_raw,
   ARRAY_TO_STRING(gr.rep.product_codes, ';') AS key_g_pcs,
   ARRAY_TO_STRING(p.sources, ';') AS cand_sources,
-  (SELECT COUNT(*) FROM pool) AS meta_n_pool_rows
+  (SELECT COUNT(*) FROM pool) AS meta_n_pool_rows,
+  p.group_key AS cand_group_key,
+  tg.group_key AS true_group_key      -- the group of the row's own UDI; NULL in 'pool' mode
 FROM keyed AS k
 JOIN pairs AS p USING (sample_id)
 JOIN model_groups AS gr USING (group_key)
+-- MIN: a DI listed twice in GUDID must not double the row
+LEFT JOIN (SELECT udi_di, MIN(group_key) AS group_key FROM g2 GROUP BY udi_di) AS tg
+  ON tg.udi_di = k.udi_di

@@ -147,6 +147,36 @@ def alert_on_failure(**context):
         log.exception("Failed to send alert email")
 
 
+# ── ELK records from the matching DAGs ────────────────────────────────────────
+
+def send_to_elk(message: str, fields: dict) -> None:
+    """One structured record through scripts/logger.py (Logstash at VIGIL_LOGSTASH_HOST)."""
+    sys.path.insert(0, str(REPO))
+    from scripts.logger import get_logger  # pylint: disable=import-outside-toplevel
+    get_logger("vigil_md_matching").info(message, extra=fields)
+
+
+def task_event_fields(context: dict) -> dict:
+    """The fields of matching_task_failed / matching_task_retry. chunks_done: lines in the run's
+    chunks.jsonl, i.e. scored chunks that a retry will not score again."""
+    from vigil_checks import WORK_DIRS, matching_files  # pylint: disable=import-outside-toplevel
+    ti, run_id = context["ti"], context["run_id"]
+    chunks = Path(matching_files(run_id, WORK_DIRS[ti.dag_id])["chunks"])
+    return {"dag_id": ti.dag_id, "task_id": ti.task_id, "run_id": run_id,
+            "try_number": ti.try_number, "error": str(context.get("exception"))[:500],
+            "chunks_done": len(chunks.read_text().splitlines()) if chunks.exists() else 0}
+
+
+def matching_task_failed(context):
+    """on_failure_callback: a failed task leaves a record in ELK, not only a red box in Airflow."""
+    send_to_elk("matching_task_failed", task_event_fields(context))
+
+
+def matching_task_retry(context):
+    """on_retry_callback: each retry is visible in ELK."""
+    send_to_elk("matching_task_retry", task_event_fields(context))
+
+
 # ── Run state ─────────────────────────────────────────────────────────────────
 
 def mark_run_failed(**context):

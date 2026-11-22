@@ -9,6 +9,11 @@ File in, file out: no BigQuery. Not done here: building the candidate pairs, loa
 into vigil_md_prod (a pipeline step; this folder writes only to vigil_md_model), and keeping
 NON_MATCH / INSUFFICIENT_EVIDENCE rows.
 
+--work-dir DIR: each scored chunk is saved to DIR/parts (temp file + rename) and its numbers
+(pairs, seconds, pairs/s, decisions, peak memory) are appended to DIR/chunks.jsonl as it
+finishes. A rerun with the same candidates, --batch and bundle scores only the missing chunks;
+other input stops with an error (DIR/parts/source.json). The DAG uses this, so a retry continues.
+
 Only point --bundle at bundles from the team's registry: tfidf.pkl is a pickle.
 
 Usage (from anywhere):
@@ -20,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import multiprocessing
+import resource
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -72,26 +78,100 @@ def score_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _rss_mb() -> float:
+    """Peak memory of this process so far (Linux reports ru_maxrss in KB)."""
+    return round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1)
+
+
+def chunk_stat(i: int, n: int, out: pd.DataFrame, seconds: float, rss_mb: float | None,
+               resumed: bool) -> dict:
+    """One chunk's numbers: the chunks.jsonl line and the task-log line."""
+    counts = out["decision"].value_counts()
+    return {"chunk": i, "n_chunks": n, "pairs": len(out), "seconds": round(seconds, 3),
+            "pairs_per_s": round(len(out) / seconds, 1) if seconds else None,
+            **{f"n_{d.lower()}": int(counts.get(d, 0)) for d in (predict.MATCH, predict.NON_MATCH, predict.IE)},
+            "max_rss_mb": rss_mb, "resumed": resumed}
+
+
+def _score_job(job) -> tuple[int, pd.DataFrame, float, float]:
+    """Score one chunk; with a part path, save it first (temp file + rename: never half-written)."""
+    i, chunk, part = job
+    t = time.monotonic()
+    out = score_chunk(chunk)
+    seconds = time.monotonic() - t
+    if part is not None:
+        tmp = part.with_suffix(".tmp")
+        out.to_parquet(tmp)
+        tmp.replace(part)
+    return i, out, seconds, _rss_mb()
+
+
+def _check_source(parts: Path, source: dict) -> None:
+    """Parts may only be reused for the same candidates, batch size and bundle."""
+    f = parts / "source.json"
+    if f.exists() and json.loads(f.read_text()) != source:
+        raise SystemExit(f"{parts} holds checkpoints of other input (candidates, --batch or bundle "
+                         f"changed). Delete that folder to score from the start.")
+    parts.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(source))
+
+
 def score(pairs: pd.DataFrame, bundle_dir, alias_path, siblings_path,
-          batch: int = 100_000, workers: int = 1) -> pd.DataFrame:
-    """Every pair scored and decided (score, decision, match_kind, left_id, right_id)."""
+          batch: int = 100_000, workers: int = 1, work_dir: Path | None = None,
+          source: dict | None = None) -> tuple[pd.DataFrame, list[dict]]:
+    """Every pair scored and decided (score, decision, match_kind, left_id, right_id), and one
+    stat per chunk. With work_dir: each chunk is saved to work_dir/parts (a rerun scores only the
+    missing chunks) and its stat is appended to work_dir/chunks.jsonl as it finishes."""
     missing = [c for c in REQUIRED if c not in pairs.columns]
     if missing:
         raise SystemExit(f"candidate pairs lack columns: {', '.join(missing)}")
     if pairs.empty:
         raise SystemExit("no candidate pairs to score")
     chunks = [pairs.iloc[i:i + batch] for i in range(0, len(pairs), batch)]
-    init = (bundle_dir, alias_path, siblings_path)
-    # shortcut: processes on one machine only; add --shard i/N when a backfill needs several machines
-    if workers <= 1:
-        _init(*init)
-        parts = [score_chunk(c) for c in chunks]
-    else:
-        # spawn, not fork: a fork after XGBoost/OpenMP threads have started deadlocks the workers
-        with ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"),
-                                 initializer=_init, initargs=init) as pool:
-            parts = list(pool.map(score_chunk, chunks))     # map keeps chunk order
-    return pd.concat(parts)
+    n = len(chunks)
+    parts = Path(work_dir) / "parts" if work_dir else None
+    log = None
+    if parts:
+        _check_source(parts, source or {})
+        log = (Path(work_dir) / "chunks.jsonl").open("w")
+    results, stats = {}, []
+
+    def record(stat: dict, out: pd.DataFrame) -> None:
+        results[stat["chunk"]] = out
+        stats.append(stat)
+        how = ("resumed from checkpoint" if stat["resumed"]
+               else f"{stat['seconds']:.1f} s, peak {stat['max_rss_mb']} MB")
+        print(f"chunk {stat['chunk'] + 1}/{n}: {stat['pairs']:,} pairs, {stat['n_match']:,} MATCH, {how}",
+              flush=True)
+        if log:
+            log.write(json.dumps(stat) + "\n")
+            log.flush()
+
+    jobs = []
+    for i, c in enumerate(chunks):
+        part = parts / f"part-{i:05d}.parquet" if parts else None
+        if part is not None and part.exists():
+            record(chunk_stat(i, n, out := pd.read_parquet(part), 0.0, None, True), out)
+        else:
+            jobs.append((i, c, part))
+    try:
+        init = (bundle_dir, alias_path, siblings_path)
+        # shortcut: processes on one machine only; add --shard i/N when a backfill needs several machines
+        if jobs and workers <= 1:
+            _init(*init)
+            for job in jobs:
+                i, out, sec, rss = _score_job(job)
+                record(chunk_stat(i, n, out, sec, rss, False), out)
+        elif jobs:
+            # spawn, not fork: a fork after XGBoost/OpenMP threads have started deadlocks the workers
+            with ProcessPoolExecutor(workers, mp_context=multiprocessing.get_context("spawn"),
+                                     initializer=_init, initargs=init) as pool:
+                for i, out, sec, rss in pool.map(_score_job, jobs):   # map yields in chunk order
+                    record(chunk_stat(i, n, out, sec, rss, False), out)
+    finally:
+        if log:
+            log.close()
+    return pd.concat([results[i] for i in range(n)]), stats
 
 
 def to_links(scored: pd.DataFrame, built_at: datetime) -> pd.DataFrame:
@@ -120,8 +200,9 @@ def psi(hist: list[int], baseline: list[int], eps: float = 1e-4) -> float:
 
 
 def run_report(scored: pd.DataFrame, pairs: pd.DataFrame, meta: dict, seconds: float,
-               baseline: dict | None = None) -> dict:
-    """One run's numbers for ELK: decisions, score distribution, match kinds, bundle."""
+               baseline: dict | None = None, stats: list[dict] | None = None) -> dict:
+    """One run's numbers for ELK: decisions, score distribution, match kinds, bundle, and (with
+    the chunk stats) throughput and peak memory of the chunks scored in this run."""
     counts = scored["decision"].value_counts()
     scores = scored["score"].to_numpy(float)
     report = {
@@ -139,6 +220,15 @@ def run_report(scored: pd.DataFrame, pairs: pd.DataFrame, meta: dict, seconds: f
         report["n_pool_rows"] = int(pairs["meta_n_pool_rows"].iloc[0])
     if baseline is not None:
         report["score_psi"] = psi(report["score_hist"], baseline["score_hist"])
+    if stats:
+        new = [s for s in stats if not s["resumed"]]
+        busy = sum(s["seconds"] for s in new)
+        report.update({
+            "n_chunks": len(stats), "n_chunks_resumed": len(stats) - len(new),
+            # per worker: chunk time is measured inside each worker process
+            "pairs_per_s": round(sum(s["pairs"] for s in new) / busy, 1) if busy else None,
+            "chunk_seconds_max": max((s["seconds"] for s in new), default=None),
+            "peak_rss_mb": max((s["max_rss_mb"] for s in new), default=None)})
     return report
 
 
@@ -153,6 +243,8 @@ def main(argv=None) -> int:
     ap.add_argument("--workers", type=int, default=1, help="processes; 1 runs inline")
     ap.add_argument("--report", type=Path, help="write the run's numbers here (JSON, for ELK)")
     ap.add_argument("--baseline", type=Path, help="an earlier --report: adds score_psi")
+    ap.add_argument("--work-dir", type=Path,
+                    help="checkpoints (parts/) and chunk stats (chunks.jsonl): a rerun continues")
     a = ap.parse_args(argv)
 
     started = time.monotonic()
@@ -161,17 +253,20 @@ def main(argv=None) -> int:
         print(f"WARNING: {siblings} not found; scoring without sibling keys", file=sys.stderr)
         siblings = None
     pairs = pd.read_parquet(a.pairs)      # rows.text cleans nulls; parquet keeps model numbers as text
-    scored = score(pairs, a.bundle, a.alias, siblings, a.batch, a.workers)
+    meta = json.loads((a.bundle / "meta.json").read_text())
+    st = a.pairs.stat()
+    source = {"pairs_bytes": st.st_size, "pairs_mtime_ns": st.st_mtime_ns, "batch": a.batch,
+              "bundle_version": meta.get("version"), "cutoff": meta["cutoff"]}
+    scored, stats = score(pairs, a.bundle, a.alias, siblings, a.batch, a.workers, a.work_dir, source)
     links = to_links(scored, datetime.now(timezone.utc))
     a.out.parent.mkdir(parents=True, exist_ok=True)
     links.to_parquet(a.out, index=False)
-    meta = json.loads((a.bundle / "meta.json").read_text())
     print(f"{len(pairs):,} pairs -> {scored['decision'].value_counts().to_dict()}; "
           f"cutoff {meta['cutoff']}, version {meta.get('version', 'unknown')}; "
           f"{len(links):,} links written to {a.out}")
     if a.report:
         baseline = json.loads(a.baseline.read_text()) if a.baseline else None
-        report = run_report(scored, pairs, meta, time.monotonic() - started, baseline)
+        report = run_report(scored, pairs, meta, time.monotonic() - started, baseline, stats)
         a.report.parent.mkdir(parents=True, exist_ok=True)
         a.report.write_text(json.dumps(report, indent=2))
         if report.get("score_psi", 0) > PSI_WARN:

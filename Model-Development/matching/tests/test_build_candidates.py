@@ -59,7 +59,32 @@ def test_only_prod_or_a_dev_extract_can_be_read():
 
 
 def test_since_filters_the_pool():
-    assert "AND (@since IS NULL OR t.last_updated_at > @since)" in s13.select_sql("p", "vigil_md_dev")
+    assert "WHERE (@since IS NULL OR t.last_updated_at > @since)" in s13.select_sql("p", "vigil_md_dev")
+
+
+def test_mode_picks_the_pool_or_a_sample_of_udi_linked_rows():
+    sql = s13.select_sql("p", "vigil_md_dev")
+    assert "IF(@mode = 'udi_check',\n           d.udi_di IS NOT NULL" in sql and "< @sample_per_10k" in sql
+    assert "d.udi_di IS NULL)" in sql                                   # 'pool': no usable UDI link
+    final = sql.rsplit("\nSELECT\n", 1)[1]
+    assert "AS cand_group_key" in final and "AS true_group_key" in final
+
+
+def test_udi_check_never_replaces_the_pools_table():
+    assert s13.target_table("p", "vigil_md_dev", "udi_check") == "p.vigil_md_model.match_candidates_check_vigil_md_dev"
+    assert s13.create_sql("p", "vigil_md_dev", "udi_check").startswith(
+        "CREATE OR REPLACE TABLE `p.vigil_md_model.match_candidates_check_vigil_md_dev`")
+    assert "match_candidates_check_vigil_md_dev" in s13.siblings_sql("p", "vigil_md_dev", "udi_check")
+
+
+def test_udi_check_run_scores_the_whole_sample(bq, tmp_path):
+    client = FakeClient(rows=[ROW], last="2026-11-20T06:00:00+00:00")
+    assert s13.main(["--project", "p", "--mode", "udi_check", "--sample-per-10k", "50",
+                     "--out", str(tmp_path / "c.parquet")], client=client) == 0
+    (sql, cfg), = client.ran
+    params = {n: v for n, _, v in cfg.query_parameters}
+    assert params["since"] is None and params["mode"] == "udi_check" and params["sample_per_10k"] == 50
+    assert "match_candidates_check_vigil_md_dev" in sql
 
 
 # ── main (fake BigQuery) ──────────────────────────────────────────────────────

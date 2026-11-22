@@ -8,6 +8,11 @@ that the test-set candidate rules propose. Writes vigil_md_model.match_candidate
 --since auto (default): MAX(built_at) of <dataset>.link_maude_gudid_model, the last load of model
 links. No such table: every row. --full: every row (backfill, new model version).
 
+--mode udi_check: instead of the pool, a fixed sample (--sample-per-10k) of rows that HAVE an exact
+UDI link, with true_group_key, for the weekly agreement check (s14_udi_agreement.py). Its table is
+vigil_md_model.match_candidates_check_<dataset>, so it never replaces the pool's table, which
+load_model_links.py reads.
+
 Sibling keys: which of the candidates' MAUDE model/catalog keys exist in GUDID under the
 candidate's labeler (s04's SIBLING_SQL, run on the candidate table). Written to --siblings-out
 for s12 --siblings. Without them feat_conflicting_identifier is always False, as in training
@@ -61,24 +66,32 @@ def select_sql(project: str, dataset: str) -> str:
     return sql
 
 
-def target_table(project: str, dataset: str) -> str:
-    return f"{project}.{bq_utils.MODEL_DATASET}.match_candidates_{dataset}"
+MODES = ("pool", "udi_check")
 
 
-def create_sql(project: str, dataset: str) -> str:
+def target_table(project: str, dataset: str, mode: str = "pool") -> str:
+    """'udi_check' has its own table: load_model_links.py deletes the links of the rows in the
+    'pool' table, so a check run must never replace it."""
+    infix = "_check" if mode == "udi_check" else ""
+    return f"{project}.{bq_utils.MODEL_DATASET}.match_candidates{infix}_{dataset}"
+
+
+def create_sql(project: str, dataset: str, mode: str = "pool") -> str:
     """CREATE OR REPLACE TABLE in vigil_md_model only. Pure."""
-    return f"CREATE OR REPLACE TABLE `{target_table(project, dataset)}` AS\n{select_sql(project, dataset)}"
+    return f"CREATE OR REPLACE TABLE `{target_table(project, dataset, mode)}` AS\n{select_sql(project, dataset)}"
 
 
-def siblings_sql(project: str, dataset: str) -> str:
+def siblings_sql(project: str, dataset: str, mode: str = "pool") -> str:
     """s04's sibling-key query on this run's candidate table (same key_* column names). Pure."""
-    return sibling_sql(project, dataset, target_table(project, dataset).rsplit(".", 1)[1])
+    return sibling_sql(project, dataset, target_table(project, dataset, mode).rsplit(".", 1)[1])
 
 
-def query_params(since):
+def query_params(since, mode: str = "pool", sample_per_10k: int = 100):
     from google.cloud import bigquery
     return ([bigquery.ScalarQueryParameter("since", "TIMESTAMP", since),
-             bigquery.ScalarQueryParameter("seed", "STRING", SEED)]
+             bigquery.ScalarQueryParameter("seed", "STRING", SEED),
+             bigquery.ScalarQueryParameter("mode", "STRING", mode),
+             bigquery.ScalarQueryParameter("sample_per_10k", "INT64", sample_per_10k)]
             + [bigquery.ScalarQueryParameter(k, "INT64", v) for k, v in CAPS.items()])
 
 
@@ -101,13 +114,17 @@ def main(argv=None, client=None) -> int:
     ap.add_argument("--out", type=Path, help="candidate pairs parquet (for s12)")
     ap.add_argument("--siblings-out", type=Path,
                     help="sibling keys CSV for s12 --siblings (default: <out>.siblings.csv)")
+    ap.add_argument("--mode", choices=MODES, default="pool",
+                    help="pool: rows with no usable UDI link; udi_check: a sample of rows with one")
+    ap.add_argument("--sample-per-10k", type=int, default=100,
+                    help="udi_check: rows sampled per 10,000 UDI-linked rows (100 = 1%%)")
     ap.add_argument("--max-gb", type=float, default=10.0)
     ap.add_argument("--print-only", action="store_true", help="print the SQL; no GCP call")
     ap.add_argument("--estimate-only", action="store_true", help="dry run only (free)")
     a = ap.parse_args(argv)
 
     try:
-        sql, sib_sql = create_sql(a.project, a.dataset), siblings_sql(a.project, a.dataset)
+        sql, sib_sql = create_sql(a.project, a.dataset, a.mode), siblings_sql(a.project, a.dataset, a.mode)
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return EXIT_BAD
@@ -123,7 +140,7 @@ def main(argv=None, client=None) -> int:
         client = bigquery.Client(project=a.project)
     from google.cloud import bigquery
 
-    if a.full:
+    if a.full or a.mode == "udi_check":       # the check scores its whole fixed sample every time
         since = None
     elif a.since == "auto":
         since = last_load(client, a.project, a.dataset)
@@ -132,8 +149,9 @@ def main(argv=None, client=None) -> int:
     print(f"dataset {a.dataset}; MAUDE rows changed after: {since or 'any time (full)'}")
 
     max_bytes = int(a.max_gb * 1e9)
+    params = query_params(since, a.mode, a.sample_per_10k)
     est = int(client.query(sql, job_config=bigquery.QueryJobConfig(
-        dry_run=True, use_query_cache=False, query_parameters=query_params(since))).total_bytes_processed or 0)
+        dry_run=True, use_query_cache=False, query_parameters=params)).total_bytes_processed or 0)
     print(f"estimated {est / 1e9:.2f} GB")
     if est > max_bytes:
         print(f"ERROR: over --max-gb {a.max_gb}. Nothing was run.", file=sys.stderr)
@@ -141,13 +159,14 @@ def main(argv=None, client=None) -> int:
     if a.estimate_only:
         return EXIT_OK
 
+    table = target_table(a.project, a.dataset, a.mode)
     job = client.query(sql, job_config=bigquery.QueryJobConfig(
-        query_parameters=query_params(since), maximum_bytes_billed=max_bytes))
+        query_parameters=params, maximum_bytes_billed=max_bytes))
     job.result()
-    print(f"billed {(job.total_bytes_billed or 0) / 1e9:.2f} GB -> {target_table(a.project, a.dataset)}")
+    print(f"billed {(job.total_bytes_billed or 0) / 1e9:.2f} GB -> {table}")
 
     # create_bqstorage_client=False keeps this on the free tabledata.list path (as s03)
-    df = client.list_rows(target_table(a.project, a.dataset)).to_dataframe(create_bqstorage_client=False)
+    df = client.list_rows(table).to_dataframe(create_bqstorage_client=False)
     if df.empty:
         print("no candidate pairs: nothing to score")
         return EXIT_NONE

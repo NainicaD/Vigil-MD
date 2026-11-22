@@ -105,6 +105,11 @@ class FakeClient:
         self.loads.append((table, job_config))
         return types.SimpleNamespace(result=lambda: None)
 
+    def get_table(self, table_id):
+        size = {"link_maude_gudid_model": (5_000_000, 120), "match_candidates_vigil_md_dev": (90_000_000, 500)}
+        num_bytes, num_rows = size[table_id.rsplit(".", 1)[1]]
+        return types.SimpleNamespace(num_bytes=num_bytes, num_rows=num_rows)
+
 
 @pytest.fixture
 def env(monkeypatch, tmp_path):
@@ -116,15 +121,17 @@ def env(monkeypatch, tmp_path):
     from google.cloud import bigquery
     monkeypatch.setattr(bigquery, "Client", lambda project: holder["c"])
     monkeypatch.setattr(M.log, "info", lambda msg, *a, extra=None, **kw: records.append((msg, extra)))
-    links, report = tmp_path / "links.parquet", tmp_path / "report.json"
+    links, report, chunks = tmp_path / "links.parquet", tmp_path / "report.json", tmp_path / "chunks.jsonl"
     links.write_bytes(b"PAR1")
     report.write_text(json.dumps(REPORT))
-    return types.SimpleNamespace(make=make, records=records, links=links, report=report)
+    chunks.write_text("".join(json.dumps({"chunk": i, "pairs": 100, "seconds": 2.0, "max_rss_mb": 900.0,
+                                          "resumed": i == 0}) + "\n" for i in range(2)))
+    return types.SimpleNamespace(make=make, records=records, links=links, report=report, chunks=chunks)
 
 
 def run(env, *extra):
     return M.main(["--project", P, "--links", str(env.links), "--report", str(env.report),
-                   "--run-id", "manual__1", *extra])
+                   "--chunks", str(env.chunks), "--run-id", "manual__1", *extra])
 
 
 def test_load_creates_loads_merges_checks_then_rebuilds_the_view(env):
@@ -150,6 +157,30 @@ def test_one_elk_record_with_the_run_metrics(env):
     (msg, extra), = [r for r in env.records if r[0] == "matching_run_metrics"]
     assert extra["n_pairs"] == 500 and extra["links_inserted"] == 9 and extra["links_total"] == 120
     assert extra["run_id"] == "manual__1" and extra["dataset"] == "vigil_md_dev"
+
+
+def test_one_elk_record_per_scored_chunk(env):
+    env.make()
+    run(env)
+    chunks = [extra for msg, extra in env.records if msg == "matching_chunk_scored"]
+    assert [c["chunk"] for c in chunks] == [0, 1] and [c["resumed"] for c in chunks] == [True, False]
+    assert all(c["run_id"] == "manual__1" and c["dataset"] == "vigil_md_dev" for c in chunks)
+
+
+def test_run_record_has_the_storage_sizes(env):
+    env.make()
+    run(env)
+    (extra,) = [x for msg, x in env.records if msg == "matching_run_metrics"]
+    assert (extra["link_table_bytes"], extra["link_table_rows"]) == (5_000_000, 120)
+    assert extra["candidates_table_bytes"] == 90_000_000
+    assert extra["run_dir_bytes"] == M.dir_bytes(env.links.parent) > 0
+
+
+def test_no_chunks_file_sends_no_chunk_records(env, tmp_path):
+    env.make()
+    assert M.main(["--project", P, "--links", str(env.links), "--report", str(env.report)]) == 0
+    assert not [r for r in env.records if r[0] == "matching_chunk_scored"]
+    assert M.read_chunks(tmp_path / "missing.jsonl") == []
 
 
 def test_duplicates_in_the_transaction_exit_3_without_a_view(env):
