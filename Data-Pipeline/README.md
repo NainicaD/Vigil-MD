@@ -547,7 +547,7 @@ Kibana is at http://localhost:5601. Filebeat reads all Airflow task logs in `log
 All GCP calls are mocked: **no test touches real GCS or BigQuery**, and test logs never reach Logstash (an autouse fixture). The case list is in [`tests/TEST_CASES.md`](tests/TEST_CASES.md); the test plan is [`docs/TESTS_PLAN.md`](docs/TESTS_PLAN.md).
 
 ```bash
-pytest -q                                        # 666 passed, 1 skipped, 21 deselected (2026-11-21)
+pytest -q                                        # 672 passed, 1 skipped, 21 deselected (2026-11-22)
 docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker python -m pytest tests/dags -q   # 113 passed
 pytest -m integration                            # real-GCS checks of the raw files (needs credentials)
 ```
@@ -674,6 +674,7 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ### 2026-11-21 — MAUDE re-exports: changed reports only, last-known UDI-DI
 
 - **Only new or changed MAUDE reports are loaded.** A re-export that only moves and reorders reports loads nothing (2026-11-02 → 03: 0 of 196,449 reports in 2016q1); the 2026-11-17 export would have loaded 6.6–13.2% per quarter instead of all of it ([`docs/issue.md`](docs/issue.md) #4, #17).
+- **Fingerprints created for all 249 files PROD holds** (2026-11-22, `bootstrap_fingerprints.py`; 21,499,882 reports, each file checked against its load-time content hash), so the next re-export already loads only changed reports.
 - **PROD keeps the last-known UDI-DI.** The 2026-11-17 export blanked the UDI-DI of about 1.4M rows; they were restored from the 2026-11-03 staging partition (62.1% of MAUDE rows have one again) and marked with `udi_di_removed_at` (#18).
 
 ### 2026-11-17 to 2026-11-19 — MAUDE re-export, run state
