@@ -445,3 +445,35 @@ def test_typed_name_yields_only_to_a_dominant_entry_of_its_family(index, monkeyp
     monkeypatch.setattr(index, "search", lambda text, limit=10: _tied(*entries))
     r = index.resolve(phrase)
     assert r.status == "resolved" and r.matches[0].title == expected
+
+
+# ── fixes from the 2026-11-22 live test ───────────────────────────────────────
+
+def test_filler_words_are_not_device_words():
+    # "per" matched "Professional" (Dexcom G6 Professional System instead of the G6 Transmitter);
+    # "associated" matched GORE AND ASSOCIATED INC.
+    assert device_words("malfunction reports for the Dexcom G6 per year") == ["dexcom", "g6"]
+    assert device_words("are there any deaths associated to this") == []
+    assert device_words("any deaths linked to the Impella") == ["impella"]
+
+
+def test_dexcom_per_year_finds_the_dexcom(index):
+    r = index.resolve("How many malfunction reports does the Dexcom G6 have per year?")
+    assert r.status == "resolved" and r.phrase == "dexcom g6"
+
+
+def test_a_comparison_asks_about_its_unclear_part(index):
+    # "DreamStation and t:slim X2" (3 versions) matched an unrelated device as one phrase; now
+    # the unclear part is asked about. Known limit: when the joined phrase does resolve ("Impella
+    # and breast implants" -> one breast implant), the whole phrase still wins, as before.
+    r = index.resolve("Compare deaths for the DreamStation and the HeartMate")
+    assert r.status == "ambiguous" and r.phrase == "heartmate"
+    assert [h.title for h in r.matches] == ["HeartMate 3", "HeartMate II"]
+
+
+def test_a_clause_that_is_no_comparison_is_not_asked_about(index):
+    # "and" joins a request, not a second device: the whole question decides, as before.
+    with_and = index.resolve("How many deaths for the Impella, and breast implants too")
+    assert with_and.status == index._resolve_phrase(
+        " ".join(device_words("How many deaths for the Impella, and breast implants too"))).status
+    assert with_and.phrase == "impella breast implants"

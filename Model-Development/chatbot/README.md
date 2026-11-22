@@ -401,7 +401,12 @@ under 3 letters ("go", "g6") are pre-selected by SQLite. Equal scores rank by re
 2. Device words are the question's words without question, judgement and pronoun words or years;
    parts of hyphenated names ("V-Go") and a capitalised word or one-digit model number after a
    name word ("DreamStation Go", "HeartMate 3") are kept.
-3. "X vs Y", "X and Y" and lists resolve each part ("several").
+3. "X vs Y", "X and Y" and lists resolve each part ("several"). In a comparison (compare, vs,
+   versus, both, each, "which has more") whose parts each find something but not one device each,
+   the bot asks which one is meant for the unclear part ("DreamStation and t:slim X2": which t:slim
+   X2?) instead of searching the joined phrase. A name with "and" in it ("Smith and Nephew") still
+   resolves as a whole first; known limit: when the joined phrase resolves ("Impella and breast
+   implants" -> one breast implant), it wins.
 4. A question with several sentences is answered by the one clause that names a device with all
    its words when the other clauses find nothing, so a sentence about why the user asks ("Our
    contract is up for renewal;") does not hide the device.
@@ -456,6 +461,15 @@ bot.answer("Any deaths?", entity=("device", "dev:f0cdc15b4d63"))   # from a devi
   reasons are quoted from the FDA as they are.
 - **A device with no label:** when the router finds no label and no advice but the question names
   one device (or comes from a device page), the device's summary is shown after a short note.
+- **An event word with no label:** a question that names deaths, injuries or malfunctions ("are
+  there any deaths associated to this") is a counts question even when no label passed its
+  threshold (`rule_hits`: `event_word_counts`): with a device it gets the counts, without one the
+  bot asks which device ("dead" is left out: "the pump went dead" is a malfunction).
+- **Report texts over the cost cap:** fewer candidates are read (the 2n, then n newest reports),
+  then one event type at a time (deaths, injuries, malfunctions, skipping a type without texts),
+  with a note; only if nothing fits, a cost-limit message. Each refused try is a free dry run. A
+  report-texts question on a large device bills about 0.35 GB (2026-11-22), a normal question
+  about 40 MB.
 - **Edge cases**, each a fixed reply: no device named, device not found, several close matches,
   comparisons (one block per device, at most 3, no ranking), no reports, over the cost cap,
   BigQuery unreachable.

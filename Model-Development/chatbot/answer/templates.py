@@ -55,9 +55,15 @@ NARRATIVES_NONE_OF_TYPE = ('**What the {events} reports describe:** no {events} 
                            'texts were found for this {kind}.')
 NARRATIVES_NONE = ('**What the reports describe:** no report texts were found '
                    'for this {kind}.')
-NARRATIVES_BUDGET = ('**What the reports describe:** this {kind} has too many '
-                     'reports to read their texts within one question. Ask about one '
-                     'device to see example reports.')
+NARRATIVES_BUDGET = ('**What the reports describe:** reading these report texts would '
+                     'go over the cost limit of one question. Ask about one event type, '
+                     'for example "describe the death reports", or about one device '
+                     'instead of a product code or company.')
+NARRATIVES_BUDGET_ONE = ('**What the {events} reports describe:** reading these report texts '
+                         'would go over the cost limit of one question.')
+NARRATIVES_NARROWED = ('(All event types together are over the cost limit of one question, '
+                       'so the {events} reports are shown here. Ask about another event '
+                       'type to see its reports.)')
 WITHHELD_NOTE = ('(b)(4) and (b)(6) mark text the FDA withheld (confidential '
                  'or personal).')
 

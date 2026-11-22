@@ -397,10 +397,11 @@ def test_no_label_and_no_clear_device_is_unclear(resolution):
 
 
 def test_no_label_but_a_clear_device_gives_its_summary():
-    # "How many deaths has the HeartMate 3 had?" passed no threshold (counts 0.768 < 0.77)
-    # but names one device: its summary is shown, after a note, instead of "unclear".
+    # No label passed its threshold and no event type is named, but the question names one
+    # device: its summary is shown, after a note, instead of "unclear". (A question that names
+    # deaths, injuries or malfunctions is a counts question: see the event-word tests.)
     bot, _, _ = make_bot([])
-    out = bot.answer('How many deaths has the DreamStation had?')
+    out = bot.answer('Tell me about the DreamStation')
     assert out['status'] == 'answered'
     assert kinds(out) == ['note', 'headline', 'counts', 'problems', 'recalls', 'footer']
     assert out['sections'][0]['text'] == templates.SUMMARY_FALLBACK_NOTE
@@ -527,7 +528,7 @@ def test_narratives_over_budget_keep_the_facts():
     assert out['status'] == 'answered'
     assert kinds(out) == ['headline', 'counts', 'narratives', 'footer']
     narr = [s['text'] for s in out['sections'] if s['kind'] == 'narratives'][0]
-    assert narr == templates.NARRATIVES_BUDGET.format(kind='device')
+    assert narr == templates.NARRATIVES_BUDGET
     assert 'narrative_texts' not in {s['query'] for s in out['sources']}
 
 
@@ -598,3 +599,128 @@ def test_answer_is_json_serialisable():
     out = make_bot(['counts', 'recalls'])[0].answer(
         'DreamStation recalls and counts')
     json.dumps(out)
+
+
+# ── fixes from the 2026-11-22 live test ───────────────────────────────────────
+
+NONE = search.Resolution('none', [], '')
+
+
+def test_an_event_word_without_a_label_asks_which_device():
+    # "are there any deaths associated to this": counts 0.57 < 0.75, no device named. Before:
+    # "I'm not sure what you're asking". Now a counts question that asks which device.
+    bot, client, _ = make_bot([], resolution=NONE)
+    out = bot.answer('are there any deaths associated to this')
+    assert (out['status'], out['text']) == ('need_device', templates.NEED_DEVICE)
+    assert pipeline.EVENT_WORD_COUNTS in out['rule_hits']
+    assert not client.real_runs()
+
+
+def test_an_event_word_with_a_device_answers_the_counts():
+    out = make_bot([])[0].answer('any deaths for the DreamStation?')
+    assert out['status'] == 'answered' and out['run_queries'] == ['counts']
+    assert kinds(out) == ['headline', 'counts', 'footer']
+    assert templates.SUMMARY_FALLBACK_NOTE not in out['text']
+
+
+def test_no_event_word_and_no_device_is_still_unclear():
+    out = make_bot([], resolution=NONE)[0].answer('the pump went dead, what now')
+    assert out['status'] in ('unclear', 'refused')
+    assert pipeline.EVENT_WORD_COUNTS not in out['rule_hits']
+
+
+class TypeCostClient(FakeClient):
+    """narrative_texts is over the cap when the candidates were asked for several event types;
+    candidates of the types in `empty` return no rows."""
+
+    def __init__(self, empty=(), rows=ROWS, **kw):
+        super().__init__(rows=rows, **kw)
+        self.types, self.empty = [], set(empty)
+
+    def query(self, sql, job_config):
+        name = test_query_layer.name_of(sql)
+        if name == 'narrative_candidates':
+            types = [list(p.values) for p in job_config.query_parameters
+                     if p.name == 'event_types'][0]
+            self.types = types
+            if not job_config.dry_run and set(types) <= self.empty:
+                self.calls.append((name, job_config))
+                return types_ns(result=lambda: iter([]), total_bytes_billed=10_485_760)
+        if name == 'narrative_texts' and job_config.dry_run and len(self.types) > 1:
+            self.calls.append((name, job_config))
+            return types_ns(total_bytes_processed=int(0.6e9))
+        return super().query(sql, job_config)
+
+
+def types_ns(**kw):
+    import types as _t
+    return _t.SimpleNamespace(**kw)
+
+
+def test_narratives_over_the_cap_fall_back_to_one_event_type():
+    out = make_bot(['narratives'], client=TypeCostClient())[0].answer(
+        'Describe the reports for the DreamStation')
+    narr = [s['text'] for s in out['sections'] if s['kind'] == 'narratives'][0]
+    assert narr.startswith('**What the death reports describe**')
+    assert narr.endswith(templates.NARRATIVES_NARROWED.format(events='death'))
+
+
+def test_narrowing_skips_an_event_type_without_texts():
+    injury = {**ROWS,
+              'narrative_candidates': [{**ROWS['narrative_candidates'][0], 'event_type': 'Injury'}],
+              'narrative_texts': [{**ROWS['narrative_texts'][0], 'event_type': 'Injury',
+                                   'text': 'The patient was burned by the device.'}]}
+    out = make_bot(['narratives'], client=TypeCostClient(empty={'Death'}, rows=injury))[0].answer(
+        'Describe the reports for the DreamStation')
+    narr = [s['text'] for s in out['sections'] if s['kind'] == 'narratives'][0]
+    assert 'death reports describe' not in narr
+    assert narr.endswith(templates.NARRATIVES_NARROWED.format(events='injury'))
+
+
+def test_a_named_event_type_is_not_narrowed_further():
+    client = FakeClient(rows=ROWS, estimates={'narrative_texts': 0.6e9})
+    out = make_bot(['narratives'], client=client)[0].answer(
+        'Describe the death reports for the DreamStation')
+    narr = [s['text'] for s in out['sections'] if s['kind'] == 'narratives'][0]
+    assert narr == templates.NARRATIVES_BUDGET_ONE.format(events='death')
+    tries = [c for n, c in client.calls if n == 'narrative_candidates' and not c.dry_run]
+    assert len(tries) == 1
+
+
+class DateCostClient(FakeClient):
+    """narrative_texts is over the cap when it reads more than `months` months."""
+
+    def __init__(self, months, **kw):
+        super().__init__(**kw)
+        self.months, self.read = months, []
+
+    def query(self, sql, job_config):
+        if test_query_layer.name_of(sql) == 'narrative_texts' and job_config.dry_run:
+            dates = [list(p.values) for p in job_config.query_parameters if p.name == 'dates'][0]
+            self.read.append(len(dates))
+            if len(dates) > self.months:
+                self.calls.append(('narrative_texts', job_config))
+                return types_ns(total_bytes_processed=int(0.6e9))
+        return super().query(sql, job_config)
+
+
+def test_narrative_texts_retry_with_fewer_newest_candidates():
+    cands = [{'mdr_report_key': str(100 + i), 'event_type': 'Injury',
+              'record_date': f'2024-{i % 12 + 1:02d}-01' if i < 12 else f'2023-{i - 11:02d}-01'}
+             for i in range(20)]
+    texts = [{'mdr_report_key': c['mdr_report_key'], 'mdr_text_key': '1', 'event_type': 'Injury',
+              'date_received': c['record_date'], 'text_length': 80,
+              'text': 'The patient was burned by the device during use.'} for c in cands]
+    client = DateCostClient(months=6, rows={**ROWS, 'narrative_candidates': cands,
+                                            'narrative_texts': texts})
+    narr = summary.narratives(test_query_layer.backend(client), 'device', DEV,
+                              event_types=('Injury',))
+    assert client.read == [20, 10, 5]            # all, then 2n, then n newest
+    assert len(narr['excerpts']) == 5
+
+
+def test_narrative_texts_over_the_cap_even_for_n_raise():
+    from query_layer import backend as qlb
+    client = DateCostClient(months=0, rows=ROWS)
+    with pytest.raises(qlb.QueryBudgetExceeded):
+        summary.narratives(test_query_layer.backend(client), 'device', DEV, event_types=('Death',))

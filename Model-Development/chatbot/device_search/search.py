@@ -47,13 +47,21 @@ fda maude goes go going went wrong work works working known about udi code produ
 safe safety unsafe dangerous risky good bad better best reliable ok okay worth should
 stop stopped use using used keep still normal worried trust think
 our ours we us they them their re ve ll
+per each every yearly monthly annually
+associated linked related connected caused due
 """.split())   # "our" is 0.86 like "four" (AF541 headgear) and resolved to it; "re" from "we're"
+# "per" in "per year" matched "Professional" (Dexcom G6 Professional System, 24 reports, instead of
+# the G6 Transmitter); "each", "every", "yearly", "monthly" and "annually" are the same kind.
+# "associated" in "any deaths associated to this" matched GORE AND ASSOCIATED INC.; "linked",
+# "related", "connected", "caused" and "due" are the same kind.
 _UDI = re.compile(r"\b\d{8,14}\b")
 _CODE = re.compile(r"\b[A-Z]{3}\b")
 _SPLIT = re.compile(r"\s+(?:vs\.?|versus|compared (?:to|with)|and|or)\s+|,", re.IGNORECASE)
 # Sentence ends inside a question ("Our contract is up for renewal; how many reports ...").
 # "t:slim" and "M.R.I.," have no space after the mark, so they are never split.
 _CLAUSE = re.compile(r"(?<=[.;:?!])\s+")
+_COMPARISON = re.compile(r"\b(?:compar\w*|vs\.?|versus|which (?:one |of them )?has more|both|each)\b", re.I)
+_COMPARE_MIN_SCORE = 0.9   # an unclear part of a comparison is asked about only if it is a strong match
 
 
 @dataclass
@@ -340,15 +348,28 @@ class DeviceIndex:
     def _resolve_words(self, question: str) -> Resolution:
         """resolve() without the identifier and clause steps: comparisons, then the phrase."""
         parts = [p for p in _SPLIT.split(question) if device_words(p)]
+        part_results = []
         if len(parts) > 1:
-            resolved = [self._resolve_phrase(" ".join(device_words(p))) for p in parts]
-            if all(r.status == "resolved" for r in resolved):
-                return Resolution("several", [r.matches[0] for r in resolved],
-                                  " | ".join(r.phrase for r in resolved))
+            part_results = [self._resolve_phrase(" ".join(device_words(p))) for p in parts]
+            if all(r.status == "resolved" for r in part_results):
+                return Resolution("several", [r.matches[0] for r in part_results],
+                                  " | ".join(r.phrase for r in part_results))
         phrase = " ".join(device_words(question))
         if not phrase:
             return Resolution("none", [], "")
-        return self._resolve_phrase(phrase)
+        whole = self._resolve_phrase(phrase)
+        # A comparison whose parts each found something, but not one device each ("DreamStation
+        # and t:slim X2": t:slim X2 has 3 versions): the joined phrase ("dreamstation slim x2")
+        # matched an unrelated device. Ask which one is meant for the first unclear part instead.
+        # A name with "and" in it ("Smith and Nephew") still resolves as a whole first.
+        # Only for a real comparison: a clause joined by "and" that names no device ("…, and can u
+        # summarize a few" -> product code FEW) must not be asked about.
+        if (whole.status != "resolved" and part_results and _COMPARISON.search(question)
+                and all(r.status in ("resolved", "ambiguous") for r in part_results)
+                and all(r.matches[0].score >= _COMPARE_MIN_SCORE
+                        for r in part_results if r.status == "ambiguous")):
+            return next(r for r in part_results if r.status == "ambiguous")
+        return whole
 
     def udis_for(self, hit: Hit) -> list[str]:
         return [r[0] for r in self.con.execute(

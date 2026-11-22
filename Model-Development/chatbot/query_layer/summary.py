@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from . import config, queries
-from .backend import BigQueryBackend, Budget, QueryRecord
+from .backend import BigQueryBackend, Budget, QueryBudgetExceeded, QueryRecord
 
 LINK_NOTE = {
     "device": "Reports linked to this device by UDI. Reports without a UDI are not counted.",
@@ -131,10 +131,23 @@ def narratives(backend: BigQueryBackend, entity_type: str, entity_id: str,
     if not cands:
         return {"entity": entity, "excerpts": [], "event_types": list(event_types),
                 "sources": _sources(rec1), "budget_gb": _budget(budget)}
-    keys = [c["mdr_report_key"] for c in cands]
-    dates = sorted({c["record_date"] for c in cands if c["record_date"]})
-    (texts,), rec2 = backend.run([queries.narrative_texts(backend.table, keys, dates,
-                                                          max_chars=max_chars)], budget)
+    # Step 2 reads whole months of maude_text: many candidates over many months can pass the
+    # cap (DreamStation's 20 newest injury reports did). Then fewer, newest first, are read:
+    # 2n, then n. The cap is checked by a dry run, so a refused try costs nothing.
+    newest = sorted(cands, key=lambda c: (str(c["record_date"] or ""), c["mdr_report_key"]),
+                    reverse=True)
+    sizes = [len(newest)] + [k for k in (2 * n, n) if k < len(newest)]
+    for i, k in enumerate(sizes):
+        use = newest[:k]
+        keys = [c["mdr_report_key"] for c in use]
+        dates = sorted({c["record_date"] for c in use if c["record_date"]})
+        try:
+            (texts,), rec2 = backend.run([queries.narrative_texts(backend.table, keys, dates,
+                                                                  max_chars=max_chars)], budget)
+            break
+        except QueryBudgetExceeded:
+            if i == len(sizes) - 1:
+                raise
     chosen = pick_narratives(texts, n, order=event_types)
     return {
         "entity": entity,

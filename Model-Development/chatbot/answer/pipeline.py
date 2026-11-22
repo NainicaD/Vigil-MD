@@ -48,11 +48,19 @@ EVENT_PATTERNS = (
 )
 
 
+def named_event_types(question: str) -> tuple[str, ...]:
+    """Returns the event types the question names, in the fixed order; () if none."""
+    return tuple(et for et, pat in EVENT_PATTERNS if pat.search(question))
+
+
 def asked_event_types(question: str) -> tuple[str, ...]:
     """Returns the event types the question names, in the fixed order; all three if none."""
-    named = tuple(et for et, pat in EVENT_PATTERNS if pat.search(question))
-    return named or tuple(et for et, _ in EVENT_PATTERNS)
+    return named_event_types(question) or tuple(et for et, _ in EVENT_PATTERNS)
 MAX_ENTITIES = 3  # Devices compared in one answer ("X vs Y vs Z").
+# No label passed its threshold, but the question names deaths, injuries or malfunctions ("are
+# there any deaths associated to this", counts 0.57 against 0.75): it is a counts question. With
+# no device the bot then asks which device instead of "unclear". Recorded in rule_hits.
+EVENT_WORD_COUNTS = 'event_word_counts'
 # Internal key of answer(): router scores and drift signals for api/events.py. Not public.
 ROUTER_SIGNALS = 'router_signals'
 DEFAULT_MODEL_DIR = (
@@ -152,6 +160,10 @@ class Chatbot:
         fallback = not route['run_queries']
         if fallback and route['reply_kind'] == 'medical_refusal':
             return done('refused')
+        if fallback and route['reply_kind'] is None and named_event_types(question):
+            out['run_queries'] = ['counts']
+            out['rule_hits'] = [*out['rule_hits'], EVENT_WORD_COUNTS]
+            fallback = False
 
         def unclear() -> dict:
             sections.append({'kind': 'unclear', 'text': templates.UNCLEAR})
@@ -247,19 +259,8 @@ class Chatbot:
             if 'recalls' in asked:
                 blocks['recalls'] = render.recalls(facts)
             if 'narratives' in asked and has_reports:
-                # Narratives are the only optional part that can be large (the biggest
-                # product codes): over the cap they are left out, the facts stay.
-                try:
-                    narr = summary.narratives(self.backend, et, eid, budget=budget,
-                                              event_types=asked_event_types(
-                                                  out['question']))
-                except ql_backend.QueryBudgetExceeded:
-                    logging.warning('Narratives over budget: %s', eid)
-                    blocks['narratives'] = [templates.NARRATIVES_BUDGET.format(
-                        kind=et.replace('_', ' '))]
-                else:
-                    self._cite(narr, out)
-                    blocks['narratives'] = render.narratives(narr)
+                blocks['narratives'] = self._narratives(
+                    et, eid, asked_event_types(out['question']), budget, out)
         result = [{'kind': 'headline', 'entity': eid,
                    'text': render.headline(facts)}]
         for kind in SECTION_ORDER:
@@ -267,6 +268,32 @@ class Chatbot:
                 result.append({'kind': kind, 'entity': eid,
                                'text': '\n'.join(blocks[kind])})
         return result
+
+    def _narratives(self, et: str, eid: str, event_types: tuple[str, ...],
+                    budget: ql_backend.Budget, out: dict) -> list[str]:
+        """Report texts. Narratives are the only optional part that can be large: the texts of
+        several event types span many months of maude_text. Over the cap, one event type at a
+        time is tried (Death, Injury, Malfunction), skipping a type without texts. The cap is
+        checked by a dry run before the texts are read, so a refused try costs only its first
+        step (which reports, about 10 MB). If none fits, a note; the facts stay."""
+        tries = [event_types] + ([(t,) for t in event_types] if len(event_types) > 1 else [])
+        for i, types in enumerate(tries):
+            try:
+                narr = summary.narratives(self.backend, et, eid, budget=budget,
+                                          event_types=types)
+            except ql_backend.QueryBudgetExceeded:
+                logging.warning('Narratives over budget: %s %s', eid, '+'.join(types))
+                continue
+            if i and not narr.get('excerpts'):
+                continue                # no texts of this type: try the next one
+            self._cite(narr, out)
+            lines = render.narratives(narr)
+            if i:
+                lines.append(templates.NARRATIVES_NARROWED.format(events=types[0].lower()))
+            return lines
+        if len(event_types) == 1:
+            return [templates.NARRATIVES_BUDGET_ONE.format(events=event_types[0].lower())]
+        return [templates.NARRATIVES_BUDGET]
 
     @staticmethod
     def _cite(result: dict, out: dict) -> None:
