@@ -703,6 +703,25 @@ def test_a_device_named_after_unclear_answers_the_pending_question():
     assert out['status'] == 'answered' and out['entities'][0]['id'] == DEV
 
 
+@pytest.mark.parametrize('kind,entity_id,title,message', [
+    ('manufacturer', 'philips respironics', 'Philips Respironics', 'Philips Respironics'),
+    ('product_code', 'BZD', 'Ventilator, Non-Continuous (Respirator)', 'BZD'),
+])
+def test_a_company_or_product_code_after_which_device_answers_the_pending_question(
+        kind, entity_id, title, message):
+    # "Which device do you mean?" asks for a brand name, the company or the product code:
+    # a company or a product code answers the pending question too.
+    entry = search.Hit(f'{kind}|{entity_id}', kind, entity_id, title, '', 1200,
+                       0, 0, [], None, 0.9)
+    bot, _ = memory_bot(resolutions={message: search.Resolution('resolved', [entry],
+                                                                message.lower())})
+    out = bot.answer(message, context=context(DEATHS_THIS, 'need_device'))
+    assert out['context_used'] == pipeline.CONTEXT_PREVIOUS_QUESTION
+    assert out['status'] == 'answered' and out['run_queries'] == ['counts']
+    assert (out['entities'][0]['type'], out['entities'][0]['id']) == (kind, entity_id)
+    assert kinds(out) == ['headline', 'counts', 'footer']
+
+
 @pytest.mark.parametrize('status', ['answered', 'not_found', 'ambiguous', 'refused', 'help'])
 def test_only_need_device_or_unclear_leave_a_question_pending(status):
     bot, _ = memory_bot(resolutions={'DreamStation': RESOLVED})
