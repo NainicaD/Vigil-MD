@@ -511,8 +511,9 @@ bot.answer("DreamStation", context={"previous_question": "are there any deaths a
      question is answered about that entry (routed again, so its refusal still applies).
      `context_used`: `previous_question`. "are there any deaths associated to this" → "Which
      device?" → "DreamStation" gives DreamStation's death counts.
-  4. **Carry-over:** the new question names no device (search `none` with an empty phrase) and
-     `context` has an entity: that entity is used. `context_used`: `entity`. "what about
+  4. **Carry-over:** the new question names no device (search `none` with an empty phrase), has
+     a label or an event word, and `context` has an entity: that entity is used ("ok" or
+     "thanks" alone gets "I'm not sure what you're asking", not a summary). `context_used`: `entity`. "what about
      recalls?" after an answer about the DreamStation gives its recalls. A device named in the
      new question wins, and a name that is not found still gets "not found".
   5. Otherwise the question is answered on its own (`context_used`: null).

@@ -144,9 +144,9 @@ class Chatbot:
                message has no label and no event word, and its search resolves one entry:
                the previous question is answered about that entry (routed again, so its own
                refusal still applies). context_used = 'previous_question'.
-            4. Carry-over: the new question names no device (search none, empty phrase) and
-               context has an entity: that entity is used. context_used = 'entity'. A device
-               named in the new question wins.
+            4. Carry-over: the new question names no device (search none, empty phrase), has
+               a label or an event word, and context has an entity: that entity is used.
+               context_used = 'entity'. A device named in the new question wins.
             5. Otherwise the question is answered on its own.
 
         Returns:
@@ -235,8 +235,9 @@ class Chatbot:
         else:
             res = self.index.resolve(question)
             out['search'] = self._search_dict(res)
-        if not entity and carry and res.status == 'none' and not res.phrase:
-            # Rule 4: no device named here; the previous answer's entity is used.
+        if not entity and carry and not fallback and res.status == 'none' and not res.phrase:
+            # Rule 4: no device named here; the previous answer's entity is used. Only for a
+            # question with a label or an event word: "ok" alone gets UNCLEAR, not a summary.
             keys = [{'entity_type': carry[0], 'entity_id': carry[1]}]
             out['context_used'] = CONTEXT_ENTITY
         elif not entity:

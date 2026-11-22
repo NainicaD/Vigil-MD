@@ -772,6 +772,16 @@ def test_an_event_word_without_a_device_uses_the_previous_entity():
     assert kinds(out) == ['headline', 'counts', 'footer'] and '1 death' in out['text']
 
 
+@pytest.mark.parametrize('message', ['ok', 'thanks'])
+def test_a_message_without_a_question_does_not_use_the_previous_entity(message):
+    # No label and no event word: "ok" after an answer is unclear, not a summary of the device.
+    bot, client = memory_bot()
+    out = bot.answer(message,
+                     context=context('DreamStation recalls', 'answered', ('device', DEV)))
+    assert out['status'] == 'unclear' and out['context_used'] is None
+    assert not client.real_runs()
+
+
 def test_a_device_named_in_the_new_question_beats_the_previous_entity():
     other = search.Resolution('resolved', [hit('dev:other', 'AirSense 10')], 'airsense 10')
     bot, _ = memory_bot(labels={'AirSense 10 recalls': ['recalls']},
