@@ -130,6 +130,20 @@ PROD_EXTRA = [
     ("last_updated_at", "TIMESTAMP", "REQUIRED"),
 ]
 
+# Columns whose last known value PROD keeps when a later export blanks them:
+# source → {column: removed_at column}. openFDA re-exports rewrite old reports;
+# the 2026-11-17 MAUDE export blanked the UDI-DI of about 1.4M rows (issue #18).
+# PROD keeps the last value FDA published and sets <column>_removed_at; FDA's
+# current value is NULL when <column>_removed_at is set. record_hash still
+# describes FDA's current record, so an unchanged re-export changes nothing.
+KEEP_LAST_KNOWN = {"maude": {"udi_di": "udi_di_removed_at"}}
+
+
+def prod_extra(source: str) -> list[tuple]:
+    """PROD bookkeeping columns of one source (PROD_EXTRA plus *_removed_at)."""
+    return PROD_EXTRA + [(removed, "TIMESTAMP", "NULLABLE")
+                         for removed in KEEP_LAST_KNOWN.get(source, {}).values()]
+
 LOAD_LOG_COLUMNS = [
     ("source",         "STRING",    "REQUIRED"),
     ("source_file",    "STRING",    "REQUIRED"),
@@ -323,7 +337,7 @@ def table_specs(project: str) -> list[dict]:
             "require_partition_filter": True,
         })
     for s in SOURCES:
-        columns = FLAT_COLUMNS[s] + PROD_EXTRA
+        columns = FLAT_COLUMNS[s] + prod_extra(s)
         partition = None
         if s in DATE_PARTITIONED_PROD:
             columns = columns + [("_part_date", "DATE", "REQUIRED")]

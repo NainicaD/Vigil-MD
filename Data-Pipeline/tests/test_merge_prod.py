@@ -171,3 +171,32 @@ def test_gudid_merge_has_no_date_params(fake_gcp, monkeypatch):
         query_result(types.SimpleNamespace(rows_inserted_or_updated=2, dup_keys=0))]
     run_main(monkeypatch, "--source", "gudid", "--ingest-date", "2026-10-25")
     assert "min_d" not in params_passed(fake_gcp)
+
+
+# ── last-known values (schemas.KEEP_LAST_KNOWN, issue #18) ───────────────────
+
+def test_maude_merge_keeps_the_last_known_udi_and_marks_its_removal():
+    upd = re.search(r"UPDATE SET (.+?)\nWHEN NOT MATCHED", merge_sql("maude"), re.S).group(1)
+    assert "udi_di = COALESCE(S.udi_di, T.udi_di)" in upd
+    assert ("udi_di_removed_at = CASE WHEN S.udi_di IS NOT NULL THEN NULL "
+            "WHEN T.udi_di IS NOT NULL THEN COALESCE(T.udi_di_removed_at, CURRENT_TIMESTAMP()) "
+            "ELSE T.udi_di_removed_at END") in upd
+    assert "record_hash = S.record_hash" in upd          # the hash follows FDA's current record
+    m = re.search(r"INSERT \((.+?)\)\n\s+VALUES \((.+?)\);", merge_sql("maude"), re.S)
+    cols, vals = m.group(1).split(", "), m.group(2).split(", ")
+    assert vals[cols.index("udi_di_removed_at")] == "NULL"
+
+
+@pytest.mark.parametrize("source", [s for s in schemas.SOURCES if s not in schemas.KEEP_LAST_KNOWN])
+def test_other_sources_take_the_new_value(source):
+    upd = re.search(r"UPDATE SET (.+?)\nWHEN NOT MATCHED", merge_sql(source), re.S).group(1)
+    assert "COALESCE" not in upd and "_removed_at" not in upd
+
+
+def test_maude_rebuild_takes_the_newest_non_null_udi():
+    sql = rebuild_sql("maude")
+    assert "LAST_VALUE(udi_di IGNORE NULLS) OVER (PARTITION BY source_record_id, device_seq " \
+           "ORDER BY _ingest_date, _loaded_at ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)" in sql
+    select = re.search(r"\nSELECT (.+?)\nFROM", sql, re.S).group(1)
+    assert "udi_di__last" in select and "IF(udi_di IS NULL, udi_di__removed, NULL)" in select
+    assert "_ingest_date > udi_di__last_date" in sql

@@ -6,7 +6,7 @@ Vigil MD links medical device records from four FDA sources. It finds records in
 
 Inspired by Kramer et al. (2012), *Security and Privacy Qualities of Medical Devices: An Analysis of FDA Postmarket Surveillance*, PLoS ONE.
 
-**Status (2026-11-04).** All 2016–2026 data is in BigQuery (RAW → STAGING → PROD, 26.9 million PROD rows). Three Airflow DAGs fetch, load, check and merge it daily. A load reaches PROD only after schema, value and anomaly checks; if a check fails, that source is not merged and an e-mail alert is sent. A bias analysis of PROD, with a reweighting fix, is in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md). About 490 tests run in CI for every pull request.
+**Status (2026-11-18).** All 2016–2026 data is in BigQuery (RAW → STAGING → PROD, 26.9 million PROD rows). Three Airflow DAGs fetch, load, check and merge it daily. A load reaches PROD only after schema, value and anomaly checks; if a check fails, that source is not merged and an e-mail alert is sent. A bias analysis of PROD, with a reweighting fix, is in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md). About 640 tests run in CI for every pull request.
 
 **Contents:** [Quickstart](#quickstart) · [How the pipeline works](#how-the-pipeline-works) · [Data checks and alerts](#data-checks-and-alerts) · [Scheduling](#scheduling-pools-and-priorities) · [BigQuery tables](#bigquery-tables) · [Data validation](#data-validation-schema-and-statistics) · [Anomaly detection](#anomaly-detection) · [Bias analysis](#bias-analysis-and-mitigation) · [DVC](#data-versioning-with-dvc) · [Logging (ELK)](#logging-elk) · [Testing and CI](#testing-and-ci) · [Repository structure](#repository-structure) · [Troubleshooting](#everyday-commands-and-troubleshooting) · [Changes](#changes)
 
@@ -83,7 +83,7 @@ From a clean clone to a first pipeline run. Tested on macOS with Docker Desktop 
    pytest -q
    docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker python -m pytest tests/dags -q
    ```
-   About 491 tests pass locally (the DAG tests skip there), and 93 DAG tests pass in the worker.
+   About 640 tests pass locally (the DAG tests skip there), and 113 DAG tests pass in the worker.
 
 8. **Sample data (DVC).**
    ```bash
@@ -148,7 +148,7 @@ When does `vigil_md_load` run?
 | Acquisition failed (fetch, validation or summary) | No |
 | An acquisition run is cleared or retried | No second run (fixed `trigger_run_id`, `skip_when_already_exists`) |
 
-Every DAG has `alert_on_failure` (trigger rule `ONE_FAILED`): it sends an e-mail when any task fails, including a failed data check.
+Every DAG has `alert_on_failure` (trigger rule `ONE_FAILED`): it sends an e-mail when any task fails, including a failed data check. The two warehouse DAGs also end with `mark_run_failed` (same rule), which fails on purpose so the run itself is "failed": otherwise `build_summaries` and `build_links`, which run after a failed chain, would leave it "success" ([`docs/issue.md`](docs/issue.md) #16).
 
 ### How the incremental rules work
 
@@ -265,7 +265,7 @@ Built by [`scripts/warehouse/build_maude_events.py`](scripts/warehouse/build_mau
 - **One RAW scan per ingest date** (about 49 GB for a full MAUDE export) fills staging; the two prod tables are built from staging.
 - **Each report's rows are replaced**: delete the batch's reports, insert their new rows, roll back on a duplicate key, in one transaction.
 - **`maude_text` is filtered** by [`maude_events_config.py`](scripts/warehouse/maude_events_config.py): default `Description of Event or Problem`; `Death`, `Injury` and `Malfunction`; 2016–2026. Texts are trimmed, control characters removed, empty texts dropped, one row per (`mdr_report_key`, `mdr_text_key`). openFDA has two text types: `Description of Event or Problem` and `Additional Manufacturer Narrative`.
-- **Cost guard:** every step is dry-run first and stops above `--max-gb` (defaults: staging 60, problems 10, text 40; a full MAUDE export scans about 49, 3 and 32 GB); the job also gets `maximum_bytes_billed`.
+- **Cost guard:** every step is dry-run first and stops above `--max-gb` (defaults: staging 60, problems 10, text 50; a full MAUDE export scans about 49, 3 and 32 GB, and the text step 44.5 GB on the 2026-11-17 export); the job also gets `maximum_bytes_billed`.
 - **Staging expires after 14 days**, so full text does not pile up. Within that time a changed text filter can be applied again from staging (`--step text`); later it needs the staging step again (one RAW scan).
 
 ```bash
@@ -544,8 +544,8 @@ Kibana is at http://localhost:5601. Filebeat reads all Airflow task logs in `log
 All GCP calls are mocked: **no test touches real GCS or BigQuery**, and test logs never reach Logstash (an autouse fixture). The case list is in [`tests/TEST_CASES.md`](tests/TEST_CASES.md); the test plan is [`docs/TESTS_PLAN.md`](docs/TESTS_PLAN.md).
 
 ```bash
-pytest -q                                        # 491 passed, 1 skipped, 21 deselected (2026-11-04)
-docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker python -m pytest tests/dags -q   # 93 passed
+pytest -q                                        # 639 passed, 1 skipped, 21 deselected (2026-11-18)
+docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker python -m pytest tests/dags -q   # 113 passed
 pytest -m integration                            # real-GCS checks of the raw files (needs credentials)
 ```
 
@@ -566,7 +566,7 @@ Vigil-MD/
 │   │   ├── vigil_md_load.py         # triggered: GCS → RAW → STAGING → checks → PROD
 │   │   ├── vigil_md_full_load.py    # manual: first load, backfill, rebuild
 │   │   ├── vigil_checks.py          # shared: check rules, CHECKS_ENFORCE, pools, priorities
-│   │   ├── vigil_helpers.py         # shared: run_script (live logs), alert_on_failure
+│   │   ├── vigil_helpers.py         # shared: run_script (live logs), alert_on_failure, mark_run_failed
 │   │   ├── pull_samples_dag.py      # development: 200 sample records per source
 │   │   └── .airflowignore           # vigil_checks.py and vigil_helpers.py are not DAGs
 │   ├── scripts/
@@ -659,7 +659,7 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ## Known limitations and issues
 
 - **MAUDE scope is 2016–2026 by design** (`START_YEAR` / `END_YEAR` in the DAGs). To extend it, change `END_YEAR` in `vigil_md_acquisition.py` and `vigil_md_full_load.py`.
-- **Matching runs on the samples only** (DVC pipeline). Exact linking on the PROD tables as a DAG task is the next step; blocking and ML matching on the full data come with the model pipeline.
+- **Only exact links run in Airflow** (`build_links`, enforcement ↔ recall). The ML matching model is trained and published by CI (`Model-Development/matching/`), not by a DAG.
 - **The daily DAG runs only while the machine and Docker are running.** A missed run happens when Airflow next runs (`catchup=False` runs the most recent interval).
 - **Sleep stops running tasks.** Closing the laptop pauses Docker, and Airflow then stops the running task. A retry continues with the files not yet loaded (`load_log`). For long loads, keep the charger connected and the lid open.
 - Open issues are tracked in [`docs/issue.md`](docs/issue.md). Example: the parallel fetch tasks can overwrite `manifest_state.json` keys (#5).
@@ -667,6 +667,11 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ---
 
 ## Changes
+
+### 2026-11-17 to 2026-11-19 — MAUDE re-export, run state
+
+- **Full MAUDE re-export loaded** (249 files). The text step's scan cap is now 50 GB (was 40): this export needs 44.5 GB, so `events_text_maude` had stopped. The daily query quota stopped `load_raw_maude` too ([`docs/issue.md`](docs/issue.md) #17).
+- **A failed chain now fails the run** (`mark_run_failed`, #16). Before, the 2026-11-17 run showed "success" although MAUDE failed.
 
 ### 2026-11-10 — Exact links (enforcement ↔ recall)
 

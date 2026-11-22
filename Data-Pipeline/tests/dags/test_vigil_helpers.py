@@ -165,6 +165,15 @@ def test_alert_logs_the_failed_tasks_without_email_settings(monkeypatch, caplog)
     assert "VIGIL_ALERT_EMAIL_TO not set" in caplog.text
 
 
+def test_mark_run_failed_raises_and_names_the_failed_tasks():
+    from airflow.sdk.exceptions import AirflowFailException
+    dag_run = type("DR", (), {"run_id": "r1"})()
+    with pytest.raises(AirflowFailException, match="load.check_maude"):
+        H.mark_run_failed(ti=FakeTI({"r1": {"load.check_maude": "failed"}}), dag_run=dag_run)
+    with pytest.raises(AirflowFailException, match="see the grid"):
+        H.mark_run_failed(ti=FakeTI(error=RuntimeError("no supervisor")), dag_run=dag_run)
+
+
 # ── the 3 DAGs use the shared helpers (no copies) ────────────────────────────
 
 @pytest.mark.parametrize("name", ["vigil_md_acquisition", "vigil_md_load", "vigil_md_full_load"])
