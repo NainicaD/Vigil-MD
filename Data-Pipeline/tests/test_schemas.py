@@ -111,3 +111,13 @@ def test_only_the_events_staging_table_expires():
 def test_unknown_maude_event_table_is_refused():
     with pytest.raises(ValueError):
         schemas.maude_event_prod_table("p", "maude")
+
+
+def test_kept_columns_get_a_nullable_removed_at_column_in_prod():
+    for source, kept in schemas.KEEP_LAST_KNOWN.items():
+        spec = next(s for s in schemas.table_specs("p") if s["table_id"] == schemas.prod_table("p", source))
+        cols = {n: (t, m) for n, t, m in spec["columns"]}
+        for col, removed in kept.items():
+            assert col in cols and cols[removed] == ("TIMESTAMP", "NULLABLE")
+    for source in set(schemas.SOURCES) - set(schemas.KEEP_LAST_KNOWN):
+        assert schemas.prod_extra(source) == schemas.PROD_EXTRA

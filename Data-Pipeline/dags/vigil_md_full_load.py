@@ -22,6 +22,7 @@ Tasks:
   5. build_links              — after every chain: rebuild the exact link tables and the
                                 links view (build_links.py, always)
   6. alert_on_failure         — triggered only if any task fails
+  7. mark_run_failed          — like the alert, then fails, so the run is "failed"
 
 Every task that writes GCS state or BigQuery uses the 1-slot vigil_warehouse
 pool, shared with vigil_md_acquisition.
@@ -42,7 +43,7 @@ from vigil_checks import (  # noqa: E402
     CHECK_SCRIPTS, EVENT_STEPS, LINKS_TASK, SOURCE_PRIORITY, SUMMARY_TASK, VALIDATE_EXTRA_ARGS,
     WEIGHT_RULE, DataCheckFailed, events_args, links_args, pool_for, steps_for, summary_args,
     warn_only)
-from vigil_helpers import alert_on_failure, run_script  # noqa: E402,F401  (shared, issue #14)
+from vigil_helpers import alert_on_failure, mark_run_failed, run_script  # noqa: E402,F401  (shared, issue #14)
 from airflow.providers.standard.operators.python import PythonOperator
 from airflow.task.trigger_rule import TriggerRule
 
@@ -245,7 +246,14 @@ with DAG(
         pool=WAREHOUSE_POOL,
     )
 
+    mark_failed = PythonOperator(
+        task_id="mark_run_failed",
+        python_callable=mark_run_failed,
+        trigger_rule=TriggerRule.ONE_FAILED,    # skipped when nothing fails
+    )
+
     guard >> fetch
     load_group >> summaries
     load_group >> links
     [guard, fetch, load_group, summaries, links] >> alert
+    [guard, fetch, load_group, summaries, links] >> mark_failed

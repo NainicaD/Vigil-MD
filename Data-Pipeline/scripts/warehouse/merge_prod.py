@@ -16,11 +16,15 @@ Daily (default):
          duplicate-key check on prod → ROLLBACK + RAISE if any
        COMMIT TRANSACTION
   No "NOT MATCHED BY SOURCE … DELETE": one day is not a full snapshot.
+  Last-known values (schemas.KEEP_LAST_KNOWN, MAUDE udi_di): a later export
+  that blanks the column keeps PROD's value and sets <column>_removed_at; a
+  new non-NULL value replaces it and clears <column>_removed_at (issue #18).
 
 --rebuild --yes-rebuild (full-load DAG only):
   one transaction: delete every prod row, insert the deduplicated rows of all
   staging partitions, duplicate-key check. The table itself is kept (schema,
-  REQUIRED modes, partitioning, clustering).
+  REQUIRED modes, partitioning, clustering). Last-known columns take the newest
+  non-NULL value across all staging partitions.
 
 Usage:
     python scripts/warehouse/merge_prod.py \
@@ -83,21 +87,40 @@ SELECT COUNT(*) AS n,
 FROM (SELECT {part} AS p FROM `{stg}` WHERE _ingest_date = @ingest_date)"""
 
 
+def _update_expr(source: str, col: str) -> str:
+    """SET expression for one column. Last-known columns keep PROD's value when S blanks it."""
+    if col in schemas.KEEP_LAST_KNOWN.get(source, {}):
+        return f"{col} = COALESCE(S.{col}, T.{col})"
+    return f"{col} = S.{col}"
+
+
+def _removed_at_updates(source: str) -> list[str]:
+    """<col>_removed_at: cleared by a new value; set (once) when S blanks a known value.
+    In a MERGE UPDATE every T.<col> is the value before the update."""
+    return [f"{removed} = CASE WHEN S.{col} IS NOT NULL THEN NULL "
+            f"WHEN T.{col} IS NOT NULL THEN COALESCE(T.{removed}, CURRENT_TIMESTAMP()) "
+            f"ELSE T.{removed} END"
+            for col, removed in schemas.KEEP_LAST_KNOWN.get(source, {}).items()]
+
+
 def render_merge_sql(source: str, prod: str, stg: str) -> str:
     biz = _biz(source)
     keys = schemas.MERGE_KEYS[source]
     has_part = _has_part(source)
     src_cols = biz + ["record_hash"]
+    removed_cols = list(schemas.KEEP_LAST_KNOWN.get(source, {}).values())
     part_sel = f",\n         COALESCE(record_date, {SENTINEL}) AS _part_date" if has_part else ""
     on = " AND ".join(f"T.{k} = S.{k}" for k in keys)
     if PRUNE_BY_DATE[source]:
         on += (f"\n   AND (T._part_date BETWEEN @min_d AND @max_d"
                f" OR T._part_date = {SENTINEL})")
-    upd = [f"{c} = S.{c}" for c in src_cols] + (["_part_date = S._part_date"] if has_part else [])
+    upd = [_update_expr(source, c) for c in src_cols] + _removed_at_updates(source)
+    upd += ["_part_date = S._part_date"] if has_part else []
     upd.append("last_updated_at = CURRENT_TIMESTAMP()")
-    ins_cols = src_cols + ["first_loaded_at", "last_updated_at"] + (["_part_date"] if has_part else [])
+    ins_cols = (src_cols + ["first_loaded_at", "last_updated_at"] + removed_cols
+                + (["_part_date"] if has_part else []))
     ins_vals = ([f"S.{c}" for c in src_cols] + ["CURRENT_TIMESTAMP()", "CURRENT_TIMESTAMP()"]
-                + (["S._part_date"] if has_part else []))
+                + ["NULL"] * len(removed_cols) + (["S._part_date"] if has_part else []))
     return f"""\
 DECLARE dup_keys INT64;
 DECLARE changed INT64;
@@ -127,13 +150,45 @@ SELECT changed AS rows_inserted_or_updated, dup_keys;
 """
 
 
+def _rebuild_source(source: str, stg: str, keys: str) -> tuple[str, list[str], list[str]]:
+    """(FROM clause, column expressions, removed_at expressions) of the rebuild's SELECT.
+    Last-known columns: the newest non-NULL value across all staging partitions; removed_at:
+    the first load after that value in which the column was blank (only if it still is)."""
+    kept = schemas.KEEP_LAST_KNOWN.get(source, {})
+    src_cols = _biz(source) + ["record_hash"]
+    by_key = f"PARTITION BY {keys}"
+    layer1 = [f"MIN(_loaded_at) OVER ({by_key}) AS first_loaded_at"]
+    for col in kept:
+        layer1 += [f"LAST_VALUE({col} IGNORE NULLS) OVER ({by_key} ORDER BY _ingest_date, _loaded_at "
+                   f"ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS {col}__last",
+                   f"MAX(IF({col} IS NOT NULL, _ingest_date, NULL)) OVER ({by_key}) AS {col}__last_date"]
+    inner = f"""(
+  SELECT *, {", ".join(layer1)}
+  FROM `{stg}`
+  WHERE {ALL_STAGING}
+)"""
+    if kept:
+        layer2 = [f"MIN(IF({col} IS NULL AND _ingest_date > {col}__last_date, _loaded_at, NULL)) "
+                  f"OVER ({by_key}) AS {col}__removed" for col in kept]
+        inner = f"""(
+  SELECT *, {", ".join(layer2)}
+  FROM {inner}
+)"""
+    cols = [f"{c}__last" if c in kept else c for c in src_cols]
+    removed = [f"IF({col} IS NULL, {col}__removed, NULL)" for col in kept]
+    return inner, cols, removed
+
+
 def render_rebuild_sql(source: str, prod: str, stg: str) -> str:
-    biz = _biz(source)
     keys = ", ".join(schemas.MERGE_KEYS[source])
     has_part = _has_part(source)
-    src_cols = biz + ["record_hash"]
-    ins_cols = src_cols + ["first_loaded_at", "last_updated_at"] + (["_part_date"] if has_part else [])
+    src_cols = _biz(source) + ["record_hash"]
+    removed_cols = list(schemas.KEEP_LAST_KNOWN.get(source, {}).values())
+    ins_cols = (src_cols + ["first_loaded_at", "last_updated_at"] + removed_cols
+                + (["_part_date"] if has_part else []))
     part_sel = f", COALESCE(record_date, {SENTINEL})" if has_part else ""
+    inner, sel_cols, removed_sel = _rebuild_source(source, stg, keys)
+    removed_sel = "".join(f", {r}" for r in removed_sel)
     return f"""\
 DECLARE dup_keys INT64;
 DECLARE changed INT64;
@@ -143,12 +198,8 @@ BEGIN TRANSACTION;
 DELETE FROM `{prod}` WHERE TRUE;
 
 INSERT INTO `{prod}` ({", ".join(ins_cols)})
-SELECT {", ".join(src_cols)}, first_loaded_at, CURRENT_TIMESTAMP(){part_sel}
-FROM (
-  SELECT *, MIN(_loaded_at) OVER (PARTITION BY {keys}) AS first_loaded_at
-  FROM `{stg}`
-  WHERE {ALL_STAGING}
-)
+SELECT {", ".join(sel_cols)}, first_loaded_at, CURRENT_TIMESTAMP(){removed_sel}{part_sel}
+FROM {inner}
 WHERE TRUE
 QUALIFY ROW_NUMBER() OVER (
   PARTITION BY {keys} ORDER BY _ingest_date DESC, _loaded_at DESC, record_hash) = 1;
