@@ -29,12 +29,19 @@ import uuid
 KIBANA = os.environ.get("KIBANA_URL", "http://localhost:5601")
 LOGS, METRICS, ALERTS = "vigil-md-logs", "metricbeat", "vigil-md-alerts"
 DATA_VIEWS = {LOGS: "vigil-md-logs-*", METRICS: "metricbeat-*", ALERTS: "vigil-md-alerts"}
-CONNECTOR = "vigil-md-alerts-index"
+def fixed_uuid(name: str) -> str:
+    """Kibana accepts a chosen ID for a connector or rule (encrypted saved objects) only if it is a
+    UUID: derive a stable one from the readable name, so a rerun replaces the same object."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"vigil-md/{name}"))
+
+
+CONNECTOR = fixed_uuid("vigil-md-alerts-index")
 DASHBOARD = "vigil-md-matching"
 # The objects below are written in the 8.9+ saved-object format (Kibana 8.13 in docker-compose.elk.yml).
 MIGRATION = {"coreMigrationVersion": "8.8.0", "typeMigrationVersion": "8.9.0"}
 
-# rule id → (name, KQL on vigil-md-logs-*, time window, comparator, threshold, check interval)
+# rule key (its ID is fixed_uuid(key)) → (name, KQL on vigil-md-logs-*, time window, comparator,
+# threshold, check interval)
 RULES = {
     "vigil-md-no-matching-run": (
         "No matching run in 8 days", "message:matching_run_metrics", (8, "d"), "<", 1, "1d"),
@@ -190,7 +197,10 @@ def rule_body(name: str, kql: str, window: tuple[int, str], comparator: str, thr
                    "thresholdComparator": comparator, "threshold": [threshold], "size": 10,
                    "searchConfiguration": {"query": {"query": kql, "language": "kuery"},
                                            "index": LOGS}},
-        "actions": [{"id": CONNECTOR, "group": "query matched", "params": {"documents": [{
+        # frequency (required since 8.x): one alert document per check in which the query matches
+        "actions": [{"id": CONNECTOR, "group": "query matched",
+                     "frequency": {"summary": False, "notify_when": "onActiveAlert", "throttle": None},
+                     "params": {"documents": [{
             "@timestamp": "{{context.date}}", "rule": name, "value": "{{context.value}}",
             "conditions": "{{context.conditions}}"}]}}],
     }
@@ -218,7 +228,8 @@ def main() -> int:
     call("POST", f"/api/actions/connector/{CONNECTOR}", {
         "connector_type_id": ".index", "name": "vigil-md-alerts index",
         "config": {"index": "vigil-md-alerts", "refresh": True, "executionTimeField": "@timestamp"}})
-    for rule_id, spec in RULES.items():
+    for name, spec in RULES.items():
+        rule_id = fixed_uuid(name)
         call("DELETE", f"/api/alerting/rule/{rule_id}", ok_missing=True)
         call("POST", f"/api/alerting/rule/{rule_id}", rule_body(*spec))
     print(f"alert rules: {len(RULES)}, each alert → index vigil-md-alerts")

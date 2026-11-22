@@ -63,6 +63,7 @@ def test_rules_are_es_queries_that_write_to_the_alerts_index():
         assert body["params"]["searchConfiguration"]["index"] == K.LOGS
         (action,) = body["actions"]
         assert action["id"] == K.CONNECTOR and action["group"] == "query matched"
+        assert action["frequency"]["notify_when"] == "onActiveAlert"               # Kibana 8.x requires it
 
 
 def test_no_run_rule_fires_when_there_is_no_record():
@@ -96,11 +97,19 @@ def test_main_replaces_hand_made_views_imports_and_recreates_rules(api):
     assert calls.count(("POST", "/api/data_views/data_view")) == len(K.DATA_VIEWS)
     (objs,) = imported
     assert objs[-1]["type"] == "dashboard" and len(objs) == len(K.panels()) + 1
-    for rule_id in K.RULES:                                                       # delete, then create
+    for key in K.RULES:                                                           # delete, then create
+        rule_id = K.fixed_uuid(key)
         assert calls.index(("DELETE", f"/api/alerting/rule/{rule_id}")) < calls.index(
             ("POST", f"/api/alerting/rule/{rule_id}"))
     assert calls.index(("POST", f"/api/actions/connector/{K.CONNECTOR}")) < calls.index(
-        ("POST", f"/api/alerting/rule/{next(iter(K.RULES))}"))                    # connector first
+        ("POST", f"/api/alerting/rule/{K.fixed_uuid(next(iter(K.RULES)))}"))      # connector first
+
+
+def test_connector_and_rule_ids_are_stable_uuids():
+    import uuid
+    ids = [K.CONNECTOR] + [K.fixed_uuid(k) for k in K.RULES]
+    assert all(str(uuid.UUID(i)) == i for i in ids) and len(set(ids)) == len(ids)
+    assert K.fixed_uuid("vigil-md-task-failed") == K.fixed_uuid("vigil-md-task-failed")   # same on rerun
 
 
 def test_a_failed_import_stops_before_the_rules(api, monkeypatch):
