@@ -203,7 +203,9 @@ compares two windows with the rows of the 12 report months before the label snap
 1. the MAUDE rows **first loaded after the snapshot** (new data);
 2. the **baseline's own rows as they are now** ("revisit"). openFDA re-exports rewrite old reports
    in place: the 2026-11-17 export left 1,401,548 PROD rows without a UDI-DI (of 1,454,498 rows it
-   updated; 55.6% of all MAUDE rows have one now, 61.9% in October). Window 1 cannot see that.
+   updated; the share of MAUDE rows with one fell from 61.9% to 55.6%). Window 1 cannot see that.
+   PROD now keeps the last-known UDI-DI and the rows were restored on 2026-11-21
+   (`Data-Pipeline/docs/issue.md` #18; 62.1% have one again).
 
 Drift in either window is drift.
 
@@ -230,12 +232,13 @@ python scripts/m01_data_drift.py check --simulate udi_drop                      
   reviewed label set) and `publish=true`: a model that passes the gate is published, one that
   fails it is not and the champion stays. The run is marked failed, so GitHub e-mails the alert.
   It uses the matching CI account (`GCP_SERVICE_ACCOUNT`), which already reads `vigil_md_prod`.
-- **Baseline** ([`monitor/data_baseline.json`](monitor/data_baseline.json), built 2026-11-20, 0.31 GB
-  billed): 3,418,835 rows of report months 2025-11 to 2026-10; UDI rate 54.9%, UDI link rate
-  71.5%. It was built after the 2026-11-17 re-export, so the UDI blanking is already in it:
-  the revisit window guards against the next in-place change, not that one.
+- **Baseline** ([`monitor/data_baseline.json`](monitor/data_baseline.json), rebuilt 2026-11-22 after
+  the UDI-DI restore, 0.31 GB billed): 3,418,835 rows of report months 2025-11 to 2026-10; UDI
+  rate 60.4%, UDI link rate 70.2%. The first build (2026-11-20) had the blanked UDI-DIs (UDI rate
+  54.9%); after the restore its revisit check would have reported drift (+5.5 points) and
+  started a retraining nobody needed. Rebuild the baseline whenever PROD is corrected in place.
   **First real check** (0.14 GB): no decision, 228 new rows. With the revisit (2026-11-21,
-  0.44 GB billed): new rows no decision, revisit ok (identical to the baseline). Those 228 rows differ a lot
+  0.44 GB billed, against the first build): new rows no decision, revisit ok. Those 228 rows differ a lot
   from the baseline (UDI rate 37%, manufacturer missing 15% vs 0.1%): one small batch can look
   extreme, which is why nothing is decided below `min_rows`.
 - **Not automatic on purpose:** a new label set (`s01_build_label_set.py`, a committed manifest).

@@ -1,17 +1,17 @@
 {
-  "built_at": "2026-11-20T01:04:49+00:00",
+  "built_at": "2026-11-22T12:48:45+00:00",
   "snapshot_date": "2026-11-07",
   "window": "_part_date >= DATE '2025-11-01' AND _part_date < DATE '2026-11-01' AND first_loaded_at <= TIMESTAMP '2026-11-07 23:59:59+00'",
   "cost": {
-    "estimated_gb": 0.3044,
-    "billed_gb": 0.3051
+    "estimated_gb": 0.3075,
+    "billed_gb": 0.3083
   },
   "profile": {
     "n": 3418835,
-    "n_udi": 1876973,
+    "n_udi": 2065184,
     "rates": {
-      "udi_rate": 0.54901,
-      "udi_link_rate": 0.715419,
+      "udi_rate": 0.604061,
+      "udi_link_rate": 0.701893,
       "no_model_rate": 0.319519,
       "no_catalog_rate": 0.283743,
       "no_manufacturer_rate": 0.001338,
