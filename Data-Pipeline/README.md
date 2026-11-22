@@ -6,7 +6,7 @@ Vigil MD links medical device records from four FDA sources. It finds records in
 
 Inspired by Kramer et al. (2012), *Security and Privacy Qualities of Medical Devices: An Analysis of FDA Postmarket Surveillance*, PLoS ONE.
 
-**Status (2026-11-18).** All 2016–2026 data is in BigQuery (RAW → STAGING → PROD, 26.9 million PROD rows). Three Airflow DAGs fetch, load, check and merge it daily. A load reaches PROD only after schema, value and anomaly checks; if a check fails, that source is not merged and an e-mail alert is sent. A bias analysis of PROD, with a reweighting fix, is in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md). About 640 tests run in CI for every pull request.
+**Status (2026-11-21).** All 2016–2026 data is in BigQuery (RAW → STAGING → PROD, 26.9 million PROD rows). Three Airflow DAGs fetch, load, check and merge it daily. A load reaches PROD only after schema, value and anomaly checks; if a check fails, that source is not merged and an e-mail alert is sent. A bias analysis of PROD, with a reweighting fix, is in [`docs/BIAS_REPORT.md`](docs/BIAS_REPORT.md). About 670 tests run in CI for every pull request.
 
 **Contents:** [Quickstart](#quickstart) · [How the pipeline works](#how-the-pipeline-works) · [Data checks and alerts](#data-checks-and-alerts) · [Scheduling](#scheduling-pools-and-priorities) · [BigQuery tables](#bigquery-tables) · [Data validation](#data-validation-schema-and-statistics) · [Anomaly detection](#anomaly-detection) · [Bias analysis](#bias-analysis-and-mitigation) · [DVC](#data-versioning-with-dvc) · [Logging (ELK)](#logging-elk) · [Testing and CI](#testing-and-ci) · [Repository structure](#repository-structure) · [Troubleshooting](#everyday-commands-and-troubleshooting) · [Changes](#changes)
 
@@ -83,7 +83,7 @@ From a clean clone to a first pipeline run. Tested on macOS with Docker Desktop 
    pytest -q
    docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker python -m pytest tests/dags -q
    ```
-   About 640 tests pass locally (the DAG tests skip there), and 113 DAG tests pass in the worker.
+   About 670 tests pass locally (the DAG tests skip there), and 113 DAG tests pass in the worker.
 
 8. **Sample data (DVC).**
    ```bash
@@ -156,6 +156,7 @@ Every DAG has `alert_on_failure` (trigger rule `ONE_FAILED`): it sends an e-mail
 |---|---|
 | Incremental ingestion | For each openFDA file (for example a MAUDE quarter file), the record count and size in openFDA's `download.json` are compared with the saved state (`gs://vigil-md-raw-nd/manifests/partitions/{source}.json`); for GUDID, the release date in the AccessGUDID feed. Unchanged → copied inside GCS, not downloaded again. |
 | Content-hash check | Changed or new → downloaded, and its SHA-256 compared with the last load. Same hash → not loaded, even under a new export path. A second hash, over the unzipped records, catches a new zip that holds the same records. |
+| Changed reports only (MAUDE) | openFDA re-exports rewrite every MAUDE file even when the reports are the same. The unzip step fingerprints each report (whole record; list order, repeated list values and the renumbered `device_sequence_number` ignored) and writes only new or changed reports. A file with nothing new is not loaded. Fingerprints are saved per file and count only after that file's RAW load commits ([`scripts/warehouse/report_delta.py`](scripts/warehouse/report_delta.py)). A full load still writes every report. |
 | Newest export only | If several exports are waiting (for example after a delayed load), only the newest version of each file is loaded ([`docs/issue.md`](docs/issue.md) #15). |
 | Partition pruning | RAW and STAGING are split by `_ingest_date` and **reject queries without a filter on it**. Staging reads one day of RAW; the MERGE reads only the PROD date range of that day's data. |
 | Idempotent loading | Running a step twice gives the same result. `vigil_md_ops.load_log` records every loaded file and its hash. The raw load replaces one file's rows for one day in a single transaction; staging replaces one day; the MERGE updates a row only when its `record_hash` changed. |
@@ -171,6 +172,7 @@ GUDID is an XML release (210 parts, about 5.2 million devices). It is converted 
 | `manifests/manifest_state.json` | Export dates per source (read by `check_manifest`) |
 | `manifests/partitions/{source}.json` | Per-partition fingerprint and hashes (incremental state) |
 | `manifests/pending/{source}/*.json` | Files waiting to load. Deleted after the raw load commits. |
+| `fingerprints/maude/current/{partition_key}.json.gz` | Report fingerprints of each MAUDE file as PROD holds it. `fingerprints/maude/pending/{date}/…` until the file's load commits |
 | `_incoming/` | Temporary, during a download |
 
 ---
@@ -244,12 +246,13 @@ Rows with a NULL merge key are not staged (a warning with the count is logged). 
 
 Same names as `flatten_to_parquet.py`. `record_date` / `publish_date` are DATE. Full lists: `schemas.FLAT_COLUMNS`.
 `manufacturer_name_norm` is a matching key (lowercase, legal suffix removed); show `manufacturer_name_raw`, the complete name, to users.
+PROD `maude.udi_di` is the **last UDI-DI FDA published**: when a later export blanks it, PROD keeps the value and sets `udi_di_removed_at` (FDA's current value is then NULL; [`docs/issue.md`](docs/issue.md) #18).
 
 | Source | Columns |
 |---|---|
 | enforcement | `source`, `source_record_id`, `link_key`, `event_id`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `recall_class`, `reason_text`, `scope_text`, `record_date`, `status`, `distribution_pattern` |
 | recall | `source`, `source_record_id`, `link_key`, `res_event_number`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `product_code`, `reason_text`, `scope_text`, `record_date`, `recall_status`, `root_cause`, `action` |
-| maude | `source`, `source_record_id`, `device_seq`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `model_number_raw`, `catalog_number`, `lot_number`, `udi_di`, `product_code`, `record_date`, `event_type`, `adverse_event_flag`, `report_number` |
+| maude | `source`, `source_record_id`, `device_seq`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `model_number_raw`, `catalog_number`, `lot_number`, `udi_di`, `product_code`, `record_date`, `event_type`, `adverse_event_flag`, `report_number`; PROD only: `udi_di_removed_at` |
 | gudid | `source`, `source_record_id`, `udi_di`, `manufacturer_name_raw`, `manufacturer_name_norm`, `device_name_raw`, `model_number_raw`, `catalog_number`, `product_codes` (ARRAY), `device_record_status`, `publish_date`, `distribution_status` |
 
 ### MAUDE event tables (problems and narrative text)
@@ -544,7 +547,7 @@ Kibana is at http://localhost:5601. Filebeat reads all Airflow task logs in `log
 All GCP calls are mocked: **no test touches real GCS or BigQuery**, and test logs never reach Logstash (an autouse fixture). The case list is in [`tests/TEST_CASES.md`](tests/TEST_CASES.md); the test plan is [`docs/TESTS_PLAN.md`](docs/TESTS_PLAN.md).
 
 ```bash
-pytest -q                                        # 639 passed, 1 skipped, 21 deselected (2026-11-18)
+pytest -q                                        # 666 passed, 1 skipped, 21 deselected (2026-11-21)
 docker compose exec -w /opt/airflow/Vigil-MD/Data-Pipeline airflow-worker python -m pytest tests/dags -q   # 113 passed
 pytest -m integration                            # real-GCS checks of the raw files (needs credentials)
 ```
@@ -667,6 +670,11 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ---
 
 ## Changes
+
+### 2026-11-21 — MAUDE re-exports: changed reports only, last-known UDI-DI
+
+- **Only new or changed MAUDE reports are loaded.** A re-export that only moves and reorders reports loads nothing (2026-11-02 → 03: 0 of 196,449 reports in 2016q1); the 2026-11-17 export would have loaded 6.6–13.2% per quarter instead of all of it ([`docs/issue.md`](docs/issue.md) #4, #17).
+- **PROD keeps the last-known UDI-DI.** The 2026-11-17 export blanked the UDI-DI of about 1.4M rows; they were restored from the 2026-11-03 staging partition (62.1% of MAUDE rows have one again) and marked with `udi_di_removed_at` (#18).
 
 ### 2026-11-17 to 2026-11-19 — MAUDE re-export, run state
 

@@ -88,11 +88,17 @@ class FakeBlob:
     def exists(self):
         return self.name in self.bucket.store
 
+    @property
+    def time_created(self):
+        """Order of the last write (GCS: a new generation gets a new timeCreated)."""
+        return self.bucket.created.get(self.name, 0)
+
     def upload_from_filename(self, path, **kw):
         self.bucket.store[self.name] = Path(path).read_bytes()
 
     def upload_from_string(self, data, content_type=None, **kw):
         self.bucket.store[self.name] = data.encode("utf-8") if isinstance(data, str) else data
+        self.bucket.touch(self.name)
 
     def download_as_bytes(self):
         if self.name not in self.bucket.store:
@@ -128,13 +134,18 @@ class FakeBucket:
         self.name = name
         self.store: dict[str, bytes] = {}
         self.meta: dict[str, dict] = {}
+        self.created: dict[str, int] = {}
         self.client = types.SimpleNamespace(list_blobs=self._list_blobs)
+
+    def touch(self, name):
+        self.created[name] = max(self.created.values(), default=0) + 1
 
     def blob(self, name):
         return FakeBlob(self, name)
 
     def copy_blob(self, blob, destination_bucket, new_name):
         destination_bucket.store[new_name] = self.store[blob.name]
+        destination_bucket.touch(new_name)
         return destination_bucket.blob(new_name)
 
     def rename_blob(self, blob, new_name):
