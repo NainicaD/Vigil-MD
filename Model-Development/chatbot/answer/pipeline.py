@@ -63,6 +63,15 @@ MAX_ENTITIES = 3  # Devices compared in one answer ("X vs Y vs Z").
 EVENT_WORD_COUNTS = 'event_word_counts'
 # Internal key of answer(): router scores and drift signals for api/events.py. Not public.
 ROUTER_SIGNALS = 'router_signals'
+# Short-term memory (one turn back, kept by the browser): what answer() used from `context`,
+# in out['context_used']. None: the question was answered on its own.
+CONTEXT_PREVIOUS_QUESTION = 'previous_question'   # the bot had asked which device (or not
+                                                  # understood); this message named one
+CONTEXT_ENTITY = 'entity'                         # no device named: the previous answer's
+                                                  # entity was used
+CONTEXT_USED = (CONTEXT_PREVIOUS_QUESTION, CONTEXT_ENTITY)
+# Previous answers that leave a question waiting for a device.
+PENDING_STATUSES = ('need_device', 'unclear')
 DEFAULT_MODEL_DIR = (
     pathlib.Path(__file__).resolve().parents[1] / 'models' / 'baseline')
 # BigQuery, login or network failures: the user gets SERVICE_DOWN. Anything
@@ -117,25 +126,77 @@ class Chatbot:
                    ql_backend.BigQueryBackend(dataset=dataset, cache_size=cache_size), max_gb)
 
     def answer(self, question: str,
-               entity: tuple[str, str] | None = None) -> dict:
+               entity: tuple[str, str] | None = None,
+               context: dict | None = None) -> dict:
         """Answers one question.
 
         Args:
           question: What the user typed.
           entity: (entity_type, entity_id) to skip the device search, e.g. on
             a device page or for a follow-up question.
+          context: The previous turn, kept by the browser (one turn back, never stored
+            here): {'previous_question': str, 'previous_status': str,
+            'entity': (entity_type, entity_id) | None}. Rules, in this order:
+            1. An explicit `entity` wins; context is ignored.
+            2. The new question is routed as always: help, scope and refusal replies are
+               final, so context never turns a refusal into an answer.
+            3. Pending question: the previous answer was need_device or unclear, the new
+               message has no label and no event word, and its search resolves one entry:
+               the previous question is answered about that entry (routed again, so its own
+               refusal still applies). context_used = 'previous_question'.
+            4. Carry-over: the new question names no device (search none, empty phrase) and
+               context has an entity: that entity is used. context_used = 'entity'. A device
+               named in the new question wins.
+            5. Otherwise the question is answered on its own.
 
         Returns:
           A JSON-friendly dict: status, text, sections, labels, entities,
-          sources, data_as_of, budget_gb, search and both fingerprints.
+          sources, data_as_of, budget_gb, search, context_used and both fingerprints.
         """
+        if entity:
+            context = None                                  # rule 1
         route = self.router.classify(question)
+        if context:
+            out = self._answer_pending(question, route, context)   # rule 3
+            if out is not None:
+                return out
+        carry = tuple(context['entity']) if context and context.get('entity') else None
+        return self._answer(question, route, entity, carry)
+
+    def _answer_pending(self, question: str, route: dict, context: dict) -> dict | None:
+        """Rule 3: the new message only names the entry the bot asked for. Returns the
+        previous question's answer about it, or None if the rule does not apply."""
+        previous = (context.get('previous_question') or '').strip()
+        if (not previous or context.get('previous_status') not in PENDING_STATUSES
+                or route['reply_kind'] is not None or route['labels']
+                or named_event_types(question)):
+            return None
+        res = self.index.resolve(question)
+        if res.status != 'resolved' or len(res.matches) != 1:
+            return None
+        key = self.index.query_key(res.matches[0])
+        out = self._answer(previous, self.router.classify(previous),
+                           (key['entity_type'], key['entity_id']), None)
+        out['context_used'] = CONTEXT_PREVIOUS_QUESTION
+        out['search'] = self._search_dict(res)              # what this message resolved to
+        return out
+
+    @staticmethod
+    def _search_dict(res) -> dict:
+        return {'status': res.status, 'phrase': res.phrase,
+                'matches': [{'type': h.kind, 'id': h.entity_id,
+                             'title': h.title, 'score': h.score}
+                            for h in res.matches]}
+
+    def _answer(self, question: str, route: dict, entity: tuple[str, str] | None,
+                carry: tuple[str, str] | None) -> dict:
+        """Answers one routed question; `carry` is the previous answer's entity (rule 4)."""
         out = {'question': question, 'labels': route['labels'],
                'run_queries': route['run_queries'],
                'reply_kind': route['reply_kind'],
                'rule_hits': route.get('rule_hits', []), 'entities': [],
                'sections': [], 'sources': [], 'data_as_of': {},
-               'budget_gb': None, 'search': None,
+               'budget_gb': None, 'search': None, 'context_used': None,
                'template_fingerprint': templates.templates_fingerprint(),
                'rules_fingerprint': guardrails.rules_fingerprint(),
                # For monitoring (api/events.py); the API removes it before replying.
@@ -173,11 +234,12 @@ class Chatbot:
             keys = [{'entity_type': entity[0], 'entity_id': entity[1]}]
         else:
             res = self.index.resolve(question)
-            out['search'] = {
-                'status': res.status, 'phrase': res.phrase,
-                'matches': [{'type': h.kind, 'id': h.entity_id,
-                             'title': h.title, 'score': h.score}
-                            for h in res.matches]}
+            out['search'] = self._search_dict(res)
+        if not entity and carry and res.status == 'none' and not res.phrase:
+            # Rule 4: no device named here; the previous answer's entity is used.
+            keys = [{'entity_type': carry[0], 'entity_id': carry[1]}]
+            out['context_used'] = CONTEXT_ENTITY
+        elif not entity:
             if fallback and res.status not in ('resolved', 'several'):
                 return unclear()        # no clear device either: ask to rephrase
             if res.status == 'none':

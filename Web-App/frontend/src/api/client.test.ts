@@ -44,6 +44,17 @@ describe("request shapes (handover §2)", () => {
     expect((fetchFn.mock.calls[0] as unknown as [string])[0]).toBe("/api/answer");
   });
 
+  it("answer: adds context only when there is one", async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ status: "answered", text: "", sections: [] }));
+    const api = createHttpApi(cfg, fetchFn);
+    const context = { previous_question: "any deaths?", previous_status: "need_device", entity: null };
+    await api.answer("DreamStation", null, { context });
+    await api.answer("DreamStation", null, { context: null });
+    const bodies = fetchFn.mock.calls.map((c) => JSON.parse((c as unknown as [string, RequestInit])[1].body as string));
+    expect(bodies[0]).toEqual({ question: "DreamStation", entity: null, context });
+    expect(bodies[1]).toEqual({ question: "DreamStation", entity: null });
+  });
+
   it("uses VITE_API_BASE_URL as the prefix", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ query: "x", hits: [] }));
     await createHttpApi({ ...cfg, apiBaseUrl: "https://api.example.org/v1" }, fetchFn).search("x");

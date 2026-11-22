@@ -128,6 +128,52 @@ def test_bad_answer_requests_are_rejected(body):
     assert not bq.calls
 
 
+def test_answer_without_context_says_no_context_was_used():
+    c, _ = client(labels=("counts",))
+    body = c.post("/api/answer", json={"question": "How many deaths has the DreamStation had?"}).json()
+    assert body["status"] == "answered" and body["context_used"] is None
+
+
+def test_a_device_named_after_which_device_answers_the_previous_question():
+    # The browser sends the previous turn; the server keeps nothing between requests.
+    c, _ = client(labels=())
+    r = c.post("/api/answer", json={
+        "question": "DreamStation", "entity": None,
+        "context": {"previous_question": "are there any deaths associated to this",
+                    "previous_status": "need_device", "entity": None}})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["context_used"] == "previous_question" and body["status"] == "answered"
+    assert [s["kind"] for s in body["sections"]] == ["headline", "counts", "footer"]
+    assert "question" not in body and "associated to this" not in r.text   # not echoed back
+
+
+def test_a_question_without_a_device_uses_the_context_entity():
+    c, _ = client(labels=("recalls",), resolution=search.Resolution("none", [], ""))
+    body = c.post("/api/answer", json={
+        "question": "what about recalls?",
+        "context": {"previous_question": "DreamStation deaths", "previous_status": "answered",
+                    "entity": {"entity_type": "device", "entity_id": DEV}}}).json()
+    assert body["context_used"] == "entity" and body["entities"][0]["id"] == DEV
+
+
+CONTEXT = {"previous_question": "any deaths?", "previous_status": "need_device"}
+
+
+@pytest.mark.parametrize("context", [
+    {**CONTEXT, "previous_question": "x" * 1001},          # longer than a question may be
+    {**CONTEXT, "previous_question": ""},
+    {**CONTEXT, "previous_status": "x" * 41},
+    {**CONTEXT, "entity": {"entity_type": "device", "entity_id": "x" * 201}},
+    {**CONTEXT, "entity": {"entity_type": "gadget", "entity_id": DEV}},
+    {"previous_status": "need_device"},                     # no previous question
+])
+def test_bad_context_is_rejected(context):
+    c, bq = client()
+    assert c.post("/api/answer", json={"question": "DreamStation", "context": context}).status_code == 422
+    assert not bq.calls
+
+
 def test_questions_are_rate_limited_per_client():
     c, _ = client(rate_limit=2)
     codes = [c.post("/api/answer", json={"question": "What can you do?"}).status_code
@@ -273,6 +319,20 @@ def test_refusals_and_device_page_questions_are_events_too():
     assert events[0]["status"] == "refused" and events[0]["reply_kind"] == "medical_refusal"
     assert events[0]["rule_hits"]                      # pattern names only
     assert events[1]["entity_given"] is True
+
+
+def test_context_is_an_event_field_but_never_its_text():
+    events = []
+    c, _ = client(labels=(), event_sink=events.append)
+    previous = "Jane Roe asks: are there any deaths associated to this"
+    c.post("/api/answer", json={"question": "DreamStation",
+                                "context": {"previous_question": previous,
+                                            "previous_status": "need_device"}})
+    c.post("/api/answer", json={"question": "What can you do?"})
+    assert [e["context_used"] for e in events] == ["previous_question", None]
+    text = json.dumps(events)
+    for part in ("Jane", "Roe", "associated", "DreamStation", "dreamstation", DEV):
+        assert part not in text, part
 
 
 def test_rejected_requests_write_no_event():

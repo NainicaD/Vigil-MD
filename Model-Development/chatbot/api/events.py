@@ -22,6 +22,9 @@ Fields (SCHEMA_VERSION 1):
   unknown_word_share                               share of words not in the router's vocabulary
   question_chars, question_words                   size of the question, not its content
   entity_given                                     the question came with an entity (device page)
+  context_used                                     short-term memory: None, "previous_question"
+                                                   or "entity" (which rule; never the previous
+                                                   question's text)
   entity_types_found, n_entities                   e.g. ["device"], 1 (types only, no ids)
   budget_gb_spent                                  BigQuery GB this answer used (None if no query)
   latency_ms                                       time inside answer(), in milliseconds
@@ -37,6 +40,8 @@ from typing import Callable
 
 EVENT = "router_decision"
 SCHEMA_VERSION = 1
+# out["context_used"] values (answer/pipeline.py CONTEXT_USED); anything else is recorded as None.
+CONTEXT_USED = ("previous_question", "entity")
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +81,7 @@ def build_event(out: dict | None, question: str, *, latency_ms: float, model_ver
         "question_chars": len(question),
         "question_words": len(question.split()),
         "entity_given": entity_given,
+        "context_used": out.get("context_used") if out.get("context_used") in CONTEXT_USED else None,
         "entity_types_found": sorted({e.get("type") for e in found if e.get("type")}),
         "n_entities": len(found),
         "budget_gb_spent": budget.get("spent"),

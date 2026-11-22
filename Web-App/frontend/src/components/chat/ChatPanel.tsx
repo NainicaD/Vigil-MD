@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { MAX_QUESTION_LENGTH } from "../../api/types";
-import { useChat } from "../../chat/chatStore";
+import { contextAbout, useChat } from "../../chat/chatStore";
 import { BotReply } from "./BotReply";
 
 export const CHAT_TOGGLE_ID = "chat-toggle";
@@ -93,21 +93,24 @@ export function ChatPanel() {
             The assistant reports what FDA adverse-event reports and recalls say. It does not give medical advice.
           </p>
         )}
-        {turns.map((turn) => (
-          <div key={turn.id} className="turn">
-            <div className="question">
-              {turn.about && <span className="question-about">About: {turn.about}</span>}
-              <span className="question-text">{turn.question}</span>
+        {turns.map((turn) => {
+          const about = turn.about ?? contextAbout(turn);
+          return (
+            <div key={turn.id} className="turn">
+              <div className="question">
+                {about && <span className="question-about">About: {about}</span>}
+                <span className="question-text">{turn.question}</span>
+              </div>
+              <BotReply
+                turn={turn}
+                busy={pending}
+                onChoose={(m) => chat.choose(turn, m)}
+                onRetry={() => chat.retry(turn)}
+                onNavigate={closeOnPhone}
+              />
             </div>
-            <BotReply
-              turn={turn}
-              busy={pending}
-              onChoose={(m) => chat.choose(turn, m)}
-              onRetry={() => chat.retry(turn)}
-              onNavigate={closeOnPhone}
-            />
-          </div>
-        ))}
+          );
+        })}
         <div ref={endRef} />
       </div>
 

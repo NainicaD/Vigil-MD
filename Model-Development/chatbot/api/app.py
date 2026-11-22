@@ -3,7 +3,8 @@
   GET  /api/health                       service, dataset and fingerprints (no BigQuery)
   GET  /api/search?q=<text>&limit=10     search box hits (local index, no BigQuery)
   GET  /api/entity/<kind>/<entity_id>    a device page: device_summary() of one entity
-  POST /api/answer                       {"question": "...", "entity": null | {...}} -> an answer
+  POST /api/answer                       {"question": "...", "entity": null | {...},
+                                          "context": null | {...}} -> an answer
 
 Contract: the front-end handover (draft API, section 2). Responses never carry SQL or query
 parameters: "sources" are trimmed to the query name and tables. Errors are JSON with a status
@@ -88,9 +89,18 @@ class EntityKey(BaseModel):
     entity_id: str = Field(min_length=1, max_length=200)
 
 
+class AnswerContext(BaseModel):
+    """The previous turn, sent by the browser (short-term memory, one turn back). Never logged
+    or stored: only answer() reads it, and the event records only which rule used it."""
+    previous_question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
+    previous_status: str = Field(min_length=1, max_length=40)
+    entity: EntityKey | None = None
+
+
 class AnswerRequest(BaseModel):
     question: str = Field(min_length=1, max_length=MAX_QUESTION_CHARS)
     entity: EntityKey | None = None
+    context: AnswerContext | None = None        # optional: omitted = answered on its own
 
 
 def published_version(model_dir: Path = pipeline.DEFAULT_MODEL_DIR) -> str | None:
@@ -204,19 +214,27 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
                                                          "text": templates.SERVICE_DOWN}) from None
         return public(page)
 
+    def entity_key(key: EntityKey | None) -> tuple[str, str] | None:
+        if key is None:
+            return None
+        if key.entity_type not in config.ENTITY_TYPES:
+            raise HTTPException(status_code=422, detail={
+                "status": "bad_request", "text": "Unknown entity_type."})
+        return (key.entity_type, key.entity_id)
+
     @app.post("/api/answer")
     def answer(body: AnswerRequest, request: Request):
         limited(request)
-        entity = None
-        if body.entity:
-            if body.entity.entity_type not in config.ENTITY_TYPES:
-                raise HTTPException(status_code=422, detail={
-                    "status": "bad_request", "text": "Unknown entity_type."})
-            entity = (body.entity.entity_type, body.entity.entity_id)
+        entity = entity_key(body.entity)
+        context = None
+        if body.context:
+            context = {"previous_question": body.context.previous_question,
+                       "previous_status": body.context.previous_status,
+                       "entity": entity_key(body.context.entity)}
         bot_ = chatbot()
         started, out = time.perf_counter(), None
         try:
-            out = bot_.answer(body.question, entity=entity)
+            out = bot_.answer(body.question, entity=entity, context=context)
         finally:                             # also when answer() raised: status "exception"
             events.emit(event_sink, out=out, question=body.question,
                         latency_ms=(time.perf_counter() - started) * 1000,

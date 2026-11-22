@@ -629,6 +629,197 @@ def test_no_event_word_and_no_device_is_still_unclear():
     assert pipeline.EVENT_WORD_COUNTS not in out['rule_hits']
 
 
+# ── short-term memory: the previous turn as context (handover item A) ─────────
+
+DEATHS_THIS = 'are there any deaths associated to this'
+RESOLVED = search.Resolution('resolved', [hit()], 'dreamstation')
+
+
+class TurnRouter(FakeRouter):
+    """Labels per question (the real guardrail routing on them); [] for any other question."""
+
+    def __init__(self, labels_by_question):
+        super().__init__([])
+        self.by_question = labels_by_question
+
+    def classify(self, question):
+        self.labels = self.by_question.get(question, [])
+        return super().classify(question)
+
+
+class TurnIndex(FakeIndex):
+    """A Resolution per question; NONE (no device words) for any other question."""
+
+    def __init__(self, by_question):
+        super().__init__(NONE)
+        self.by_question = by_question
+
+    def resolve(self, question):
+        self.calls += 1
+        return self.by_question.get(question, NONE)
+
+
+def memory_bot(labels=None, resolutions=None):
+    """Returns (Chatbot, fake BigQuery client): labels and resolutions per question."""
+    client = FakeClient(rows=ROWS)
+    bot = pipeline.Chatbot(TurnRouter(labels or {}), TurnIndex(resolutions or {}),
+                           test_query_layer.backend(client))
+    return bot, client
+
+
+def context(question, status, entity=None):
+    return {'previous_question': question, 'previous_status': status, 'entity': entity}
+
+
+def test_without_context_the_answer_is_unchanged():
+    # No context (or context=None) gives exactly today's answer.
+    bot, _ = memory_bot(resolutions={'DreamStation recalls': RESOLVED},
+                        labels={'DreamStation recalls': ['recalls']})
+    plain = bot.answer('DreamStation recalls')
+    with_none = bot.answer('DreamStation recalls', context=None)
+    assert plain == with_none and plain['context_used'] is None
+    assert bot.answer(DEATHS_THIS)['status'] == 'need_device'
+
+
+def test_a_device_named_after_which_device_answers_the_pending_question():
+    # "are there any deaths associated to this" -> "Which device?" -> "DreamStation":
+    # DreamStation's death counts, not a general summary.
+    bot, _ = memory_bot(resolutions={'DreamStation': RESOLVED})
+    first = bot.answer(DEATHS_THIS)
+    assert first['status'] == 'need_device'
+    out = bot.answer('DreamStation', context=context(DEATHS_THIS, first['status']))
+    assert out['status'] == 'answered'
+    assert out['context_used'] == pipeline.CONTEXT_PREVIOUS_QUESTION
+    assert kinds(out) == ['headline', 'counts', 'footer']      # the counts, no summary note
+    assert '1 death' in out['text']
+    assert out['entities'][0]['id'] == DEV
+    assert out['search']['status'] == 'resolved'                # what this message resolved to
+
+
+def test_a_device_named_after_unclear_answers_the_pending_question():
+    bot, _ = memory_bot(resolutions={'the DreamStation': RESOLVED})
+    out = bot.answer('the DreamStation', context=context('tell me more about it', 'unclear'))
+    assert out['context_used'] == pipeline.CONTEXT_PREVIOUS_QUESTION
+    assert out['status'] == 'answered' and out['entities'][0]['id'] == DEV
+
+
+@pytest.mark.parametrize('status', ['answered', 'not_found', 'ambiguous', 'refused', 'help'])
+def test_only_need_device_or_unclear_leave_a_question_pending(status):
+    bot, _ = memory_bot(resolutions={'DreamStation': RESOLVED})
+    out = bot.answer('DreamStation', context=context(DEATHS_THIS, status))
+    assert out['context_used'] is None
+    assert kinds(out)[0] == 'note'                  # today's summary of the device, on its own
+
+
+def test_a_new_question_with_a_label_or_event_word_is_not_a_device_reply():
+    # The message asks something itself: it is answered as asked, not as the old question.
+    bot, _ = memory_bot(labels={'DreamStation recalls': ['recalls']},
+                        resolutions={'DreamStation recalls': RESOLVED,
+                                     'DreamStation injuries': RESOLVED})
+    pending = context(DEATHS_THIS, 'need_device')
+    out = bot.answer('DreamStation recalls', context=pending)
+    assert out['context_used'] is None and out['run_queries'] == ['recalls']
+    out = bot.answer('DreamStation injuries', context=pending)
+    assert out['context_used'] is None and pipeline.EVENT_WORD_COUNTS in out['rule_hits']
+
+
+@pytest.mark.parametrize('resolution', [
+    NONE,
+    search.Resolution('none', [], 'flurbo'),
+    search.Resolution('ambiguous', [hit(), hit('dev:2', 'Other', '', 9)], 'x'),
+    search.Resolution('several', [hit('dev:a', 'A'), hit('dev:b', 'B')], 'a | b'),
+])
+def test_the_pending_question_needs_exactly_one_entry(resolution):
+    bot, _ = memory_bot(resolutions={'hmm': resolution})
+    out = bot.answer('hmm', context=context(DEATHS_THIS, 'need_device'))
+    assert out['context_used'] != pipeline.CONTEXT_PREVIOUS_QUESTION
+
+
+def test_a_question_without_a_device_uses_the_previous_answers_entity():
+    # "what about recalls?" after an answer about the DreamStation.
+    bot, _ = memory_bot(labels={'what about recalls?': ['recalls']})
+    out = bot.answer('what about recalls?',
+                     context=context('DreamStation deaths', 'answered', ('device', DEV)))
+    assert out['status'] == 'answered'
+    assert out['context_used'] == pipeline.CONTEXT_ENTITY
+    assert '**Recalls:** 4 found' in out['text'] and out['entities'][0]['id'] == DEV
+
+
+def test_an_event_word_without_a_device_uses_the_previous_entity():
+    bot, _ = memory_bot()
+    out = bot.answer('any deaths for this?',
+                     context=context('DreamStation recalls', 'answered', ('device', DEV)))
+    assert out['context_used'] == pipeline.CONTEXT_ENTITY
+    assert kinds(out) == ['headline', 'counts', 'footer'] and '1 death' in out['text']
+
+
+def test_a_device_named_in_the_new_question_beats_the_previous_entity():
+    other = search.Resolution('resolved', [hit('dev:other', 'AirSense 10')], 'airsense 10')
+    bot, _ = memory_bot(labels={'AirSense 10 recalls': ['recalls']},
+                        resolutions={'AirSense 10 recalls': other})
+    out = bot.answer('AirSense 10 recalls',
+                     context=context('DreamStation deaths', 'answered', ('device', DEV)))
+    assert out['context_used'] is None and out['entities'][0]['id'] == 'dev:other'
+
+
+def test_an_unknown_device_named_in_the_new_question_is_not_replaced():
+    # The words searched for were not found: say so, don't answer about the old device.
+    bot, client = memory_bot(labels={'flurbo recalls': ['recalls']},
+                             resolutions={'flurbo recalls': search.Resolution('none', [], 'flurbo')})
+    out = bot.answer('flurbo recalls',
+                     context=context('DreamStation deaths', 'answered', ('device', DEV)))
+    assert out['status'] == 'not_found' and out['context_used'] is None
+    assert not client.real_runs()
+
+
+def test_an_explicit_entity_beats_the_context():
+    # Device page or an "ambiguous" choice: context is ignored, also a pending question.
+    bot, _ = memory_bot(labels={'Was it recalled?': ['recalls']},
+                        resolutions={'DreamStation': RESOLVED})
+    out = bot.answer('Was it recalled?', entity=('device', 'dev:page'),
+                     context=context(DEATHS_THIS, 'need_device', ('device', DEV)))
+    assert out['context_used'] is None and out['entities'][0]['id'] == 'dev:page'
+    out = bot.answer('DreamStation', entity=('device', 'dev:page'),
+                     context=context(DEATHS_THIS, 'need_device'))
+    assert out['context_used'] is None and out['question'] == 'DreamStation'
+
+
+def test_advice_in_the_new_question_is_refused_whatever_the_context():
+    bot, client = memory_bot(resolutions={'DreamStation': RESOLVED})
+    for ctx in (context('DreamStation deaths', 'answered', ('device', DEV)),
+                context(DEATHS_THIS, 'need_device')):
+        out = bot.answer('Should I stop using it?', context=ctx)
+        assert (out['status'], out['text']) == ('refused', guardrails.REFUSAL)
+        assert out['context_used'] is None
+    assert not client.real_runs()
+
+
+def test_advice_in_the_pending_question_is_still_refused_first():
+    # "any deaths? should I stop using it?" -> "Which device?" -> "DreamStation": the old
+    # question is routed again, so its refusal comes first, then the facts.
+    advice = 'any deaths? should I stop using it?'
+    bot, _ = memory_bot(labels={advice: ['counts']}, resolutions={'DreamStation': RESOLVED})
+    first = bot.answer(advice)
+    assert first['reply_kind'] == 'medical_refusal' and first['status'] == 'need_device'
+    out = bot.answer('DreamStation', context=context(advice, first['status']))
+    assert out['context_used'] == pipeline.CONTEXT_PREVIOUS_QUESTION
+    assert out['text'].startswith(guardrails.REFUSAL)
+    assert kinds(out)[:2] == ['medical_refusal', 'headline']
+
+
+def test_an_advice_only_pending_question_stays_refused():
+    advice = 'should I keep using my CPAP?'
+    bot, client = memory_bot(resolutions={'DreamStation': RESOLVED})
+    out = bot.answer('DreamStation', context=context(advice, 'unclear'))
+    assert (out['status'], out['text']) == ('refused', guardrails.REFUSAL)
+    assert not client.real_runs()
+
+
+def test_an_answer_with_context_is_json_serialisable():
+    bot, _ = memory_bot(resolutions={'DreamStation': RESOLVED})
+    json.dumps(bot.answer('DreamStation', context=context(DEATHS_THIS, 'need_device')))
+
+
 class TypeCostClient(FakeClient):
     """narrative_texts is over the cap when the candidates were asked for several event types;
     candidates of the types in `empty` return no rows."""

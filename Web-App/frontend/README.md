@@ -100,7 +100,7 @@ ESLint also blocks, as errors: `console` calls (questions can contain health det
 |---|---|---|
 | Search | `/` (`/?q=…`) | A search box. Searches 300 ms after typing stops, from 2 characters. Results grouped as Devices / Companies / Product codes, each with its title, company and report count, in the API's order. A result opens its device page. No results: *"Nothing found. Try the brand name, the company or the 3-letter product code."* |
 | Device page | `/device/<kind>/<entity_id>` | Name, company, product codes; total reports with the API's `counts_note` beside them; reports by event type; reports per year (bars, plus a table by event type); top device and patient problems and the "no patient harm reported" count; recalls in the API's order (newest first) with class, date, status, reason and more details; sources and data date. `found: false`: a note that there is no data. Unknown entry: "Page not found". Failure: the service message and **Try again**. |
-| Assistant | panel on every page | Opened from the header ("Ask the assistant") or a device page's button. On a device page it sends that device as `entity` and says so; elsewhere `entity: null`. Conversation kept on screen for the session only. Enter sends, Shift+Enter is a new line, Esc closes. Side panel on wide screens, full screen at 720 px and below. |
+| Assistant | panel on every page | Opened from the header ("Ask the assistant") or a device page's button. On a device page it sends that device as `entity` and says so; elsewhere `entity: null`, plus the last finished turn as `context` (short-term memory, one turn back: "any deaths?" then "DreamStation" works; when the answer used it, the question shows "About: … (from your previous question)"). Conversation kept on screen for the session only; Clear or a reload drops it and the memory. Enter sends, Shift+Enter is a new line, Esc closes. Side panel on wide screens, full screen at 720 px and below. |
 
 Assistant replies, by `status` (handover §5):
 
@@ -172,7 +172,7 @@ call goes through `src/api/client.ts`.
 |---|---|---|
 | `GET {base}/search?q=<text>&limit=10` | | Search page |
 | `GET {base}/entity/<kind>/<entity_id>` | `kind`: `device`, `manufacturer`, `product_code`; both parts URL-encoded (`dev:…` → `dev%3A…`) | Device page |
-| `POST {base}/answer` | `{"question": "...", "entity": null}` or `{"question": "...", "entity": {"entity_type": "...", "entity_id": "..."}}` | Assistant |
+| `POST {base}/answer` | `{"question": "...", "entity": null}` or `{"question": "...", "entity": {"entity_type": "...", "entity_id": "..."}}`; without a page entity, plus `"context": {"previous_question", "previous_status", "entity"}` from the last finished turn when there is one | Assistant |
 
 Errors: HTTP 404 → "Page not found" on a device page. Any other error whose JSON body has a
 `text` (the API sends `{status, text}` for 429 rate limit, 413 budget and 503 data down) → that

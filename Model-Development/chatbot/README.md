@@ -450,6 +450,8 @@ out["status"]     # answered | refused | help | scope | unclear | need_device | 
 out["sections"], out["sources"], out["entities"], out["budget_gb"]
 out["template_fingerprint"], out["rules_fingerprint"]
 bot.answer("Any deaths?", entity=("device", "dev:f0cdc15b4d63"))   # from a device page
+bot.answer("DreamStation", context={"previous_question": "are there any deaths associated to this",
+                                    "previous_status": "need_device", "entity": None})
 ```
 
 - **Order:** the fixed reply (the medical refusal first when facts were also asked), then per
@@ -465,6 +467,27 @@ bot.answer("Any deaths?", entity=("device", "dev:f0cdc15b4d63"))   # from a devi
   there any deaths associated to this") is a counts question even when no label passed its
   threshold (`rule_hits`: `event_word_counts`): with a device it gets the counts, without one the
   bot asks which device ("dead" is left out: "the pump went dead" is a malfunction).
+- **Short-term memory (one turn back):** the browser keeps its last finished turn and sends it as
+  `context` (`previous_question`, `previous_status`, and `entity` when that answer had exactly one
+  found entity) with a question that has no page entity. The server stores nothing. Rules in
+  `Chatbot.answer`, in this order:
+  1. An explicit `entity` (device page, "ambiguous" choice) wins; `context` is ignored.
+  2. The new question is routed as always: help, scope and refusal replies are final, so context
+     never turns a refusal into an answer.
+  3. **Pending question:** the previous answer was `need_device` or `unclear`, the new message
+     has no label and no event word, and its search resolves exactly one entry: the previous
+     question is answered about that entry (routed again, so its refusal still applies).
+     `context_used`: `previous_question`. "are there any deaths associated to this" → "Which
+     device?" → "DreamStation" gives DreamStation's death counts.
+  4. **Carry-over:** the new question names no device (search `none` with an empty phrase) and
+     `context` has an entity: that entity is used. `context_used`: `entity`. "what about
+     recalls?" after an answer about the DreamStation gives its recalls. A device named in the
+     new question wins, and a name that is not found still gets "not found".
+  5. Otherwise the question is answered on its own (`context_used`: null).
+  The website shows "About: DreamStation (from your previous question)" when `context_used` is
+  set; Clear (or a reload) drops the memory. Known limit: rule 3 accepts any single entry the
+  search resolves (a device, a company or a product code), as the "Which device?" reply asks for
+  any of the three.
 - **Report texts over the cost cap:** fewer candidates are read (the 2n, then n newest reports),
   then one event type at a time (deaths, injuries, malfunctions, skipping a type without texts),
   with a note; only if nothing fits, a cost-limit message. Each refused try is a free dry run. A
@@ -502,7 +525,7 @@ FastAPI around the device search, the query layer and the chatbot.
 | `GET /api/health` | status, dataset, rules and template fingerprints, index build time, `model_version` (the published router version) | none |
 | `GET /api/search?q=<2-200 chars>&limit=<1-25>` | `{query, hits}`; each hit has `id, kind, entity_id, title, subtitle, reports, deaths, injuries, product_codes` | none |
 | `GET /api/entity/<kind>/<entity_id>` | `device_summary()` of one entity (device page) | about 40–50 MB billed |
-| `POST /api/answer` `{"question": "<1-1000 chars>", "entity": null or {"entity_type", "entity_id"}}` | `Chatbot.answer()` | as needed, capped at 0.5 GB |
+| `POST /api/answer` `{"question": "<1-1000 chars>", "entity": null or {"entity_type", "entity_id"}, "context": optional {"previous_question": "<1-1000 chars>", "previous_status": "<1-40 chars>", "entity": null or {"entity_type", "entity_id"}}}` | `Chatbot.answer()`, plus `context_used` (null, `previous_question` or `entity`; see [short-term memory](#answers-chatbot-v1)) | as needed, capped at 0.5 GB |
 
 - **No SQL leaves the API:** every `sources` list is trimmed to `{query, tables}`.
 - **Errors are JSON with a status:** 404 `not_found`, 413 `budget`, 503 `error` (BigQuery
@@ -556,10 +579,11 @@ top score and unknown-word share compared with the router's test-set baseline.
 | `unknown_word_share` | share of the question's words not in the router's word vocabulary (drift signal) |
 | `question_chars`, `question_words` | size of the question |
 | `entity_given`, `entity_types_found`, `n_entities` | device page or not; entity *types* found |
+| `context_used` | short-term memory rule used: null, `previous_question` or `entity` (never the previous question's text) |
 | `budget_gb_spent`, `latency_ms` | BigQuery GB used, time in the chatbot |
 
-- **Never in an event:** the question text, the search phrase, entity ids, the answer text, the
-  visitor's address or headers. Tests check this with a question that contains a name.
+- **Never in an event:** the question text, the previous question sent as `context`, the search
+  phrase, entity ids, the answer text, the visitor's address or headers. Tests check this with a question that contains a name.
 - **Monitoring cannot break an answer:** an error while writing the event is logged and the
   answer is returned as usual.
 - **In BigQuery:** the log sink `vigil-md-monitoring-events` (created 2026-11-19) copies the

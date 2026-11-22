@@ -8,6 +8,7 @@ import { MAX_QUESTION_LENGTH, type AnswerResponse } from "../../api/types";
 import { ChatProvider } from "../../chat/ChatProvider";
 import { useChat, type PageEntity } from "../../chat/chatStore";
 import ambiguous from "../../mocks/answers/ambiguous.json";
+import answeredCompare from "../../mocks/answers/answered-compare.json";
 import answeredLong from "../../mocks/answers/answered-long.json";
 import withRefusal from "../../mocks/answers/answered-with-refusal.json";
 import answered from "../../mocks/answers/answered.json";
@@ -55,6 +56,93 @@ const reply = (r: unknown) => answer.mockResolvedValueOnce(r as AnswerResponse);
 
 beforeEach(() => {
   answer.mockReset();
+});
+
+describe("short-term memory: the previous turn as context", () => {
+  const contextOf = (call: number) => (answer.mock.calls[call]?.[2] as { context?: unknown } | undefined)?.context;
+
+  it("sends no context with the first question", async () => {
+    reply(needDevice);
+    renderPanel();
+    await ask("are there any deaths associated to this");
+    await waitFor(() => expect(answer).toHaveBeenCalledTimes(1));
+    expect(contextOf(0)).toBeUndefined();
+  });
+
+  it("sends the previous question and its status, so a device name answers it", async () => {
+    reply(needDevice);
+    reply({ ...answered, context_used: "previous_question" });
+    renderPanel();
+    await ask("are there any deaths associated to this");
+    await waitFor(() => expect(lastReply()).toHaveTextContent("Which device do you mean?"));
+    await ask("AcmeAir");
+    await waitFor(() => expect(answer).toHaveBeenCalledTimes(2));
+    expect(answer.mock.calls[1]?.[1]).toBeNull();
+    expect(contextOf(1)).toEqual({
+      previous_question: "are there any deaths associated to this",
+      previous_status: "need_device",
+      entity: null,
+    });
+    // the user sees that the earlier question was used
+    expect(await screen.findByText("About: AcmeAir CPAP (from your previous question)")).toBeInTheDocument();
+  });
+
+  it("sends the previous answer's entity when it had exactly one", async () => {
+    reply(answered);
+    reply(answeredCompare);
+    reply(help);
+    renderPanel();
+    await ask("Was the AcmeAir CPAP recalled?");
+    await waitFor(() => expect(lastReply()).toHaveTextContent("AcmeAir"));
+    await ask("what about recalls?");
+    await waitFor(() => expect(answer).toHaveBeenCalledTimes(2));
+    expect(contextOf(1)).toMatchObject({ previous_status: "answered", entity: { entity_type: "device", entity_id: "dev:000000acme01" } });
+    await waitFor(() => expect(document.querySelectorAll(".reply:not(.reply-pending)")).toHaveLength(2));
+    await ask("and deaths?");
+    await waitFor(() => expect(answer).toHaveBeenCalledTimes(3));
+    // two found entities in the comparison: no single entity to carry over
+    expect(contextOf(2)).toMatchObject({ entity: null });
+  });
+
+  it("sends no context with a page entity", async () => {
+    reply(answered);
+    reply(answered);
+    renderPanel({ entity: { entity_type: "device", entity_id: "dev:000000acme01" }, title: "AcmeAir CPAP" });
+    await ask("Any recalls?");
+    await waitFor(() => expect(lastReply()).toBeTruthy());
+    await ask("Any deaths?");
+    await waitFor(() => expect(answer).toHaveBeenCalledTimes(2));
+    expect(contextOf(1)).toBeUndefined();
+    expect(answer.mock.calls[1]?.[1]).toEqual({ entity_type: "device", entity_id: "dev:000000acme01" });
+  });
+
+  it("Clear drops the memory with the conversation", async () => {
+    reply(needDevice);
+    reply(help);
+    renderPanel();
+    await ask("any deaths?");
+    await waitFor(() => expect(lastReply()).toBeTruthy());
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    await ask("DreamStation");
+    await waitFor(() => expect(answer).toHaveBeenCalledTimes(2));
+    expect(contextOf(1)).toBeUndefined();
+  });
+
+  it("Try again resends the same context", async () => {
+    reply(needDevice);
+    answer.mockImplementationOnce(async () => {
+      throw new ServiceUnavailableError("network");
+    });
+    reply(answered);
+    renderPanel();
+    await ask("any deaths?");
+    await waitFor(() => expect(lastReply()).toBeTruthy());
+    await ask("AcmeAir");
+    await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(answer).toHaveBeenCalledTimes(3));
+    expect(contextOf(2)).toEqual(contextOf(1));
+    expect(contextOf(2)).toMatchObject({ previous_status: "need_device" });
+  });
 });
 
 describe("statuses from /api/answer (handover §5)", () => {

@@ -6,6 +6,7 @@
 import { config, type AppConfig } from "../config";
 import { ApiMessageError, NotFoundError, ServiceUnavailableError } from "./errors";
 import type {
+  AnswerContext,
   AnswerEntity,
   AnswerRequest,
   AnswerResponse,
@@ -22,7 +23,11 @@ export interface CallOptions {
 export interface Api {
   search(query: string, options?: CallOptions & { limit?: number }): Promise<SearchResponse>;
   entity(kind: EntityKind, entityId: string, options?: CallOptions): Promise<EntityResponse>;
-  answer(question: string, entity: AnswerEntity | null, options?: CallOptions): Promise<AnswerResponse>;
+  answer(
+    question: string,
+    entity: AnswerEntity | null,
+    options?: CallOptions & { context?: AnswerContext | null },
+  ): Promise<AnswerResponse>;
 }
 
 /** Path for one entity. IDs contain ":" (dev:…) and spaces (manufacturer names). */
@@ -95,8 +100,9 @@ export function createHttpApi(cfg: Pick<AppConfig, "apiBaseUrl" | "requestTimeou
     entity(kind, entityId, { signal } = {}) {
       return request<EntityResponse>(entityPath(kind, entityId), { method: "GET", signal });
     },
-    answer(question, entity, { signal } = {}) {
-      const body: AnswerRequest = { question, entity };
+    answer(question, entity, { signal, context } = {}) {
+      // context only when there is one: without it the request is exactly as before.
+      const body: AnswerRequest = context ? { question, entity, context } : { question, entity };
       return request<AnswerResponse>("/answer", { method: "POST", body: JSON.stringify(body), signal });
     },
   };

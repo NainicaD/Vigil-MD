@@ -43,6 +43,20 @@ def test_event_has_no_text_ids_or_search_phrase():
         assert part not in text, part
 
 
+def test_event_records_which_context_rule_was_used_and_nothing_else():
+    assert build(answer_out())["context_used"] is None
+    assert build(answer_out(context_used="entity"))["context_used"] == "entity"
+    assert build(answer_out(context_used="previous_question"))["context_used"] == "previous_question"
+    # Only the known values: free text placed there by mistake never reaches the event.
+    assert build(answer_out(context_used="my secret previous question"))["context_used"] is None
+
+
+def test_event_has_no_previous_question_text():
+    out = answer_out(context_used="previous_question", question="secret previous question")
+    text = json.dumps(build(out, question="DreamStation"))
+    assert "secret" not in text and "previous question" not in text
+
+
 def test_event_without_an_answer():
     e = build(None, status="exception")
     assert e["status"] == "exception" and e["labels"] == [] and e["scores"] == {}

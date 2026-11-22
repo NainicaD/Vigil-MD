@@ -110,10 +110,28 @@ export interface AnswerEntity {
 /** The API rejects longer questions (api/app.py MAX_QUESTION_CHARS). */
 export const MAX_QUESTION_LENGTH = 1000;
 
+/**
+ * Short-term memory: the previous turn, sent with a question that has no page entity. The
+ * browser keeps it (one turn back, in memory only); the server stores nothing.
+ */
+export interface AnswerContext {
+  /** The previous turn's question (at most MAX_QUESTION_LENGTH). */
+  previous_question: string;
+  /** The previous answer's status, e.g. "need_device". */
+  previous_status: string;
+  /** The previous answer's entity, when it had exactly one found entity. */
+  entity: AnswerEntity | null;
+}
+
 export interface AnswerRequest {
   question: string;
   entity: AnswerEntity | null;
+  /** Optional: omitted, the question is answered on its own. */
+  context?: AnswerContext;
 }
+
+/** What the server used from `context`: the earlier question, or the earlier entity. */
+export type ContextUsed = "previous_question" | "entity";
 
 export type AnswerStatus =
   | "answered"
@@ -182,6 +200,8 @@ export interface AnswerResponse {
   sections: AnswerSection[];
   search?: AnswerSearch | null;
   entities?: AnswerEntitySummary[] | null;
+  /** Set when the answer used the previous turn (short-term memory). */
+  context_used?: ContextUsed | null;
 }
 
 /** An "ambiguous" choice becomes the entity of the re-sent question (handover §5). */
