@@ -284,7 +284,8 @@ def test_full_load_is_manual_with_params(dagbag):
 @pytest.mark.parametrize("source", SOURCES)
 def test_full_load_chain(dagbag, source):
     t = tasks(dagbag.get_dag("vigil_md_full_load"))
-    assert t["guard_no_acquisition_run"].downstream_task_ids == {"refetch", "alert_on_failure"}
+    assert t["guard_no_acquisition_run"].downstream_task_ids == {"refetch", "alert_on_failure",
+                                                             "mark_run_failed"}
     chain = [f"load.{step}_{source}" for step in chain_steps(source)]
     assert t[chain[0]].upstream_task_ids == {"refetch"}
     for up, down in zip(chain, chain[1:]):
@@ -495,3 +496,18 @@ def test_daily_links_skip_unchanged_sources_and_full_load_always_builds(load, fu
     load.build_links()
     full.build_links()
     assert "--if-changed" in calls[0] and "--if-changed" not in calls[1]
+
+
+@pytest.mark.parametrize("dag_id", ["vigil_md_load", "vigil_md_full_load"])
+def test_a_failed_chain_fails_the_run(dagbag, dag_id):
+    # build_summaries / build_links (all_done) and the alert succeed after a failed chain;
+    # mark_run_failed is a last task that fails then, so the run is "failed" (2026-11-17).
+    t = tasks(dagbag.get_dag(dag_id))
+    m = t["mark_run_failed"]
+    assert m.python_callable.__name__ == "mark_run_failed"
+    assert str(m.trigger_rule).lower().endswith("one_failed")
+    assert m.downstream_task_ids == set()
+    assert m.upstream_task_ids == t["alert_on_failure"].upstream_task_ids
+    assert {"build_summaries", "build_links"} <= m.upstream_task_ids
+    for src in SOURCES:
+        assert f"load.{chain_steps(src)[-1]}_{src}" in m.upstream_task_ids

@@ -16,6 +16,8 @@ Per pending entry (skip_load entries need no load):
        COMMIT TRANSACTION
   4. drop the temporary table (finally)
   5. write the hashes to the partition state (only after the commit)
+  6. MAUDE: promote the file's pending fingerprints (report_delta.py; only
+     after the commit, so a failed load never marks a report as seen)
 A manifest is deleted when every entry in it is done.
 
 Running the same ingest date again replaces that file's rows, never adds a
@@ -38,7 +40,7 @@ from pathlib import Path
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from scripts.logger import get_logger
-from scripts.warehouse import common, schemas
+from scripts.warehouse import common, report_delta, schemas
 log = get_logger("load_raw_to_bq")
 
 TMP_EXPIRY = timedelta(days=1)    # safety net if the finally-drop fails
@@ -258,6 +260,8 @@ def main() -> None:
             part_state[key] = {**part_state.get(key, {}),
                                **state_after_load(entry, datetime.now(timezone.utc).isoformat())}
             common.save_partition_state(bucket, args.source, part_state)
+            if report_delta.promote(bucket, args.source, args.ingest_date, key):
+                log.info("  fingerprints promoted: %s", key)
         bucket.blob(blob_name).delete()
         log.info("  done, deleted %s", blob_name)
 

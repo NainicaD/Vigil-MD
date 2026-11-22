@@ -18,6 +18,8 @@ Tasks:
                          tables (enforcement ↔ recall) and the links view if a source changed
                          (build_links.py --if-changed)
   4. alert_on_failure  — triggered only if any task fails
+  5. mark_run_failed   — like the alert, then fails, so the run is "failed" even
+                         though build_summaries / build_links succeed after it
 
 Manual trigger: set the ingest_date param (YYYY-MM-DD), or leave it empty to
 use the run's own date. The full load / backfill is vigil_md_full_load.py.
@@ -39,7 +41,7 @@ from vigil_checks import (  # noqa: E402
     CHECK_SCRIPTS, EVENT_STEPS, LINKS_TASK, SOURCE_PRIORITY, SUMMARY_TASK, VALIDATE_EXTRA_ARGS,
     WEIGHT_RULE, DataCheckFailed, events_args, links_args, pool_for, steps_for, summary_args,
     warn_only)
-from vigil_helpers import alert_on_failure, run_script  # noqa: E402,F401  (shared, issue #14)
+from vigil_helpers import alert_on_failure, mark_run_failed, run_script  # noqa: E402,F401  (shared, issue #14)
 
 log = logging.getLogger(__name__)
 
@@ -185,6 +187,13 @@ with DAG(
         trigger_rule=TriggerRule.ONE_FAILED,
     )
 
+    mark_failed = PythonOperator(
+        task_id="mark_run_failed",
+        python_callable=mark_run_failed,
+        trigger_rule=TriggerRule.ONE_FAILED,    # skipped when nothing fails
+    )
+
     load_group >> summaries
     load_group >> links
     [load_group, summaries, links] >> alert
+    [load_group, summaries, links] >> mark_failed

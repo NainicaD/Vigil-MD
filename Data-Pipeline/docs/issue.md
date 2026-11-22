@@ -7,7 +7,7 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 | 1 | Resolved 2026-10-25 | Worker credentials |
 | 2 | Known limitation (by design) | MAUDE year range |
 | 3 | Fixed (Step 7) | Fetch scope |
-| 4 | Fixed (Step 7); rewritten files still reload | Full re-download |
+| 4 | Fixed (Step 7); rewritten MAUDE files: only changed reports load (2026-11-21) | Full re-download |
 | 5 | Open (partly mitigated) | State race |
 | 6 | Fixed 2026-11-04 | GUDID date parsing |
 | 7 | Fixed 2026-11-04 | GUDID RSS order |
@@ -19,6 +19,9 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 | 13 | Fixed 2026-11-03 (code and STAGING/PROD rows) | Manufacturer name normalization |
 | 14 | Fixed 2026-11-04 | DAG helpers copied in 3 files |
 | 15 | Fixed 2026-11-04 | Several pending exports of one partition |
+| 16 | Fixed 2026-11-19 | Run state after a failed chain |
+| 17 | Mostly fixed 2026-11-21 (MAUDE loads only changed reports) | Daily query quota and scan caps vs MAUDE re-exports |
+| 18 | Fixed 2026-11-21 (PROD restored) | MAUDE re-export blanked 1.4M UDI-DIs |
 
 ---
 
@@ -47,6 +50,8 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Problem:** MAUDE 2016–2026 downloaded again about once a week.
 - **Fix:** Step 2 added `--mode incremental`; Step 7 makes the daily DAG use it (test: `test_fetch_one_source_uses_incremental_mode`). Per partition: same fingerprint (records, size) in the openFDA manifest → server-side copy, no download; downloaded with the same zip SHA-256 → not loaded; same content hash as the partition state → `skip_load` in the unzip step.
 - **Still happens:** when openFDA rewrites the files (new fingerprint and new bytes), they are downloaded and loaded again even if no PROD row changes. 2026-11-02/03: two MAUDE re-exports, 497 files loaded (about 7 h), 0 PROD rows inserted or updated. The partition state is written only after a file's load commits; both exports were unzipped before either was loaded, so 32 files with unchanged content were not skipped. Since #15, only the newest export of each partition is loaded.
+- **MAUDE fix (2026-11-21):** the unzip step fingerprints each report and writes only new or changed reports ([`scripts/warehouse/report_delta.py`](../scripts/warehouse/report_delta.py)). A comparison of two quarters showed why every file looked new: openFDA moves reports between the files of a quarter, reorders lists, removes repeated patient problems and renumbers `device_sequence_number`. The fingerprint ignores exactly those; every other field counts. On the downloaded files: 2026-11-02 → 03 writes 0 of 196,449 reports (2016q1); 2026-11-03 → 17 writes 13.2% (2016q1) and 6.6% (2026q1). Tests: `tests/test_report_delta.py`.
+- **Fingerprints created (2026-11-22):** [`scripts/warehouse/bootstrap_fingerprints.py`](../scripts/warehouse/bootstrap_fingerprints.py) fingerprinted the 249 files PROD holds (the export loaded on 2026-11-18). A file got fingerprints only if its records hashed to the `content_sha256` recorded at load time and `load_log` had that load: 249 of 249 passed. 21,499,882 reports (PROD: 21,499,882 distinct `source_record_id`), 310 MB in GCS, about 2 h on the laptop (16.4 GB read). Read-back check on 2026q1: the files PROD holds give 0 of 811,618 reports to load; the 2026-11-03 files give 53,610 changed (as in the analysis above). So the next re-export already loads only changed reports. Still to observe: the first live export.
 
 ## 5. Parallel tasks can overwrite each other's state — Open (partly mitigated)
 
@@ -132,3 +137,26 @@ Found in a review of `dags/vigil_md_acquisition.py` and `scripts/acquisition/fet
 - **Effect (ingest date 2026-11-03, MAUDE exports 2026-11-02 and 2026-11-03):** 497 files loaded for 249 partitions (about 3.5 h extra). The 248 loads of 2026-11-02 entries read the 2026-11-03 NDJSON (249 NDJSON objects, all written before the load started), so their `_source_file` and `_content_sha256` in RAW and `load_log` name the 2026-11-02 zip, but the rows are 2026-11-03 data. `check_maude` failed `raw_to_staged_gap` (49.9%) because RAW held two copies, and the merge was skipped. Row counts matched in all 248 pairs, so the row-count check did not stop the load; with a different count it would have failed. STAGING and PROD were correct: the manual merge on 2026-11-04 inserted or updated 0 rows.
 - **Fix:** `common.drop_superseded`: the unzip step keeps only the newest `export_date` per partition across the pending manifests, removes older entries from their manifest, and deletes a manifest left empty. `load_raw_to_bq.py` then sees one version per partition. Tests: `test_drop_superseded_*`, `test_main_converts_only_the_newest_export_and_rewrites_the_older_manifest`, `test_main_deletes_a_manifest_whose_entries_are_all_superseded`.
 - **Left as is:** the RAW rows of those 248 loads (ingest date 2026-11-03) are already staged; deleting them is a BigQuery write and not needed. `ndjson_path` keeps no export date (one version per run now).
+
+## 16. A run showed "success" although the MAUDE chain failed — Fixed 2026-11-19
+
+- **Where:** `dags/vigil_md_load.py` and `dags/vigil_md_full_load.py`.
+- **Problem:** Airflow sets a run's state from its last tasks. `build_summaries` and `build_links` use `all_done` (they run even if a chain failed, because the other sources' data is new), and `alert_on_failure` succeeds when it sends the e-mail. So the 2026-11-17 `vigil_md_load` run was "success" although MAUDE tasks had failed. Only the alert e-mail and the task colours showed the failure; anything that reads the run state (the run's colour in the grid, a monitoring or retraining step) would see a good run.
+- **Fix:** a last task `mark_run_failed` (`dags/vigil_helpers.py`), wired like the alert (`one_failed`, same upstream tasks). It raises `AirflowFailException` naming the failed tasks, so the run is "failed"; it is skipped when nothing fails. Summaries and links still run. Tests: `test_mark_run_failed_raises_and_names_the_failed_tasks`, `test_a_failed_chain_fails_the_run` (113 DAG tests pass in the worker).
+
+## 17. The daily query quota and the scan caps are too low for a full MAUDE re-export — Open (worked around 2026-11-17)
+
+- **Where:** the project's custom BigQuery quota "Query usage per day" (about 50 GB, set in the console to protect the credits) and the `--max-gb` defaults of the warehouse scripts.
+- **Problem:** a full MAUDE re-export (249 files on 2026-11-17) needs more than one day's quota. `load_raw_maude` stopped with `Custom quota exceeded: Your usage exceeded the custom quota for QueryUsagePerDay`. After the quota was raised, `events_text_maude` stopped at its own guard: the dry run was 44.5 GB, above the 40 GB cap (32.3 GB on the 2026-11-07 export).
+- **Workaround (2026-11-17):** quota raised for the run and set back to about 50 GB afterwards; the failed tasks were cleared in the UI ("Clear task instance + Downstream") and resumed through `load_log`; the text cap raised to 50 GB (PR #54).
+- **Fix idea:** a runbook entry for re-exports (expected scan sizes; raise the quota for that day, then lower it); caps that grow with the export size instead of fixed numbers; fewer scans per file ("B", one load job per run).
+- **Mostly fixed (2026-11-21):** MAUDE now loads only new or changed reports (#4), so RAW, staging and the event steps (text, problems) process a few percent of a re-export instead of all of it. Still open: the first run after the change has no fingerprints and loads full files once; a full load (`vigil_md_full_load`) still processes everything; the per-file job count ("B") is unchanged.
+
+## 18. A MAUDE re-export blanked the UDI-DI of about 1.4M PROD rows — Fixed 2026-11-21
+
+- **Where:** `scripts/warehouse/merge_prod.py` (the MERGE copied every staging value into PROD).
+- **Problem:** the 2026-11-17 MAUDE export removed the UDI-DI from reports that had one. The load updated 1,454,498 PROD rows; 1,401,548 of them were left without a UDI-DI. The share of MAUDE rows with a UDI-DI fell from 61.9% (October) to 55.6%, and those rows lost their exact link to GUDID. In 2026q1 alone: 27,445 reports went from a value to blank, 1,127 from blank to a value. Why FDA removed them is not known.
+- **Fix:** PROD keeps the last UDI-DI FDA published and records the removal (`udi_di_removed_at`, `schemas.KEEP_LAST_KNOWN`). Daily merge: `udi_di = COALESCE(new, old)`; a blank sets `udi_di_removed_at` (once), a new value clears it. Rebuild: the newest non-NULL value across all staging partitions. `record_hash` still describes FDA's current record, so an unchanged re-export changes nothing. FDA's current value is NULL when `udi_di_removed_at` is set.
+- **Backfill (2026-11-21):** `scripts/warehouse/backfill_last_known.py --from-ingest-date 2026-11-03` (the staging partition before the blanking): column added, 1,391,268 rows restored in one transaction with a row-count check (UPDATE 6.6 GB). After it: 62.1% of 21,532,670 rows have a UDI-DI; `udi_di_removed_at` = 2026-11-18 03:38 UTC (the 17 Nov load) on those rows. About 10k of the blanked rows had no UDI-DI on 2026-11-03 either and stay blank.
+- **Model:** the matcher does not use the UDI-DI as a feature (banned) and its label set (snapshot 2026-11-07) predates the blanking, so no retraining is needed. Rebuild the matching monitor's baseline (built 2026-11-20, from blanked data).
+- **Tests:** `tests/test_merge_prod.py`, `tests/test_schemas.py`, `tests/test_backfill_last_known.py`.

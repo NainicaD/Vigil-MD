@@ -7,6 +7,8 @@ for DAGs.
 run_script        runs a repo script and streams its output into the task log
                   line by line (live), keeping each line's log level
 alert_on_failure  e-mail task (trigger_rule one_failed) that names the failed tasks
+mark_run_failed   task (trigger_rule one_failed) that fails, so the run's state is "failed"
+                  even when the last tasks (all_done summaries/links, the alert) succeed
 """
 from __future__ import annotations
 
@@ -17,6 +19,8 @@ import subprocess
 import sys
 from collections import deque
 from pathlib import Path
+
+from airflow.sdk.exceptions import AirflowFailException
 
 from vigil_checks import EXIT_DATA_FAIL, DataCheckFailed
 
@@ -141,3 +145,22 @@ def alert_on_failure(**context):
         log.info("Alert email sent to %s", to)
     except Exception:
         log.exception("Failed to send alert email")
+
+
+# ── Run state ─────────────────────────────────────────────────────────────────
+
+def mark_run_failed(**context):
+    """Fail on purpose when any task failed (trigger_rule one_failed).
+
+    Airflow sets a run's state from its last tasks. build_summaries and build_links
+    (all_done) and alert_on_failure succeed after a failed chain, so without this task
+    the run showed "success" although e.g. MAUDE failed (2026-11-17). Skipped when no
+    task fails. AirflowFailException: no retry.
+    """
+    ti = context["ti"]
+    dag_run = context.get("dag_run")
+    run_id = dag_run.run_id if dag_run else "unknown"
+    failed = failed_task_ids(ti, run_id) if dag_run else []
+    raise AirflowFailException(
+        f"Run {run_id} is marked failed because a task failed: "
+        f"{', '.join(failed) or 'see the grid'}")

@@ -143,13 +143,16 @@ def iter_records(fh, source: str, stats: dict):
         yield from ijson.items(fh, "results.item", use_float=True)
 
 
-def convert_zip(zip_fileobj, out_fileobj, source: str) -> tuple[int, str]:
+def convert_zip(zip_fileobj, out_fileobj, source: str, keep=None) -> tuple[int, str]:
     """Write {"payload": record} lines to out_fileobj (text).
 
     Returns (row_count, content_sha256). The hash covers the canonical form
     of every record (sorted keys, no spaces), so a zip with new metadata but
     the same records gives the same hash. Raises if there are no records, or
     if GUDID counts do not match the XML header.
+
+    keep: optional record -> bool (report_delta.ReportDelta.keep). Records it
+    rejects are not written; they still count in row_count and the hash.
     """
     sha = hashlib.sha256()
     rows = 0
@@ -161,7 +164,8 @@ def convert_zip(zip_fileobj, out_fileobj, source: str) -> tuple[int, str]:
                     line = json.dumps(record, sort_keys=True, separators=(",", ":"))
                     sha.update(line.encode("utf-8"))
                     sha.update(b"\n")
-                    out_fileobj.write('{"payload":' + line + "}\n")
+                    if keep is None or keep(record):
+                        out_fileobj.write('{"payload":' + line + "}\n")
                     rows += 1
     if rows == 0:
         raise RuntimeError(f"{source}: zip has 0 records")
@@ -187,7 +191,7 @@ class Utf8Writer:
         return self.raw.write(text.encode("utf-8"))
 
 
-def convert_zip_gz(zip_fileobj, raw, source: str) -> tuple[int, str]:
+def convert_zip_gz(zip_fileobj, raw, source: str, keep=None) -> tuple[int, str]:
     """convert_zip, writing gzip-compressed NDJSON to the binary stream raw.
 
     The content hash is still computed by convert_zip over the uncompressed
@@ -198,7 +202,7 @@ def convert_zip_gz(zip_fileobj, raw, source: str) -> tuple[int, str]:
     BlobWriter.terminate() runs and no partial object is created.
     """
     with gzip.GzipFile(fileobj=raw, mode="wb", compresslevel=GZIP_LEVEL, mtime=0) as gz:
-        return convert_zip(zip_fileobj, Utf8Writer(gz), source)
+        return convert_zip(zip_fileobj, Utf8Writer(gz), source, keep)
 
 
 def apply_content_check(entry: dict, rows: int, content_sha: str,

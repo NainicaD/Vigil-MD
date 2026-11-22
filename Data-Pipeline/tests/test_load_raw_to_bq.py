@@ -187,3 +187,27 @@ def test_main_nothing_pending_returns_quietly(env):
     del bucket.store[DAILY]
     run("changed")
     assert loads == [] and FULL in bucket.store
+
+
+def test_main_promotes_fingerprints_only_after_a_commit(env, monkeypatch):
+    from scripts.warehouse import report_delta as rd
+    bucket, _, run = env
+    for key in ("2024q1/a.zip", "2024q2/b.zip"):
+        bucket.store[rd.pending_path("maude", "2026-10-25", key)] = rd.encode_shard({"r": "f"})
+    run()
+    assert rd.current_path("maude", "2024q1/a.zip") in bucket.store     # loaded and committed
+    assert rd.current_path("maude", "2024q2/b.zip") in bucket.store     # committed by an earlier run
+    assert not any("/pending/" in n for n in bucket.store if n.startswith(rd.PREFIX))
+
+
+def test_main_load_error_promotes_nothing(env, monkeypatch):
+    from scripts.warehouse import report_delta as rd
+    bucket, _, run = env
+    bucket.store[rd.pending_path("maude", "2026-10-25", "2024q1/a.zip")] = rd.encode_shard({"r": "f"})
+
+    def boom(*a):
+        raise RuntimeError("BigQuery error")
+    monkeypatch.setattr(L, "load_entry", boom)
+    with pytest.raises(RuntimeError):
+        run()
+    assert rd.current_path("maude", "2024q1/a.zip") not in bucket.store
