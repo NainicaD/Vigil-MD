@@ -249,9 +249,9 @@ SUMMARY_SOURCES = ("gudid", "maude", "maude_problems", "recall", "enforcement")
 
 # ── Links (the evidence-linked database: which records describe the same thing) ───────────
 # One table per kind of link, each written only by its producer, so one rebuild never
-# removes another's rows; the view LINKS_VIEW shows them together. The pipeline writes the
-# exact links; the matching model's links (MAUDE to GUDID, method 'model' with a score) are
-# planned as their own table in the same shape.
+# removes another's rows; the view LINKS_VIEW shows them together. build_links.py writes the
+# exact links (LINK_TABLES); load_model_links.py writes the matching model's MAUDE to GUDID
+# links (MODEL_LINK_TABLE, method 'model' with a score) in the same shape.
 LINK_COLUMNS = [
     ("link_type", "STRING"),      # e.g. enforcement_recall
     ("left_source", "STRING"), ("left_id", "STRING"),
@@ -268,6 +268,8 @@ LINK_TABLES = {
     # link table → (left source, right source), prod tables it is built from
     "link_enforcement_recall": ("enforcement", "recall"),
 }
+# Not in LINK_TABLES: build_links.py builds every table there, and model links come from a file.
+MODEL_LINK_TABLE = "link_maude_gudid_model"     # ("maude", "gudid"), written by load_model_links.py
 LINKS_VIEW = "links"
 
 # ── Table names ───────────────────────────────────────────────────────────────
@@ -297,7 +299,7 @@ def summary_table(project: str, name: str, dataset: str | None = None) -> str:
 
 def link_table(project: str, name: str, dataset: str | None = None) -> str:
     """A link table in vigil_md_prod (or another dataset with the same tables, e.g. vigil_md_dev)."""
-    if name not in LINK_TABLES and name != LINKS_VIEW:
+    if name not in LINK_TABLES and name not in (MODEL_LINK_TABLE, LINKS_VIEW):
         raise ValueError(f"unknown link table {name!r}")
     return f"{project}.{dataset or DATASETS['prod']}.{name}"
 

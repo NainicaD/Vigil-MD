@@ -10,13 +10,16 @@ Usage:
 """
 import json
 import logging
+import os
 import socket
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 
-LOGSTASH_HOST = "localhost"
+# Inside a Docker container "localhost" is the container itself: Airflow sets
+# VIGIL_LOGSTASH_HOST=host.docker.internal (see .env.example).
+LOGSTASH_HOST = os.environ.get("VIGIL_LOGSTASH_HOST", "localhost")
 LOGSTASH_PORT = 5044
 
 

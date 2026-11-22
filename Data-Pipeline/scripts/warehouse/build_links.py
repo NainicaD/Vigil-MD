@@ -10,7 +10,8 @@ same thing, by a shared identifier (no ML).
 
 Each link table is written only by its producer and rebuilt in full (CREATE OR REPLACE TABLE
 ... AS SELECT), so one rebuild never removes another producer's rows. The matching model's
-MAUDE ↔ GUDID links are planned as their own table in the same shape; the view then adds it.
+MAUDE ↔ GUDID links are their own table (link_maude_gudid_model, written by
+load_model_links.py); the view includes it once it exists.
 
 Reads vigil_md_prod (enforcement, recall); writes only the link tables and the links view in
 the same dataset. --dataset vigil_md_dev builds them on the dev extract.
@@ -95,13 +96,14 @@ def create_sql(name: str, project: str, dataset: str) -> str:
             f"{select_sql(name, project, dataset)}")
 
 
-def view_sql(project: str, dataset: str) -> str:
-    """CREATE OR REPLACE VIEW links: every link table, the same columns in the same order. Pure."""
+def view_sql(project: str, dataset: str, tables: list[str] = ORDER) -> str:
+    """CREATE OR REPLACE VIEW links: the given link tables (default: the exact ones), the same
+    columns in the same order. Pure."""
     _check_dataset(dataset)
     target = schemas.link_table(project, schemas.LINKS_VIEW, dataset)
     schemas.assert_not_protected(target)
     cols = ", ".join(c for c, _ in schemas.LINK_COLUMNS)
-    union = "\nUNION ALL\n".join(f"SELECT {cols} FROM {_t(project, dataset, n)}" for n in ORDER)
+    union = "\nUNION ALL\n".join(f"SELECT {cols} FROM {_t(project, dataset, n)}" for n in tables)
     return f"CREATE OR REPLACE VIEW `{target}` AS\n{union}"
 
 
@@ -156,6 +158,13 @@ def _modified(client, project: str, dataset: str, names) -> dict:
         except NotFound:
             out[n] = None
     return out
+
+
+def view_tables(client, project: str, dataset: str) -> list[str]:
+    """The exact link tables, plus the model link table once load_model_links.py created it,
+    so a rebuild of the view never drops the model links."""
+    model = schemas.MODEL_LINK_TABLE
+    return ORDER + ([model] if _modified(client, project, dataset, [model])[model] else [])
 
 
 def main(argv=None) -> int:
@@ -215,7 +224,7 @@ def main(argv=None) -> int:
             return EXIT_CHECK_FAILED
     if a.estimate_only:
         return 0
-    client.query(view_sql(a.project, a.dataset)).result()
+    client.query(view_sql(a.project, a.dataset, view_tables(client, a.project, a.dataset))).result()
     print(f"=== {a.dataset}: {len(todo)} link table(s) built, view {schemas.LINKS_VIEW} "
           f"updated, {spent:.3f} GB billed ===")
     return 0

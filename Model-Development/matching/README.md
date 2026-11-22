@@ -48,6 +48,8 @@ never run directly. `scripts/` is the entry points, numbered in the order they r
 | `scripts/s05_build_hand_features.py` | The same features for the hand-label sheet |
 | `scripts/s06_train_models.py` | Logistic regression + 3 XGBoost variants; cutoff picked on validation, then scored on the test split and the hand sheet. Also writes `trials.csv` and `train_metrics.json` |
 | `scripts/s11_package_final.py` | Packages one trained model as a release bundle and publishes it to Artifact Registry |
+| `scripts/s12_score_pairs.py` | Scores candidate pairs with a released bundle, in batches and optionally in several processes (`--workers`). Writes the MATCH rows as link rows and, with `--report`, the run's numbers (decision rates, score quantiles and histogram, `score_psi` against `--baseline`) |
+| `scripts/s13_build_candidates.py` | `sql/scoring/01_candidates.sql` → `vigil_md_model.match_candidates_<dataset>` → parquet for s12. MAUDE rows with no usable UDI link that changed since the last load (`--full`: all), with the test-set candidate rules minus `random_same_mfr`. Also writes the candidates' sibling keys (s04's `SIBLING_SQL` on the candidate table, `--siblings-out`) for s12 `--siblings`, so `feat_conflicting_identifier` works as in training. Default dataset `vigil_md_dev`. Run by the `vigil_md_matching` DAG |
 | `eval/s07_rules_baseline.py` | The guide's decision tree, no training. The bar a model must beat |
 | `eval/s08_evaluate_hand.py` | Precision and recall on the hand labels, weighted, with a 95% lower bound and per-slice results. `--out-json` for the gate |
 | `eval/s08_all.py` | `s08` for every model of one run |

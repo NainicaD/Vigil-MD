@@ -195,6 +195,19 @@ def test_print_only_makes_no_gcp_call(monkeypatch, capsys):
     assert "CREATE OR REPLACE TABLE" in out and "CREATE OR REPLACE VIEW" in out
 
 
+def test_view_keeps_the_model_links_once_their_table_exists(client):
+    c = client(modified={schemas.MODEL_LINK_TABLE: T0})
+    assert run() == 0
+    assert f"FROM `p.vigil_md_prod.{schemas.MODEL_LINK_TABLE}`" in c.views[0]
+    assert "FROM `p.vigil_md_prod.link_enforcement_recall`" in c.views[0]
+
+
+def test_view_has_only_the_exact_links_before_any_model_run(client):
+    c = client()
+    assert run() == 0
+    assert schemas.MODEL_LINK_TABLE not in c.views[0]
+
+
 def test_link_columns_and_tables_are_declared_once():
     names = [c for c, _ in schemas.LINK_COLUMNS]
     assert len(names) == len(set(names))

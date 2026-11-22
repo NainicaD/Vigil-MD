@@ -344,12 +344,22 @@ list: `schemas.LINK_COLUMNS`. This is the warehouse version of the DVC sample st
 | Table or view | One row per | How |
 |---|---|---|
 | `link_enforcement_recall` | enforcement action × recall product | enforcement `recall_number` = recall `product_res_number` (the `link_key` of both). `event_id` and `res_event_number` are compared as a second check (`same_event`) |
-| `links` (view) | link | every link table, in one shape: `link_type`, `left_source`/`left_id`, `right_source`/`right_id`, `link_key`, `event_id`, `same_event`, `method` (`exact_id`), `score` and `match_kind` (null for exact links), `built_at` |
+| `link_maude_gudid_model` | MAUDE row × GUDID device the matching model calls MATCH | [`scripts/warehouse/load_model_links.py`](scripts/warehouse/load_model_links.py), run by the `vigil_md_matching` DAG: `method = 'model'`, `score`, `match_kind`; `link_key`, `event_id` and `same_event` are null |
+| `links` (view) | link | every link table, in one shape: `link_type`, `left_source`/`left_id`, `right_source`/`right_id`, `link_key`, `event_id`, `same_event`, `method` (`exact_id` or `model`), `score` and `match_kind` (null for exact links), `built_at` |
 
 - **One table per kind of link, each written only by its producer:** a rebuild replaces only its
-  own table, never another producer's rows. The matching model's MAUDE ↔ GUDID links are planned
-  as their own table in the same shape (`method = 'model'` with a score); the view then adds it.
-  The table and the view may be written only to `vigil_md_prod` or a `vigil_md_dev*` dataset.
+  own table, never another producer's rows. `build_links.py` keeps `link_maude_gudid_model` in
+  the view once that table exists.
+  The tables and the view may be written only to `vigil_md_prod` or a `vigil_md_dev*` dataset.
+- **Model links (`vigil_md_matching`, manual, default dataset `vigil_md_dev`):** `candidates`
+  (Model-Development/matching `s13`, MAUDE rows with no usable UDI link changed since the last
+  load) → `score` (`s12`, the released bundle in `Model-Development/matching/models/`) →
+  `load_links` (one transaction: delete the links of re-scored MAUDE rows, insert, roll back on a
+  duplicate pair). No candidates: the run skips. `full=true` re-scores every row (backfill, new
+  model version). Each run sends one ELK record, `matching_run_metrics`: decision rates, score
+  quantiles and histogram, `score_psi` against a baseline report, link counts. These are signals
+  without labels, not precision or recall. Moving the DAG to `vigil_md_prod`, and retraining, are
+  separate tasks.
 - **PROD (2026-11-10):** 40,447 links; 2 of 40,449 enforcement records and 19,256 of 59,703
   recall products have no partner (recall products not, or not yet, in the enforcement
   reports); every link's events agree. Building it read about 2 MB (billed 0.021 GB).
@@ -662,7 +672,7 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ## Known limitations and issues
 
 - **MAUDE scope is 2016–2026 by design** (`START_YEAR` / `END_YEAR` in the DAGs). To extend it, change `END_YEAR` in `vigil_md_acquisition.py` and `vigil_md_full_load.py`.
-- **Only exact links run in Airflow** (`build_links`, enforcement ↔ recall). The ML matching model is trained and published by CI (`Model-Development/matching/`), not by a DAG.
+- **Exact links run daily; model links run on `vigil_md_dev` only.** `build_links` (enforcement ↔ recall) runs in the warehouse DAGs. The ML matching model is trained and published by CI (`Model-Development/matching/`); the manual `vigil_md_matching` DAG applies it, so far only to the test extract.
 - **The daily DAG runs only while the machine and Docker are running.** A missed run happens when Airflow next runs (`catchup=False` runs the most recent interval).
 - **Sleep stops running tasks.** Closing the laptop pauses Docker, and Airflow then stops the running task. A retry continues with the files not yet loaded (`load_log`). For long loads, keep the charger connected and the lid open.
 - Open issues are tracked in [`docs/issue.md`](docs/issue.md). Example: the parallel fetch tasks can overwrite `manifest_state.json` keys (#5).
