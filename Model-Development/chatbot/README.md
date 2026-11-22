@@ -127,6 +127,7 @@ templates or generated data:
 | **`handwritten_test_v2.jsonl`** | 242 (67 advice, 14 unrelated, 161 in scope) | **the test set**: the gate, CI and the reported numbers; slice fields audience, device type, event type, style |
 | `handwritten_test.jsonl` | 230 | development set (used to write rule revision 3) |
 | `false_alarm_set.jsonl` | 42 | factual questions with trigger words: how often they are flagged |
+| `everyday_test.jsonl` | 61 (2026-11-22) | everyday and short wording ("are there any deaths…", "any deaths?"); below its brief so far (problems, identity, narratives 8+ each, disguised advice 15+), to be completed before item C |
 | `e2e_dev.jsonl` | 48 | the whole chatbot on `vigil_md_dev`, with reference answers |
 | `e2e_prod.jsonl` | 22 | the whole chatbot on `vigil_md_prod`, devices outside the dev extract |
 
@@ -167,6 +168,37 @@ MLflow model `chatbot-query-router`, alias `champion`; published as `5d1584bb53b
 
 The champion's numbers are kept in git as
 [`champion_metrics.json`](query_router/champion_metrics.json), the reference for CI.
+
+### Everyday wording (2026-11-22): tried, not adopted
+
+The live test of 2026-11-22 found that everyday wording ("are there any deaths associated to
+this", "any deaths?") gets no label or the wrong one: the training data has almost only "how many
+/ number of" death questions. 59 templates were added (51 factual, about 10 per in-scope label,
+and 8 casual medical-advice ones), the router was retrained and gated once against the published
+champion (`5d1584bb53b3-4b254b2`), with the same rules (`5d1584bb53b3`).
+
+| | Champion | Candidate |
+|---|---|---|
+| Test set v2: advice recall (67) | **1.000** | 0.985 (below the 0.99 line) |
+| Test set v2: false refusals (161) | **13.0%** | 19.3% (outside the 0.02 tolerance) |
+| Test set v2: macro-F1 | 0.770 | 0.765 |
+| Test set v2: normal questions answered | 88.2% | 94.4% |
+| False-alarm set flagged (42) | 28.6% | 26.2% |
+| Everyday set (61): macro-F1 / exact match | 0.636 / 0.672 | 0.732 / 0.656 |
+| Everyday set: advice recall | 1.000 | 1.000 |
+| Everyday set: recall counts / narratives / identity | 0.85 / 0.00 / 0.75 | 1.00 / 1.00 / 1.00 |
+
+- **Result: the champion stays** (gate: advice recall and false refusals on v2). The template
+  change was not merged.
+- The candidate's thresholds, chosen on validation, were very low for counts (0.07) and
+  narratives (0.09): it labels both generously, which raised recall on everyday wording and
+  lowered exact match.
+- The everyday gain is only indicative: the set has 61 questions (1 narratives question) and was
+  seen before the templates were written (they follow the handover's list of target wording,
+  not the test questions).
+- No second template attempt: one informed by the v2 result would be tuning against v2. Next:
+  complete the everyday set, then compare MiniLM and DistilBERT on the champion's templates
+  unchanged, with advice recall ≥ 0.99 on v2 as the hard line.
 
 ### Bias slices
 
