@@ -88,6 +88,7 @@ def test_args_pass_one_run_folder_from_task_to_task(mod, monkeypatch):
     assert score[score.index("--ie-gate") + 1] == "e6_e3b_c1_m1"
     assert "--full" not in links                                         # no full.flag in this run
     assert summ[summ.index("--dataset") + 1] == "vigil_md_dev" and "--if-changed" in summ
+    assert "--model-links" in summ                     # dev is in MODEL_LINK_SUMMARY_DATASETS
     d = "/opt/airflow/logs/matching/manual__1"
     assert cand[cand.index("--out") + 1] == f"{d}/candidates.parquet" and "--since" in cand
     assert score[score.index("--pairs") + 1] == f"{d}/candidates.parquet"
@@ -211,6 +212,7 @@ def test_no_candidates_skips_the_rest(mod, monkeypatch):
     def no_pairs(*a):
         raise RuntimeError("s13_build_candidates.py failed (exit 4)\nno candidate pairs")
     monkeypatch.setattr(mod, "run_script", no_pairs)
+    monkeypatch.setattr(mod, "_model_version", lambda p: "v1.1.0+e6_e3b_c1_m1")   # no bundle here
     with pytest.raises(AirflowSkipException):
         mod.build_candidates(**CONTEXT)
 
@@ -219,6 +221,7 @@ def test_other_candidate_errors_still_fail(mod, monkeypatch):
     def boom(*a):
         raise RuntimeError("s13_build_candidates.py failed (exit 1)")
     monkeypatch.setattr(mod, "run_script", boom)
+    monkeypatch.setattr(mod, "_model_version", lambda p: "v1.1.0+e6_e3b_c1_m1")   # no bundle here
     with pytest.raises(RuntimeError):
         mod.build_candidates(**CONTEXT)
 

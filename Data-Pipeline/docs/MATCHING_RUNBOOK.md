@@ -8,7 +8,7 @@ The pipeline links MAUDE reports that have no usable UDI to GUDID devices. The c
 | DAG | When | What it does |
 |---|---|---|
 | `vigil_md_load` | after each daily acquisition | loads the FDA data, then starts `vigil_md_matching` (task `trigger_matching`) |
-| `vigil_md_matching` | started by `vigil_md_load`, or by hand | `candidates` → `score` → `load_links` → `build_summaries` on `vigil_md_prod` |
+| `vigil_md_matching` | started by `vigil_md_load`, or by hand | `candidates` → `score` → `load_links` → `build_summaries` on `vigil_md_prod` (summaries include model links only once switched on, section 7b) |
 | `vigil_md_matching_check` | every Monday 07:00 UTC | the UDI agreement check: precision and recall on MAUDE rows whose device is known from their UDI |
 
 A daily run scores only the MAUDE rows that changed since the last load. The first run on prod scores every row (the backfill, step 7).
@@ -95,12 +95,30 @@ Estimates (the dev run, scaled to prod):
 | | Estimate |
 |---|---|
 | Candidate pairs | about 37 million |
-| `candidates` (BigQuery + download) | 10 to 30 min, about 3 GB billed |
+| `candidates` (BigQuery + download) | 10 to 30 min; candidate query 2.85 GB (dry run, 2026-11-23), plus the sibling-key query (cannot be priced before the candidate table exists; capped by `--max-gb 10`) |
 | `score` with 2 workers | about 1.5 to 2 h |
 | Memory | about 1.5 GB per worker (one chunk each) |
-| `build_summaries` | about 11 GB billed |
+| `load_links` | capped at 5 GB (`load_model_links.py --max-gb`) |
+| `build_summaries` | nothing on prod while the switch is off (section 7b) |
 
 If `score` stops (crash, restart), Airflow retries it 2 times. Each retry continues from the last saved chunk. The task log shows `resumed from checkpoint`.
+
+## 7b. Showing model links on the live site (the switch)
+
+The summary tables include model links only for the datasets in `MODEL_LINK_SUMMARY_DATASETS` (`Data-Pipeline/dags/vigil_checks.py`). It holds `vigil_md_dev` only. On prod, the backfill and the daily runs load the links into `link_maude_gudid_model`, but the chatbot and the website still count devices by UDI only, as before.
+
+Why: chatbot code older than this branch says "N reports linked by UDI" for every report of a device. With model links in the summaries, that would be false. So prod is switched on only after the chatbot that labels model links ("... linked by UDI, ... by the matching model") is deployed.
+
+To switch prod on (after the backfill and that deploy):
+1. Add `"vigil_md_prod"` to `MODEL_LINK_SUMMARY_DATASETS` in a pull request.
+2. Rebuild the prod summaries once. `--if-changed` may find nothing to do, because a daily build after the last link load is newer than the link table. Price it first; about 11 GB:
+   ```bash
+   python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --model-links --estimate-only
+   python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --model-links
+   ```
+3. Rebuild the chatbot's search index and redeploy, so search counts match.
+
+To check the wording on dev first: `build_summaries.py --project vigil-md-1792696816 --dataset vigil_md_dev --model-links`, then ask the chatbot (on `vigil_md_dev`) about a device with model links.
 
 ## 8. Daily runs
 

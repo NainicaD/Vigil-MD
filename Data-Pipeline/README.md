@@ -359,7 +359,11 @@ list: `schemas.LINK_COLUMNS`. This is the warehouse version of the DVC sample st
   per worker) → `load_links` (one transaction: delete the links of re-scored MAUDE rows, insert,
   roll back on a duplicate pair; then the table label `model_version`) → `build_summaries`
   (`--if-changed`: `entity_reports.link_method = 'model'`, `entity_counts.model_reports`, so the
-  chatbot and the website count them). No candidates: the run skips. `full=true` re-scores every
+  chatbot and the website count them). **Switch:** summaries include model links only for the
+  datasets in `dags/vigil_checks.py` `MODEL_LINK_SUMMARY_DATASETS` (`build_summaries.py
+  --model-links`). It holds `vigil_md_dev` only; `vigil_md_prod` is added after the chatbot that
+  labels model links is deployed, because older chatbot code would call them "linked by UDI".
+  Until then prod links are loaded but not shown. No candidates: the run skips. `full=true` re-scores every
   row (backfill); a link table made by another bundle or gate also makes the next run re-score
   every row. Each run sends one ELK record, `matching_run_metrics`: decision rates, score
   quantiles and histogram, `score_psi` against a baseline report, link counts. These are signals

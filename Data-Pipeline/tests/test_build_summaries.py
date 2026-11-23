@@ -245,10 +245,38 @@ def test_build_reads_model_links_only_when_their_table_exists(client, monkeypatc
     real = S.create_sql
     monkeypatch.setattr(S, "create_sql", lambda n, p, d, model_links=False: seen.append(model_links) or real(n, p, d, model_links))
     client(modified={s: T0 for s in schemas.SUMMARY_SOURCES})
-    assert run() == 0 and set(seen) == {False}
+    assert run("--model-links") == 0 and set(seen) == {False}
     seen.clear()
     client(modified={**{s: T0 for s in schemas.SUMMARY_SOURCES}, schemas.MODEL_LINK_TABLE: T0})
-    assert run() == 0 and set(seen) == {True}
+    assert run("--model-links") == 0 and set(seen) == {True}
+
+
+def test_without_the_flag_model_links_are_ignored_even_when_their_table_exists(client, monkeypatch,
+                                                                                capsys):
+    # The live chatbot may not label model links yet: the switch keeps prod device counts UDI-only.
+    seen = []
+    real = S.create_sql
+    monkeypatch.setattr(S, "create_sql", lambda n, p, d, model_links=False: seen.append(model_links) or real(n, p, d, model_links))
+    client(modified={**{s: T0 for s in schemas.SUMMARY_SOURCES}, schemas.MODEL_LINK_TABLE: T0})
+    assert run() == 0 and set(seen) == {False}
+    assert "model links: off" in capsys.readouterr().out
+
+
+def test_without_the_flag_a_new_load_of_model_links_rebuilds_nothing(client):
+    newer = T0 + dt.timedelta(hours=1)
+    modified = {**{s: T0 for s in schemas.SUMMARY_SOURCES}, **{n: newer for n in S.ORDER},
+                schemas.MODEL_LINK_TABLE: newer + dt.timedelta(hours=1)}
+    c = client(modified=modified)
+    assert run("--if-changed") == 0 and c.created == []
+    c = client(modified=modified)
+    assert run("--if-changed", "--model-links") == 0 and \
+        c.created == ["entity_reports", "entity_counts", "entity_problems", "entity_catalog"]
+
+
+def test_print_only_shows_the_model_link_part_only_with_the_flag(capsys):
+    assert run("--print-only") == 0 and schemas.MODEL_LINK_TABLE not in capsys.readouterr().out
+    assert run("--print-only", "--model-links") == 0
+    assert f"`{P}.vigil_md_prod.{schemas.MODEL_LINK_TABLE}`" in capsys.readouterr().out
 
 
 def test_build_creates_every_table_in_order(client, capsys):

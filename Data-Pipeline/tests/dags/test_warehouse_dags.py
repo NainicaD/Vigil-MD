@@ -451,6 +451,18 @@ def test_summary_args(load, full):
     assert "--if-changed" not in summary_args("p", if_changed=False)
     r = run_print_only(summary_args("vigil-md-1792696816"))
     assert r.returncode == 0 and r.stdout.count("CREATE OR REPLACE TABLE") == 6, r.stderr[-300:]
+    assert "link_maude_gudid_model" not in r.stdout
+
+
+def test_model_links_in_summaries_only_for_switched_on_datasets(load, full):
+    # Prod stays UDI-only until the chatbot that labels model links is deployed (vigil_checks).
+    from vigil_checks import MODEL_LINK_SUMMARY_DATASETS, summary_args
+    assert "vigil_md_prod" not in MODEL_LINK_SUMMARY_DATASETS
+    assert "--model-links" not in summary_args("p")                          # daily / full load
+    assert "--model-links" not in summary_args("p", dataset="vigil_md_prod")  # matching on prod
+    assert summary_args("p", dataset="vigil_md_dev")[-1] == "--model-links"
+    r = run_print_only(summary_args("vigil-md-1792696816", dataset="vigil_md_dev"))
+    assert r.returncode == 0 and "vigil_md_dev.link_maude_gudid_model" in r.stdout, r.stderr[-300:]
 
 
 def test_daily_summaries_skip_unchanged_sources_and_full_load_always_builds(load, full, monkeypatch):
