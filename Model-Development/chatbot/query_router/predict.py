@@ -42,7 +42,13 @@ class QueryRouter:
             raise ValueError(f"model in {model_dir} was trained with guardrail rules {trained}, "
                              f"the code has {current}: run python -m query_router.generate and "
                              f"python -m query_router.train")
-        return cls(joblib.load(model_dir / "model.joblib"), meta["thresholds"], policy)
+        pipe = joblib.load(model_dir / "model.joblib")
+        if meta.get("encoder"):              # a MiniLM candidate (embed.py): local weights
+            from .embed import SentenceEmbedder  # pylint: disable=import-outside-toplevel
+            for step in _steps(pipe):
+                if isinstance(step, SentenceEmbedder):
+                    step.use_saved_encoder(model_dir)
+        return cls(pipe, meta["thresholds"], policy)
 
     def scores(self, questions: list[str]) -> list[dict[str, float]]:
         probs = self.pipe.predict_proba(questions)
@@ -54,7 +60,8 @@ class QueryRouter:
         the model never saw (drift). None if the question has no words or the model has no
         word features."""
         try:
-            words = self.pipe.named_steps["features"].get_params()["word"]
+            params = self.pipe.named_steps["features"].get_params()
+            words = params["word"] if "word" in params else params["tfidf__word"]
             vocab, analyze = words.vocabulary_, words.build_analyzer()
         except (AttributeError, KeyError, TypeError):
             return None
@@ -70,3 +77,12 @@ class QueryRouter:
         return {**decision, "scores": s,
                 "unclear": not decision["labels"] and decision["reply_kind"] is None,
                 "unknown_word_share": self.unknown_word_share(question)}
+
+
+def _steps(est) -> list:
+    """Every estimator inside a Pipeline / FeatureUnion, depth first."""
+    inner = getattr(est, "steps", None) or getattr(est, "transformer_list", None) or []
+    out = [est]
+    for _, child in inner:
+        out += _steps(child)
+    return out

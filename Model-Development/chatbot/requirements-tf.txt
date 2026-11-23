@@ -1,0 +1,6 @@
+# Item C router candidates only (query_router/embed.py: MiniLM sentence embeddings). Not needed
+# by CI, the champion router or the website image. Install on top of requirements.txt:
+#   pip install -r requirements.txt -r requirements-tf.txt
+torch==2.15.0
+transformers==5.24.0
+sentence-transformers==6.3.0

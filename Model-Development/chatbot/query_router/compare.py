@@ -9,9 +9,12 @@ MLflow, and listed. The test sets are not read here: gate.py scores the candidat
   lr   logistic regression (the baseline's model), C = regularisation
   svm  linear SVM with calibrated probabilities, C = regularisation
   nb   complement naive Bayes, C = smoothing alpha
+  minilm         frozen MiniLM sentence embeddings + logistic regression (item C, embed.py)
+  minilm_tfidf   the same, with the TF-IDF features added
 
 Usage (from Model-Development/chatbot/; local, about a minute):
   python -m query_router.compare
+  python -m query_router.compare --types minilm,minilm_tfidf   # needs requirements-tf.txt
 """
 import argparse
 import json
@@ -30,13 +33,18 @@ from query_router import tune
 # them to be named before it saves the model
 TRUSTED = {"svm": ["sklearn.calibration._CalibratedClassifier",
                    "sklearn.calibration._SigmoidCalibration"]}
-GRIDS = {"lr": (0.5, 1.0, 2.0, 4.0), "svm": (0.1, 0.5, 1.0, 2.0, 4.0), "nb": (0.1, 0.3, 1.0, 3.0, 10.0)}
+GRIDS = {"lr": (0.5, 1.0, 2.0, 4.0), "svm": (0.1, 0.5, 1.0, 2.0, 4.0), "nb": (0.1, 0.3, 1.0, 3.0, 10.0),
+         # Unit-length embeddings: weaker features per dimension, so larger C values.
+         "minilm": (1.0, 4.0, 16.0, 64.0), "minilm_tfidf": (1.0, 4.0, 16.0)}
+DEFAULT_TYPES = ("lr", "svm", "nb")
 MODELS_DIR = pathlib.Path("models")
 
 
-def best_per_type(train_rows: list[dict], val_rows: list[dict], grids: dict = GRIDS,
+def best_per_type(train_rows: list[dict], val_rows: list[dict], grids: dict | None = None,
                   mlflow=None) -> dict:
-    """Returns {type: (params, pipeline, val metrics, thresholds)}, the best of each grid."""
+    """Returns {type: (params, pipeline, val metrics, thresholds)}, the best of each grid.
+    grids defaults to the TF-IDF types (DEFAULT_TYPES)."""
+    grids = grids if grids is not None else {k: GRIDS[k] for k in DEFAULT_TYPES}
     out = {}
     for kind, grid in grids.items():
         for c in grid:
@@ -56,10 +64,16 @@ def save_candidate(kind: str, params: dict, pipe, scores: dict, thresholds: dict
                    n_train: int, n_val: int, mlflow=None) -> dict:
     """Saves one candidate like train.py does (meta.json + model.joblib), registered when an
     MLflow run is active. Returns its meta."""
-    meta = {"model": f"tfidf_{kind}", "labels": list(labels.LABELS), "params": params,
-            "rules_fingerprint": guardrails.rules_fingerprint(), "thresholds": thresholds,
-            "val_metrics": scores, "n_train": n_train, "n_val": n_val}
+    embedding = kind in train.EMBEDDING_TYPES
+    meta = {"model": kind if embedding else f"tfidf_{kind}", "labels": list(labels.LABELS),
+            "params": params, "rules_fingerprint": guardrails.rules_fingerprint(),
+            "thresholds": thresholds, "val_metrics": scores, "n_train": n_train, "n_val": n_val}
     out_dir = MODELS_DIR / kind
+    if embedding:
+        from query_router.embed import DEFAULT_MODEL  # pylint: disable=import-outside-toplevel
+        meta["encoder"] = DEFAULT_MODEL
+        _save_embedding_candidate(pipe, meta, out_dir, scores, params, mlflow)
+        return meta
     if mlflow:
         from mlflow.models import infer_signature  # pylint: disable=import-outside-toplevel
         with mlflow.start_run(run_name=f"{kind}-best", nested=True) as run:
@@ -81,11 +95,31 @@ def save_candidate(kind: str, params: dict, pipe, scores: dict, thresholds: dict
     return meta
 
 
+def _save_embedding_candidate(pipe, meta: dict, out_dir: pathlib.Path, scores: dict,
+                              params: dict, mlflow=None) -> None:
+    """model.joblib (settings and the regression) + encoder/ (the MiniLM weights). Logged to
+    MLflow as files, not registered: the registry's safe format cannot hold the encoder step,
+    and a candidate is only registered once it passes the gate."""
+    from query_router.embed import SentenceEmbedder  # pylint: disable=import-outside-toplevel
+    from query_router.predict import _steps  # pylint: disable=import-outside-toplevel
+    train.save(pipe, meta, out_dir)
+    next(s for s in _steps(pipe) if isinstance(s, SentenceEmbedder)).save_encoder(out_dir)
+    if mlflow:
+        with mlflow.start_run(run_name=f"{meta['model']}-best", nested=True) as run:
+            mlflow.log_params({**params, "selected_on": "val", "encoder": meta["encoder"]})
+            mlflow.log_metrics(train.flat_metrics(scores, "val"))
+            meta["mlflow_run_id"] = run.info.run_id
+            train.save(pipe, meta, out_dir)
+            mlflow.log_artifacts(str(out_dir), "files")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Prints the validation results per model type."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--data-dir", type=pathlib.Path, default=generate.OUT_DIR)
     parser.add_argument("--no-log", action="store_true")
+    parser.add_argument("--types", default=",".join(DEFAULT_TYPES),
+                        help=f"comma-separated, from {', '.join(GRIDS)}")
     args = parser.parse_args(argv)
     train_path, val_path = args.data_dir / "train.jsonl", args.data_dir / "val.jsonl"
     train_rows, val_rows = generate.read_jsonl(train_path), generate.read_jsonl(val_path)
@@ -93,7 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     summary = {}
 
     def run():
-        best = best_per_type(train_rows, val_rows, mlflow=mlflow)
+        best = best_per_type(train_rows, val_rows, mlflow=mlflow,
+                             grids={k: GRIDS[k] for k in args.types.split(",")})
         for kind, (params, pipe, scores, thresholds) in best.items():
             meta = save_candidate(kind, params, pipe, scores, thresholds, len(train_rows),
                                   len(val_rows), mlflow=mlflow)
@@ -116,7 +151,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{kind:5} {s['params']['C']:>8} {s['macro_f1']:>9} {s['exact_match']:>7} "
               f"{s['false_refusal_rate']:>11} {s['advice_recall']:>12} {str(s['model_version']):>8}")
     pathlib.Path("reports/compare").mkdir(parents=True, exist_ok=True)
-    pathlib.Path("reports/compare/comparison.json").write_text(json.dumps(summary, indent=2))
+    name = "comparison.json" if args.types == ",".join(DEFAULT_TYPES) else \
+        f"comparison_{args.types.replace(',', '_')}.json"
+    pathlib.Path("reports/compare", name).write_text(json.dumps(summary, indent=2))
     return 0
 
 

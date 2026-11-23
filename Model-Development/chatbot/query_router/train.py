@@ -41,6 +41,9 @@ C_GRID = (0.5, 1.0, 2.0, 4.0, 8.0)
 
 
 MODEL_TYPES = ("lr", "svm", "nb")    # compare.py compares them on the same features
+# Item C: a frozen MiniLM sentence encoder (embed.py) before the same per-label logistic
+# regression; "minilm_tfidf" also keeps the TF-IDF features (typos, unseen device names).
+EMBEDDING_TYPES = ("minilm", "minilm_tfidf")
 
 
 def build_pipeline(C: float, word_ngram_max: int = 2, char_ngram_min: int = 3,
@@ -58,15 +61,22 @@ def build_pipeline(C: float, word_ngram_max: int = 2, char_ngram_min: int = 3,
     from sklearn.pipeline import FeatureUnion, Pipeline
     from sklearn.svm import LinearSVC
     from sklearn.feature_extraction.text import TfidfVectorizer
-    if model not in MODEL_TYPES:
-        raise ValueError(f"model must be one of {MODEL_TYPES}, got {model!r}")
-    features = FeatureUnion([
+    if model not in MODEL_TYPES + EMBEDDING_TYPES:
+        raise ValueError(f"model must be one of {MODEL_TYPES + EMBEDDING_TYPES}, got {model!r}")
+    tfidf = FeatureUnion([
         ("word", TfidfVectorizer(lowercase=True, ngram_range=(1, word_ngram_max), min_df=min_df,
                                  sublinear_tf=True)),
         ("char", TfidfVectorizer(lowercase=True, analyzer="char_wb",
                                  ngram_range=(char_ngram_min, char_ngram_max),
                                  min_df=min_df, sublinear_tf=True)),
     ])
+    if model in EMBEDDING_TYPES:
+        from .embed import SentenceEmbedder  # pylint: disable=import-outside-toplevel
+        features = (SentenceEmbedder() if model == "minilm" else
+                    FeatureUnion([("embedding", SentenceEmbedder()), ("tfidf", tfidf)]))
+        base = LogisticRegression(C=C, max_iter=4000, class_weight=class_weight)
+        return Pipeline([("features", features), ("clf", OneVsRestClassifier(base))])
+    features = tfidf
     if model == "lr":
         base = LogisticRegression(C=C, max_iter=2000, class_weight=class_weight)
     elif model == "svm":

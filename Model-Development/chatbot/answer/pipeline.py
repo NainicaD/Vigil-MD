@@ -19,6 +19,7 @@ status: answered | refused | help | scope | unclear | need_device |
 """
 
 import logging
+import os
 import pathlib
 import re
 
@@ -72,8 +73,11 @@ CONTEXT_ENTITY = 'entity'                         # no device named: the previou
 CONTEXT_USED = (CONTEXT_PREVIOUS_QUESTION, CONTEXT_ENTITY)
 # Previous answers that leave a question waiting for a device.
 PENDING_STATUSES = ('need_device', 'unclear')
-DEFAULT_MODEL_DIR = (
-    pathlib.Path(__file__).resolve().parents[1] / 'models' / 'baseline')
+# The router the chatbot loads. VIGIL_ROUTER_DIR points it at another model directory, e.g. a
+# candidate under test (models/minilm_tfidf, which needs requirements-tf.txt); unset: the champion.
+DEFAULT_MODEL_DIR = pathlib.Path(
+    os.environ.get('VIGIL_ROUTER_DIR')
+    or pathlib.Path(__file__).resolve().parents[1] / 'models' / 'baseline')
 # BigQuery, login or network failures: the user gets SERVICE_DOWN. Anything
 # else is a bug and is raised.
 DATA_ERRORS = (api_exceptions.GoogleAPIError, auth_exceptions.GoogleAuthError,
