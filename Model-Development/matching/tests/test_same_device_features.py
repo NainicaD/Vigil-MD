@@ -146,8 +146,33 @@ def test_sql_emitters_carry_the_shared_constants():
 def test_insufficient_evidence_gate(kind, model_missing, cat_missing, gated):
     feat = {"feat_match_kind": kind, "feat_maude_model_missing": model_missing,
             "feat_maude_catalog_missing": cat_missing}
-    assert f.insufficient_evidence(feat) is gated
+    assert f.insufficient_evidence(feat, "e6_e3b_c1") is gated       # release v1.1.0's gate
     assert f.insufficient_evidence(feat, "e6_e3b") is gated
+
+
+@pytest.mark.parametrize("model_missing", ["True", True, 1.0])
+def test_m1_gate_sends_no_model_number_and_no_agreeing_identifier_to_ie(model_missing):
+    # MOTIVA IMPLANTS, catalog RSF-355+Q vs GUDID model RSF-355+: same family, other size (EXPERIMENTS M1)
+    feat = {"feat_match_kind": "maude_model_missing_or_placeholder", "feat_maude_model_missing": model_missing,
+            "feat_maude_catalog_missing": "False"}
+    assert f.insufficient_evidence(feat, "e6_e3b_c1_m1") is True
+    assert f.insufficient_evidence(feat) is True                       # the new default
+    assert f.insufficient_evidence(feat, "e6_e3b_c1") is False         # v1.1.0 keeps its decisions
+    assert f.insufficient_evidence(feat, "e6_e3b") is False            # v1.0.0 too
+
+
+@pytest.mark.parametrize("kind", ["same_model_key", "maude_model_eq_gudid_catalog",
+                                  "maude_catalog_eq_gudid_model", "catalog_eq_catalog", "conflict"])
+def test_m1_leaves_pairs_with_an_agreeing_identifier_to_the_model(kind):
+    feat = {"feat_match_kind": kind, "feat_maude_model_missing": kind == "maude_catalog_eq_gudid_model",
+            "feat_maude_catalog_missing": False}
+    assert f.insufficient_evidence(feat, "e6_e3b_c1_m1") is False
+
+
+def test_m1_keeps_the_c1_rule():
+    feat = {"feat_match_kind": "contains", "feat_maude_model_missing": False, "feat_maude_catalog_missing": True,
+            "feat_contains_at_end": "False", "feat_product_code_agree": "False"}
+    assert f.insufficient_evidence(feat, "e6_e3b_c1_m1") is True
 
 
 @pytest.mark.parametrize("at_end,pc_agree,gated", [

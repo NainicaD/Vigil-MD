@@ -58,6 +58,15 @@ def test_bundle_applies_the_gate_version_it_names(bundle):
     assert bundle.decide(feats)["decision"].tolist() == [predict.IE]
 
 
+def test_bundle_with_m1_gate_sends_no_model_number_pairs_to_ie(bundle):
+    feats = pd.DataFrame([row(0.95, kind=MatchKind.MAUDE_MODEL_MISSING_OR_PLACEHOLDER.value, model_missing="True")])
+    bundle.meta["ie_gate"] = "e6_e3b_c1"
+    assert bundle.decide(feats)["decision"].tolist() == [predict.MATCH]      # v1.1.0: left to the score
+    bundle.meta["ie_gate"] = "e6_e3b_c1_m1"
+    out = bundle.decide(feats)
+    assert out["decision"].tolist() == [predict.IE] and out["score"].iloc[0] > 0.5   # gate beats the score
+
+
 def test_features_use_the_bundle_encoder_for_the_cosine(bundle):
     side = DeviceSide("medtronic", "pacemaker", "A1", None, ("DXY",))
     feats = bundle.features(side, side, MatchContext(alias_pairs=frozenset(), n_dis_for_model=1,

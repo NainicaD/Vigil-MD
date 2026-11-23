@@ -258,8 +258,8 @@ def _explicit_false(value: Any) -> bool:
 
 # Versions of the IE gate. A bundle names the one it was evaluated with (meta.json "ie_gate"), so an older
 # bundle keeps its decisions when newer code loads it.
-IE_GATE_VERSIONS = ("e6_e3b", "e6_e3b_c1")
-IE_GATE_VERSION = "e6_e3b_c1"
+IE_GATE_VERSIONS = ("e6_e3b", "e6_e3b_c1", "e6_e3b_c1_m1")
+IE_GATE_VERSION = "e6_e3b_c1_m1"
 
 
 def insufficient_evidence(feat: Mapping[str, Any], version: str = IE_GATE_VERSION) -> bool:
@@ -268,7 +268,10 @@ def insufficient_evidence(feat: Mapping[str, Any], version: str = IE_GATE_VERSIO
         prefix-related (E3b);
     e6_e3b_c1 adds C1: the MAUDE key is only found in the middle of a longer GUDID identifier and the product
         codes disagree (HAND_LABEL_GUIDE DEF; the label rule id_contains_same_labeler calls these MATCH, so the
-        model learns to accept them; docs/EXPERIMENTS.md C1)."""
+        model learns to accept them; docs/EXPERIMENTS.md C1);
+    e6_e3b_c1_m1 adds M1: kind maude_model_missing_or_placeholder. MAUDE has no model number and its catalog
+        number agrees with no GUDID identifier (identifier_match tests the catalog first), so only the name, the
+        labeler and the product code link the pair: another size of the same family (docs/EXPERIMENTS.md M1)."""
     if version not in IE_GATE_VERSIONS:
         raise ValueError(f"unknown IE gate version {version!r}; known: {IE_GATE_VERSIONS}")
     kind = str(feat["feat_match_kind"])
@@ -277,6 +280,8 @@ def insufficient_evidence(feat: Mapping[str, Any], version: str = IE_GATE_VERSIO
         return True
     if version == "e6_e3b":
         return False
+    if version == "e6_e3b_c1_m1" and kind == MatchKind.MAUDE_MODEL_MISSING_OR_PLACEHOLDER.value:
+        return True
     return (kind == MatchKind.CONTAINS.value and _explicit_false(feat.get("feat_contains_at_end"))
             and _explicit_false(feat.get("feat_product_code_agree")))
 
