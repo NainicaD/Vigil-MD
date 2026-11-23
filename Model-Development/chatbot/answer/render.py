@@ -84,6 +84,9 @@ def headline(result: dict) -> str:
     if entity['type'] == 'device':
         company = f' ({entity["subtitle"]})' if entity.get('subtitle') else ''
         model = counts_.get('model_reports') or 0
+        if model and model == counts_['total_reports']:
+            return templates.HEADLINE['device_matched_all'].format(
+                name=name, company=company, reports=total, span=span)
         if model:
             return templates.HEADLINE['device_model'].format(
                 name=name, company=company, reports=total, span=span,
@@ -107,7 +110,13 @@ def counts(result: dict) -> list[str]:
     if not c['total_reports']:
         return []
     by_type = c['by_event_type']
+    # How many of each type were matched by device details; not repeated when the
+    # headline already says that all of the reports were.
+    matched = ({} if c.get('model_reports') == c['total_reports']
+               else c.get('model_by_event_type') or {})
     parts = [plural(by_type[et], *EVENT_WORDS[et])
+             + (f' ({templates.COUNTS_MATCHED.format(n=num(matched[et]))})'
+                if matched.get(et) else '')
              for et in EVENT_ORDER if by_type.get(et)]
     other = sum(n for et, n in by_type.items() if et not in EVENT_ORDER)
     if other:

@@ -206,12 +206,16 @@ def test_summarize_counts_adds_up_the_model_linked_reports():
             {"year": 2025, "event_type": "Injury", "reports": 4, "model_reports": None}]
     out = summary.summarize_counts(rows)
     assert (out["total_reports"], out["model_reports"]) == (9, 3)
+    assert out["model_by_event_type"] == {"Injury": 1, "Death": 2}
 
 
 def test_counts_note_shows_the_split_for_devices_only():
     note = summary.counts_note("device", {"total_reports": 1240, "model_reports": 190})
-    assert note.startswith("1,050 reports linked to this device by UDI and 190 by the matching model")
+    assert note.startswith("1,050 reports carry this device's UDI and 190 were matched to it by "
+                           "device details")
     assert "can be wrong" in note
+    all_matched = summary.counts_note("device", {"total_reports": 190, "model_reports": 190})
+    assert all_matched == summary.MODEL_LINK_NOTE_ALL and "None of these reports has a UDI" in all_matched
     assert summary.counts_note("device", {"total_reports": 5, "model_reports": 0}) == summary.LINK_NOTE["device"]
     assert summary.counts_note("manufacturer", {"total_reports": 5, "model_reports": 4}) == \
         summary.LINK_NOTE["manufacturer"]

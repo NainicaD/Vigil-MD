@@ -19,7 +19,10 @@ Tasks:
                          "matching_chunk_scored" per chunk and "matching_run_metrics".
                          --full when the run scored every row (full=true or s13's full.flag).
   4. build_summaries   — build_summaries.py --if-changed: entity_reports / entity_counts include
-                         the new model links, so the chatbot and the website show them.
+                         the new model links, so the chatbot and the website show them. Only
+                         for a dataset in vigil_checks.MODEL_LINK_SUMMARY_DATASETS (vigil_md_dev;
+                         vigil_md_prod once the chatbot that labels model links is deployed);
+                         for other datasets it changes nothing.
   candidates, score, load_links and build_summaries send "matching_task_failed" /
   "matching_task_retry" to ELK when they fail or retry (vigil_helpers callbacks).
   5. alert_on_failure  — triggered only if any task fails

@@ -33,7 +33,8 @@ def test_pull_samples_dag_is_found(dagbag):
 def test_dag_ids_are_unique_across_dag_files():
     ids = {}
     for f in DAGS_DIR.glob("*.py"):
-        for found in re.findall(r'dag_id\s*=\s*"([^"]+)"', f.read_text()):
+        # \b: not trigger_dag_id= (vigil_md_load starts vigil_md_matching; that is no second DAG)
+        for found in re.findall(r'\bdag_id\s*=\s*"([^"]+)"', f.read_text()):
             ids.setdefault(found, []).append(f.name)
     dupes = {k: v for k, v in ids.items() if len(v) > 1}
     assert not dupes, f"duplicate dag_ids across files: {dupes}"

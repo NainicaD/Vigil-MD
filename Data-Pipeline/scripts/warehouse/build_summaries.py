@@ -30,6 +30,13 @@ metadata, free). Recalls change almost daily, MAUDE about weekly: a recall-only 
 rebuilds entity_recalls (about 0.6 GB on PROD), a MAUDE day about 11 GB, a new GUDID
 release everything (about 12 GB).
 
+--model-links adds the matching model's links (link_maude_gudid_model, written by
+load_model_links.py) to the device reports: entity_reports.link_method 'model' and
+entity_counts.model_reports. Without it the link table is ignored, also by --if-changed, and
+device counts are exact UDI links only. The DAGs pass it only for the datasets in
+dags/vigil_checks.py MODEL_LINK_SUMMARY_DATASETS: a dataset is added once the chatbot that
+labels model links is deployed for it, so links can be loaded before the live site shows them.
+
 --recreate --yes-recreate drops each summary table before building it. Needed only when a
 table's layout (partitioning, clustering) changes: BigQuery cannot replace a table with a
 different partitioning. It drops nothing but the six summary tables.
@@ -386,6 +393,9 @@ def main(argv=None) -> int:
     ap.add_argument("--if-changed", action="store_true",
                     help="skip when no source table changed since the last build")
     ap.add_argument("--max-gb", type=float, default=cfg.MAX_GB)
+    ap.add_argument("--model-links", action="store_true",
+                    help="add the matching model's links to the device reports (once the chatbot "
+                         "that labels them is deployed for this dataset)")
     ap.add_argument("--recreate", action="store_true",
                     help="drop each summary table before building it (layout change)")
     ap.add_argument("--yes-recreate", action="store_true", help="confirm --recreate")
@@ -395,19 +405,22 @@ def main(argv=None) -> int:
               "Run again with --yes-recreate to confirm.")
         return EXIT_OVER_BUDGET
 
-    if a.print_only:        # shows the model-link part, as on a dataset that has model links
+    if a.print_only:        # with --model-links: as on a dataset that has model links
         for n in ORDER:
-            sql, params = create_sql(n, a.project, a.dataset, model_links=True)
+            sql, params = create_sql(n, a.project, a.dataset, model_links=a.model_links)
             print(f"-- {n}  params: { {k: v for k, (_, v) in params.items()} }\n{sql};\n")
         return 0
 
+    from google.api_core.exceptions import BadRequest
     from google.cloud import bigquery
     client = bigquery.Client(project=a.project)
     existing = _modified(client, a.project, a.dataset, ORDER)
-    sources = _modified(client, a.project, a.dataset,
-                        list(schemas.SUMMARY_SOURCES) + [schemas.MODEL_LINK_TABLE])
-    model_links = sources[schemas.MODEL_LINK_TABLE] is not None      # table metadata: no cost
-    print(f"model links: {'yes' if model_links else 'none yet'} ({schemas.MODEL_LINK_TABLE})")
+    # Without --model-links the link table is not an input: not read, and not a reason to rebuild.
+    sources = _modified(client, a.project, a.dataset, list(schemas.SUMMARY_SOURCES)
+                        + ([schemas.MODEL_LINK_TABLE] if a.model_links else []))
+    model_links = sources.get(schemas.MODEL_LINK_TABLE) is not None      # table metadata: no cost
+    print(f"model links: {'yes' if model_links else 'none yet' if a.model_links else 'off'} "
+          f"({schemas.MODEL_LINK_TABLE})")
 
     todo = ORDER
     if a.if_changed and not a.estimate_only:
@@ -420,12 +433,24 @@ def main(argv=None) -> int:
     spent, built = 0.0, set()
     for n in todo:
         sql, params = create_sql(n, a.project, a.dataset, model_links)
-        ready =all(existing.get(d) is not None or d in built for d in NEEDS[n])
+        ready = all(existing.get(d) is not None or d in built for d in NEEDS[n])
         if not ready:
             print(f"  {n:16}   n/a      (priced once {', '.join(NEEDS[n])} exist)")
             continue
-        gb = client.query(priced_sql(sql), job_config=bigquery.QueryJobConfig(
-            dry_run=True, query_parameters=_params(params))).total_bytes_processed / 1e9
+        try:
+            gb = client.query(priced_sql(sql), job_config=bigquery.QueryJobConfig(
+                dry_run=True, query_parameters=_params(params))).total_bytes_processed / 1e9
+        except BadRequest as e:
+            # --estimate-only prices a table against its input summary tables as they are now. If
+            # one is still in an older layout (entity_reports without link_method, before its first
+            # build with this code), the SELECT does not compile. The real build rebuilds that
+            # input first, so only the estimate is affected. Any other error still stops.
+            rebuilt = [d for d in NEEDS[n] if d in todo]
+            if not (a.estimate_only and rebuilt):
+                raise
+            reason = (e.errors[0].get("message") if e.errors else None) or str(e).splitlines()[0]
+            print(f"  {n:16}   n/a      (priced after {', '.join(rebuilt)} is rebuilt: {reason})")
+            continue
         if a.estimate_only:
             print(f"  {n:16} {gb:7.3f} GB")
             continue

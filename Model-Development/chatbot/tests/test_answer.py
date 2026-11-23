@@ -204,7 +204,25 @@ def test_headline_for_a_device_with_model_links_shows_the_split():
     counts = dict(facts()['counts'], model_reports=146)
     assert render.headline(facts(counts=counts)) == (
         '**DreamStation** (Respironics): 2,146 reports in FDA MAUDE (2023–2025) '
-        '(2,000 linked by UDI, 146 by the matching model).')
+        "(2,000 with this device's UDI, 146 matched by device details).")
+
+
+def test_headline_when_no_report_has_a_udi_says_all_were_matched():
+    counts = dict(facts()['counts'], model_reports=2146)
+    assert render.headline(facts(counts=counts)) == (
+        '**DreamStation** (Respironics): 2,146 reports in FDA MAUDE (2023–2025), '
+        'matched by device details, not by UDI.')
+
+
+def test_event_types_show_how_many_were_matched():
+    counts = dict(facts()['counts'], model_reports=21,
+                  model_by_event_type={'Malfunction': 10, 'Injury': 10, 'Death': 1})
+    assert render.counts(facts(counts=counts))[0] == (
+        '**Reports by event type:** 1 death (1 matched), 40 injuries (10 matched), '
+        '2,100 malfunctions (10 matched) and 5 other or not stated.')
+    # all matched: the headline says so already, the event types are not repeated
+    counts = dict(counts, model_reports=2146)
+    assert 'matched' not in render.counts(facts(counts=counts))[0]
 
 
 def test_headline_without_model_links_is_unchanged():
@@ -384,11 +402,14 @@ def test_advice_with_facts_starts_with_the_refusal_then_answers():
 
 
 def test_a_device_with_model_links_gets_the_split_and_the_model_note():
-    counts = [dict(r, model_reports=10 if r['year'] == 2024 else 0) for r in ROWS['counts']]
+    counts = [dict(r, model_reports=min(r['reports'], 10) if r['year'] == 2024 else 0)
+              for r in ROWS['counts']]
     out = make_bot(['counts'], rows={**ROWS, 'counts': counts})[0].answer(
         'How many reports does the DreamStation have?')
-    assert out['entities'][0]['model_reports'] == 30
-    assert '(2,116 linked by UDI, 30 by the matching model)' in out['text']
+    assert out['entities'][0]['model_reports'] == 21
+    assert "(2,125 with this device's UDI, 21 matched by device details)" in out['text']
+    assert '1 death (1 matched), 40 injuries (10 matched)' in out['text']
+    assert 'matching model' not in out['text'].lower()     # the reader sees "matched by device details"
     assert templates.MODEL_LINK_NOTE in out['text'] and templates.UDI_NOTE not in out['text']
 
 

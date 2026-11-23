@@ -85,11 +85,22 @@ SUMMARY_TASK = "build_summaries"
 SUMMARY_SCRIPT = "scripts/warehouse/build_summaries.py"
 
 
+# The datasets whose summary tables include the matching model's links (build_summaries.py
+# --model-links). Add vigil_md_prod only after the chatbot that labels model links ("... with
+# this device's UDI, ... matched by device details") is deployed: older chatbot code would call every linked
+# report "linked by UDI". Until then model links can be loaded into prod without the live site
+# showing them. After adding it, rebuild the prod summaries once without --if-changed.
+MODEL_LINK_SUMMARY_DATASETS = frozenset({"vigil_md_dev"})
+SUMMARY_DEFAULT_DATASET = "vigil_md_prod"                # build_summaries.py without --dataset
+
+
 def summary_args(project: str, if_changed: bool = True, dataset: str | None = None) -> list[str]:
     """CLI args for the summary build (after every source's chain, and after a load of model
-    links). Pure function."""
+    links). --model-links only for a dataset in MODEL_LINK_SUMMARY_DATASETS. Pure function."""
+    model_links = (dataset or SUMMARY_DEFAULT_DATASET) in MODEL_LINK_SUMMARY_DATASETS
     return ([SUMMARY_SCRIPT, "--project", project] + (["--dataset", dataset] if dataset else [])
-            + (["--if-changed"] if if_changed else []))
+            + (["--if-changed"] if if_changed else [])
+            + (["--model-links"] if model_links else []))
 
 
 LINKS_TASK = "build_links"

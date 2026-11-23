@@ -195,9 +195,10 @@ def test_sources_listed_match_the_sql():
 # ── main (fake BigQuery) ──────────────────────────────────────────────────────
 
 class FakeClient:
-    def __init__(self, modified=None, dry_gb=0.1, duplicates=0):
+    def __init__(self, modified=None, dry_gb=0.1, duplicates=0, bad_dry=None):
         self.modified = modified or {}
         self.dry_gb, self.duplicates = dry_gb, duplicates
+        self.bad_dry = bad_dry          # sql -> True: the dry run fails like a SELECT that does not compile
         self.created, self.dropped = [], []
 
     def get_table(self, table_id):
@@ -211,6 +212,9 @@ class FakeClient:
 
     def query(self, sql, job_config=None):
         if job_config is not None and job_config.dry_run:
+            if self.bad_dry and self.bad_dry(sql):
+                from google.api_core.exceptions import BadRequest
+                raise BadRequest("Unrecognized name: link_method at [5:16]")
             return types.SimpleNamespace(total_bytes_processed=int(self.dry_gb * 1e9))
         if sql.startswith("DROP TABLE IF EXISTS"):
             self.dropped.append(sql.rsplit(".", 1)[-1].rstrip("`"))
@@ -245,10 +249,38 @@ def test_build_reads_model_links_only_when_their_table_exists(client, monkeypatc
     real = S.create_sql
     monkeypatch.setattr(S, "create_sql", lambda n, p, d, model_links=False: seen.append(model_links) or real(n, p, d, model_links))
     client(modified={s: T0 for s in schemas.SUMMARY_SOURCES})
-    assert run() == 0 and set(seen) == {False}
+    assert run("--model-links") == 0 and set(seen) == {False}
     seen.clear()
     client(modified={**{s: T0 for s in schemas.SUMMARY_SOURCES}, schemas.MODEL_LINK_TABLE: T0})
-    assert run() == 0 and set(seen) == {True}
+    assert run("--model-links") == 0 and set(seen) == {True}
+
+
+def test_without_the_flag_model_links_are_ignored_even_when_their_table_exists(client, monkeypatch,
+                                                                                capsys):
+    # The live chatbot may not label model links yet: the switch keeps prod device counts UDI-only.
+    seen = []
+    real = S.create_sql
+    monkeypatch.setattr(S, "create_sql", lambda n, p, d, model_links=False: seen.append(model_links) or real(n, p, d, model_links))
+    client(modified={**{s: T0 for s in schemas.SUMMARY_SOURCES}, schemas.MODEL_LINK_TABLE: T0})
+    assert run() == 0 and set(seen) == {False}
+    assert "model links: off" in capsys.readouterr().out
+
+
+def test_without_the_flag_a_new_load_of_model_links_rebuilds_nothing(client):
+    newer = T0 + dt.timedelta(hours=1)
+    modified = {**{s: T0 for s in schemas.SUMMARY_SOURCES}, **{n: newer for n in S.ORDER},
+                schemas.MODEL_LINK_TABLE: newer + dt.timedelta(hours=1)}
+    c = client(modified=modified)
+    assert run("--if-changed") == 0 and c.created == []
+    c = client(modified=modified)
+    assert run("--if-changed", "--model-links") == 0 and \
+        c.created == ["entity_reports", "entity_counts", "entity_problems", "entity_catalog"]
+
+
+def test_print_only_shows_the_model_link_part_only_with_the_flag(capsys):
+    assert run("--print-only") == 0 and schemas.MODEL_LINK_TABLE not in capsys.readouterr().out
+    assert run("--print-only", "--model-links") == 0
+    assert f"`{P}.vigil_md_prod.{schemas.MODEL_LINK_TABLE}`" in capsys.readouterr().out
 
 
 def test_build_creates_every_table_in_order(client, capsys):
@@ -319,6 +351,33 @@ def test_estimate_only_creates_nothing(client, capsys):
     c = client(modified={s: T0 for s in schemas.SUMMARY_SOURCES})
     assert run("--estimate-only") == 0 and c.created == []
     assert "priced once device_catalog exist" in capsys.readouterr().out
+
+
+def test_estimate_marks_a_table_whose_input_has_an_old_layout_and_goes_on(client, capsys):
+    # entity_reports built before link_method existed: entity_counts' SELECT does not compile
+    # against it. The real build rebuilds entity_reports first, so only the estimate is affected.
+    newer = T0 + dt.timedelta(hours=1)
+    c = client(modified={**{s: T0 for s in schemas.SUMMARY_SOURCES}, **{n: newer for n in S.ORDER}},
+               bad_dry=lambda sql: "model_reports" in sql)
+    assert run("--estimate-only") == 0 and c.created == []
+    out = capsys.readouterr().out
+    assert "entity_counts      n/a      (priced after entity_reports is rebuilt" in out
+    assert "entity_catalog" in out and "GB" in out.split("entity_catalog", 1)[1].splitlines()[0]
+
+
+def test_a_dry_run_error_still_stops_a_real_build(client):
+    from google.api_core.exceptions import BadRequest
+    c = client(modified={s: T0 for s in schemas.SUMMARY_SOURCES}, bad_dry=lambda sql: "model_reports" in sql)
+    with pytest.raises(BadRequest):
+        run()
+    assert c.created == ["device_catalog", "entity_reports"]
+
+
+def test_a_dry_run_error_without_an_input_rebuilt_first_still_stops_the_estimate(client):
+    from google.api_core.exceptions import BadRequest
+    client(modified={s: T0 for s in schemas.SUMMARY_SOURCES}, bad_dry=lambda sql: "device_id" in sql)
+    with pytest.raises(BadRequest):              # device_catalog has no input summary table
+        run("--estimate-only")
 
 
 def test_print_only_makes_no_gcp_call(monkeypatch, capsys):
