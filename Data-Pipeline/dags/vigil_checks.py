@@ -86,8 +86,8 @@ SUMMARY_SCRIPT = "scripts/warehouse/build_summaries.py"
 
 
 # The datasets whose summary tables include the matching model's links (build_summaries.py
-# --model-links). Add vigil_md_prod only after the chatbot that labels model links ("... linked
-# by UDI, ... by the matching model") is deployed: older chatbot code would call every linked
+# --model-links). Add vigil_md_prod only after the chatbot that labels model links ("... with
+# this device's UDI, ... matched by device details") is deployed: older chatbot code would call every linked
 # report "linked by UDI". Until then model links can be loaded into prod without the live site
 # showing them. After adding it, rebuild the prod summaries once without --if-changed.
 MODEL_LINK_SUMMARY_DATASETS = frozenset({"vigil_md_dev"})

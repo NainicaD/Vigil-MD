@@ -107,7 +107,7 @@ If `score` stops (crash, restart), Airflow retries it 2 times. Each retry contin
 
 The summary tables include model links only for the datasets in `MODEL_LINK_SUMMARY_DATASETS` (`Data-Pipeline/dags/vigil_checks.py`). It holds `vigil_md_dev` only. On prod, the backfill and the daily runs load the links into `link_maude_gudid_model`, but the chatbot and the website still count devices by UDI only, as before.
 
-Why: chatbot code older than this branch says "N reports linked by UDI" for every report of a device. With model links in the summaries, that would be false. So prod is switched on only after the chatbot that labels model links ("... linked by UDI, ... by the matching model") is deployed.
+Why: chatbot code older than this branch says "N reports linked by UDI" for every report of a device. With model links in the summaries, that would be false. So prod is switched on only after the chatbot that labels model links ("... with this device's UDI, ... matched by device details") is deployed.
 
 To switch prod on (after the backfill and that deploy):
 1. Add `"vigil_md_prod"` to `MODEL_LINK_SUMMARY_DATASETS` in a pull request.
@@ -116,6 +116,7 @@ To switch prod on (after the backfill and that deploy):
    python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --model-links --estimate-only
    python scripts/warehouse/build_summaries.py --project vigil-md-1792696816 --model-links
    ```
+   On the first estimate after this branch is merged, `entity_counts` shows `n/a`: it reads `entity_reports.link_method`, which exists only after `entity_reports` is rebuilt. The build itself prices and builds it after `entity_reports`. On 2026-11-23 the other five tables priced at 8.4 GB on prod; `entity_counts` was 2.4 GB before.
 3. Rebuild the chatbot's search index and redeploy, so search counts match.
 
 To check the wording on dev first: `build_summaries.py --project vigil-md-1792696816 --dataset vigil_md_dev --model-links`, then ask the chatbot (on `vigil_md_dev`) about a device with model links.

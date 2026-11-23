@@ -23,9 +23,14 @@ LINK_NOTE = {
     "manufacturer": "Reports where this manufacturer name appears, as normalized in MAUDE.",
 }
 # A device whose total includes reports that the matching model linked (no UDI on the report).
-MODEL_LINK_NOTE = ("{udi:,} reports linked to this device by UDI and {model:,} by the matching "
-                   "model (a model match, not a UDI: it can be wrong). Reports without a UDI that "
-                   "the model did not link are not counted.")
+# The reader-facing text says "matched by device details": what matters is that there is no UDI.
+MODEL_LINK_NOTE = ("{udi:,} reports carry this device's UDI and {model:,} were matched to it by "
+                   "device details (manufacturer, model and catalog number, product code), and a "
+                   "match can be wrong. Reports without a UDI that could not be matched are not "
+                   "counted.")
+MODEL_LINK_NOTE_ALL = ("None of these reports has a UDI: they were matched to this device by its "
+                       "details (manufacturer, model and catalog number, product code), and a "
+                       "match can be wrong. Reports that could not be matched are not counted.")
 
 
 def _sources(records: list[QueryRecord]) -> list[dict]:
@@ -40,17 +45,19 @@ def _budget(budget: Budget) -> dict:
 
 def summarize_counts(rows: list[dict]) -> dict:
     """Rows of (year, event_type, reports[, model_reports]) → totals by event type and by year,
-    and how many of the reports the matching model linked (0 on tables without the column). Pure."""
+    and how many of the reports the matching model linked, in total and by event type (0 / {} on
+    tables without the column). Pure."""
     by_type: dict[str, int] = defaultdict(int)
+    model_by_type: dict[str, int] = defaultdict(int)
     by_year: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    model = 0
     for r in rows:
         by_type[r["event_type"]] += r["reports"]
-        model += r.get("model_reports") or 0
+        model_by_type[r["event_type"]] += r.get("model_reports") or 0
         if r["year"] is not None:
             by_year[int(r["year"])][r["event_type"]] += r["reports"]
-    return {"total_reports": sum(by_type.values()), "model_reports": model,
+    return {"total_reports": sum(by_type.values()), "model_reports": sum(model_by_type.values()),
             "by_event_type": dict(sorted(by_type.items(), key=lambda kv: -kv[1])),
+            "model_by_event_type": {et: n for et, n in model_by_type.items() if n},
             "by_year": {y: dict(v) for y, v in sorted(by_year.items())}}
 
 
@@ -58,7 +65,8 @@ def counts_note(entity_type: str, counts: dict) -> str | None:
     """The note next to a report total (the website shows it beside the number). Pure."""
     model = counts.get("model_reports") or 0
     if entity_type == "device" and model:
-        return MODEL_LINK_NOTE.format(udi=counts["total_reports"] - model, model=model)
+        udi = counts["total_reports"] - model
+        return MODEL_LINK_NOTE.format(udi=udi, model=model) if udi else MODEL_LINK_NOTE_ALL
     return LINK_NOTE[entity_type]
 
 
