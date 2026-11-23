@@ -411,6 +411,7 @@ def main(argv=None) -> int:
             print(f"-- {n}  params: { {k: v for k, (_, v) in params.items()} }\n{sql};\n")
         return 0
 
+    from google.api_core.exceptions import BadRequest
     from google.cloud import bigquery
     client = bigquery.Client(project=a.project)
     existing = _modified(client, a.project, a.dataset, ORDER)
@@ -436,8 +437,20 @@ def main(argv=None) -> int:
         if not ready:
             print(f"  {n:16}   n/a      (priced once {', '.join(NEEDS[n])} exist)")
             continue
-        gb = client.query(priced_sql(sql), job_config=bigquery.QueryJobConfig(
-            dry_run=True, query_parameters=_params(params))).total_bytes_processed / 1e9
+        try:
+            gb = client.query(priced_sql(sql), job_config=bigquery.QueryJobConfig(
+                dry_run=True, query_parameters=_params(params))).total_bytes_processed / 1e9
+        except BadRequest as e:
+            # --estimate-only prices a table against its input summary tables as they are now. If
+            # one is still in an older layout (entity_reports without link_method, before its first
+            # build with this code), the SELECT does not compile. The real build rebuilds that
+            # input first, so only the estimate is affected. Any other error still stops.
+            rebuilt = [d for d in NEEDS[n] if d in todo]
+            if not (a.estimate_only and rebuilt):
+                raise
+            reason = (e.errors[0].get("message") if e.errors else None) or str(e).splitlines()[0]
+            print(f"  {n:16}   n/a      (priced after {', '.join(rebuilt)} is rebuilt: {reason})")
+            continue
         if a.estimate_only:
             print(f"  {n:16} {gb:7.3f} GB")
             continue
