@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DAGS = ROOT / "dags"
 CONTEXT = {"run_id": "manual__1",
            "params": {"dataset": "vigil_md_dev", "full": False, "workers": 2,
-                      "bundle": "b", "baseline": ""}}
+                      "bundle": "b", "ie_gate": "e6_e3b_c1_m1", "baseline": ""}}
 
 
 @pytest.fixture(scope="module")
@@ -39,38 +39,55 @@ def tasks(dag):
     return {t.task_id: t for t in dag.tasks}
 
 
-def test_manual_only_and_the_test_dataset_by_default(dag):
-    assert dag.schedule is None or "NullTimetable" in repr(dag.timetable)
+def test_no_schedule_prod_by_default_and_the_m1_gate(dag):
+    assert dag.schedule is None or "NullTimetable" in repr(dag.timetable)      # vigil_md_load starts it
     assert dag.max_active_runs == 1
-    assert dag.params["dataset"] == "vigil_md_dev" and dag.params["full"] is False
+    assert dag.params["dataset"] == "vigil_md_prod" and dag.params["full"] is False
+    assert dag.params["ie_gate"] == "e6_e3b_c1_m1"
 
 
 def test_task_order_and_pools(dag):
     t = tasks(dag)
     assert t["candidates"].downstream_task_ids >= {"score"}
     assert t["score"].downstream_task_ids >= {"load_links"}
+    assert t["load_links"].downstream_task_ids >= {"build_summaries"}          # chatbot tables
     assert t["candidates"].pool == "vigil_warehouse" and t["load_links"].pool == "vigil_warehouse"
-    assert t["score"].pool == "default_pool"
+    assert t["build_summaries"].pool == "vigil_warehouse" and t["score"].pool == "default_pool"
     for name in ("alert_on_failure", "mark_run_failed"):
-        assert t[name].upstream_task_ids == {"candidates", "score", "load_links"}
+        assert t[name].upstream_task_ids == {"candidates", "score", "load_links", "build_summaries"}
         assert str(t[name].trigger_rule).lower().endswith("one_failed")
 
 
-def test_no_other_dag_starts_matching_yet(dag):
+def test_the_daily_load_starts_matching_on_prod(dag):
     from airflow.models import DagBag
     bag = DagBag(dag_folder=str(DAGS))
-    for other in bag.dags.values():
-        for task in other.tasks:
-            assert getattr(task, "trigger_dag_id", None) != "vigil_md_matching"
+    starters = {(o.dag_id, t.task_id): t for o in bag.dags.values() for t in o.tasks
+                if getattr(t, "trigger_dag_id", None) == "vigil_md_matching"}
+    assert list(starters) == [("vigil_md_load", "trigger_matching")]
+    t = starters[("vigil_md_load", "trigger_matching")]
+    assert t.conf == {"dataset": "vigil_md_prod"} and t.wait_for_completion is False
+    assert t.skip_when_already_exists is True and t.trigger_run_id == "load__{{ run_id }}"
+    assert t.upstream_task_ids == {"build_summaries", "build_links"}
+    assert str(t.trigger_rule).lower().endswith("all_done")
+    load = tasks(bag.get_dag("vigil_md_load"))
+    for name in ("alert_on_failure", "mark_run_failed"):
+        assert "trigger_matching" in load[name].upstream_task_ids
 
 
 def test_args_pass_one_run_folder_from_task_to_task(mod, monkeypatch):
     calls = []
     monkeypatch.setattr(mod, "run_script", lambda *a: calls.append(a))
+    monkeypatch.setattr(mod, "_model_version", lambda p: "v1.1.0+e6_e3b_c1_m1")
     mod.build_candidates(**CONTEXT)
     mod.score_pairs(**CONTEXT)
     mod.load_links(**CONTEXT)
-    cand, score, links = calls
+    mod.build_summaries(**CONTEXT)
+    cand, score, links, summ = calls
+    assert cand[cand.index("--model-version") + 1] == links[links.index("--model-version") + 1] == \
+        "v1.1.0+e6_e3b_c1_m1"
+    assert score[score.index("--ie-gate") + 1] == "e6_e3b_c1_m1"
+    assert "--full" not in links                                         # no full.flag in this run
+    assert summ[summ.index("--dataset") + 1] == "vigil_md_dev" and "--if-changed" in summ
     d = "/opt/airflow/logs/matching/manual__1"
     assert cand[cand.index("--out") + 1] == f"{d}/candidates.parquet" and "--since" in cand
     assert score[score.index("--pairs") + 1] == f"{d}/candidates.parquet"
@@ -84,7 +101,7 @@ def test_args_pass_one_run_folder_from_task_to_task(mod, monkeypatch):
 def test_score_retries_twice_and_only_working_tasks_report_to_elk(dag):
     t = tasks(dag)
     assert t["score"].retries == 2
-    for name in ("candidates", "score", "load_links"):
+    for name in ("candidates", "score", "load_links", "build_summaries"):
         assert t[name].on_failure_callback and t[name].on_retry_callback
     for name in ("alert_on_failure", "mark_run_failed"):
         assert not t[name].on_failure_callback          # mark_run_failed fails on purpose
@@ -119,9 +136,10 @@ def check_mod():
     return m
 
 
-def test_check_runs_weekly_on_the_test_extract(check_dag):
+def test_check_runs_weekly_on_prod_by_default(check_dag):
     assert "0 7 * * 1" in repr(check_dag.timetable) and check_dag.catchup is False
-    assert check_dag.params["dataset"] == "vigil_md_dev" and check_dag.params["sample_per_10k"] == 100
+    assert check_dag.params["dataset"] == "vigil_md_prod" and check_dag.params["sample_per_10k"] == 100
+    assert check_dag.params["ie_gate"] == "e6_e3b_c1_m1"
     t = tasks(check_dag)
     assert t["candidates"].downstream_task_ids >= {"score"}
     assert t["score"].downstream_task_ids >= {"evaluate"} and t["evaluate"].downstream_task_ids >= {"send_report"}
@@ -132,7 +150,8 @@ def test_check_runs_weekly_on_the_test_extract(check_dag):
 def test_check_uses_its_own_folder_and_the_udi_sample(check_mod, monkeypatch):
     calls = []
     monkeypatch.setattr(check_mod, "run_script", lambda *a: calls.append(a))
-    ctx = {"run_id": "scheduled__1", "params": {"dataset": "vigil_md_dev", "sample_per_10k": 50, "bundle": "b"}}
+    ctx = {"run_id": "scheduled__1", "params": {"dataset": "vigil_md_dev", "sample_per_10k": 50, "bundle": "b",
+                                                "ie_gate": "e6_e3b_c1_m1"}}
     d = "/opt/airflow/logs/matching/check/scheduled__1"
     monkeypatch.setattr(check_mod.Path, "mkdir", lambda *a, **k: None)
     check_mod.build_candidates(**ctx)
@@ -144,6 +163,7 @@ def test_check_uses_its_own_folder_and_the_udi_sample(check_mod, monkeypatch):
     assert cand[cand.index("--out") + 1] == f"{d}/candidates.parquet"
     assert score[score.index("--work-dir") + 1] == d
     assert ev[ev.index("--out") + 1] == f"{d}/check_report.json"
+    assert score[score.index("--ie-gate") + 1] == ev[ev.index("--ie-gate") + 1] == "e6_e3b_c1_m1"
 
 
 def test_send_report_sends_one_agreement_record(check_mod, monkeypatch, tmp_path):
@@ -153,9 +173,26 @@ def test_send_report_sends_one_agreement_record(check_mod, monkeypatch, tmp_path
                         lambda run_id, work_dir: {"check_report": str(tmp_path / "r.json")})
     (tmp_path / "r.json").write_text('{"precision": 0.97, "recall": 0.8}')
     check_mod.send_report(run_id="scheduled__1",
-                          params={"dataset": "vigil_md_dev", "sample_per_10k": 100, "bundle": "b"})
+                          params={"dataset": "vigil_md_dev", "sample_per_10k": 100, "bundle": "b",
+                                  "ie_gate": ""})
     (msg, fields), = sent
     assert msg == "matching_udi_agreement" and fields["precision"] == 0.97 and fields["run_id"] == "scheduled__1"
+
+
+def test_full_flag_from_s13_makes_the_load_replace_every_link(mod, monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(mod, "run_script", lambda *a: calls.append(a))
+    monkeypatch.setattr(mod, "_model_version", lambda p: "v1.1.0+e6_e3b_c1_m1")
+    monkeypatch.setattr(mod, "matching_files", lambda run_id: {
+        "dir": str(tmp_path), "links": "l", "report": "r", "chunks": "c"})
+    (tmp_path / "full.flag").write_text("links were made by another version\n")
+    mod.load_links(**CONTEXT)
+    assert "--full" in calls[0]
+
+
+def test_model_version_is_bundle_version_plus_gate():
+    from vigil_checks import model_version
+    assert model_version({"version": "v1.1.0"}, "e6_e3b_c1_m1") == "v1.1.0+e6_e3b_c1_m1"
 
 
 def test_callbacks_send_one_record_each(monkeypatch):

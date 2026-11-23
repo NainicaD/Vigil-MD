@@ -5,7 +5,8 @@ Rules (README, "Handoff: building the answer"):
     safety judgement (a test rejects every word in BANNED_WORDS).
   - MAUDE counts reports, not failure rates, and a report does not prove that
     the device caused the event.
-  - For a device (UDI-linked entity), say "reports linked by UDI".
+  - For a device (UDI-linked entity), say "reports linked by UDI". When the
+    matching model linked some of them, say how many, and that it can be wrong.
   - (b)(4) and (b)(6) in report text mark text the FDA withheld.
 
 The medical refusal, scope and help replies are in query_router/guardrails.py.
@@ -18,6 +19,9 @@ import hashlib
 HEADLINE = {
     'device': ('**{name}**{company}: {reports} linked by UDI in FDA MAUDE'
                '{span}.'),
+    # A device whose total includes reports linked by the matching model.
+    'device_model': ('**{name}**{company}: {reports} in FDA MAUDE{span} '
+                     '({udi} linked by UDI, {model} by the matching model).'),
     'product_code': '**Product code {code}**{title}: {reports} in FDA MAUDE'
                     '{span}.',
     'manufacturer': ('**{name}** (manufacturer): {reports} naming this '
@@ -68,6 +72,10 @@ DISCLAIMER = ('MAUDE reports are sent in by manufacturers, health '
               'rates.')
 UDI_NOTE = ('Reports without a UDI are not linked to a device, so the real '
             'number can be higher.')
+# When a device's total includes reports linked by the matching model.
+MODEL_LINK_NOTE = ('Some reports without a UDI are linked by the matching '
+                   'model, which can be wrong. Reports it did not link are not '
+                   'counted, so the real number can be higher.')
 SOURCES = '**Sources:** {tables} (BigQuery, data as of {as_of}).'
 SOURCE_NAMES = {
     'entity_catalog': 'FDA MAUDE and GUDID',

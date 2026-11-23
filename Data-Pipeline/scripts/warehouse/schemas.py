@@ -219,11 +219,14 @@ SUMMARY_TABLES = {
     ],
     "entity_reports": [
         ("entity_type", "STRING"), ("entity_id", "STRING"), ("source_record_id", "STRING"),
+        ("link_method", "STRING"),        # devices: 'udi' (exact UDI link) or 'model' (matching model)
         ("event_type", "STRING"), ("record_date", "DATE"), ("bucket", "INT64"),
     ],
     "entity_counts": [
         ("entity_type", "STRING"), ("entity_id", "STRING"), ("year", "INT64"),
-        ("event_type", "STRING"), ("reports", "INT64"), ("bucket", "INT64"),
+        ("event_type", "STRING"), ("reports", "INT64"),
+        ("model_reports", "INT64"),       # of reports: linked by the matching model, not by UDI
+        ("bucket", "INT64"),
     ],
     "entity_problems": [
         ("entity_type", "STRING"), ("entity_id", "STRING"), ("problem_type", "STRING"),

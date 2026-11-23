@@ -61,11 +61,13 @@ def main(argv=None) -> int:
     ap.add_argument("--links", type=Path, required=True, help="s12 output for those candidates")
     ap.add_argument("--bundle", type=Path, required=True, help="the bundle s12 used (meta.json)")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--ie-gate", help="the gate s12 applied (s12 --ie-gate); default: the bundle's")
     a = ap.parse_args(argv)
 
     report = agreement(pd.read_parquet(a.candidates), pd.read_parquet(a.links))
     meta = json.loads((a.bundle / "meta.json").read_text())
-    report.update(bundle_version=meta.get("version", "unknown"), cutoff=float(meta["cutoff"]))
+    report.update(bundle_version=meta.get("version", "unknown"), cutoff=float(meta["cutoff"]),
+                  ie_gate=a.ie_gate or meta.get("ie_gate", "e6_e3b"))
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(report, indent=2))
     print(f"{report['n_rows']:,} rows: precision {report['precision']}, recall {report['recall']}, "

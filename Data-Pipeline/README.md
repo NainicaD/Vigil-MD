@@ -308,8 +308,8 @@ MAUDE rows with one of its UDIs, i.e. exact UDI links only), a **product_code**,
 | Table | One row per | Contents |
 |---|---|---|
 | `device_catalog` | device | `device_id` (`'dev:'` + 12 hex of SHA-1 of `company_norm|brand_key`, the same id as the chatbot's search index), name, company, product codes, UDIs, top model numbers |
-| `entity_reports` | entity × report | event type and date: which reports belong to each entity |
-| `entity_counts` | entity × year × event type | reports |
+| `entity_reports` | entity × report | event type and date: which reports belong to each entity; `link_method` for devices: `udi` (exact UDI link) or `model` (matching model, `link_maude_gudid_model`; a report linked both ways counts once, as `udi`) |
+| `entity_counts` | entity × year × event type | reports; `model_reports`: of these, the reports linked by the matching model |
 | `entity_problems` | entity × problem term | top 25 device and patient terms by reports (no-information terms left out), plus one `no_harm` row; term lists in [`summary_config.py`](scripts/warehouse/summary_config.py) |
 | `entity_recalls` | entity × recall | class, date, status, product, firm, reason, root cause, action; `matched_by` = product code, manufacturer, or (device) the device's name in the recall text of one of its product codes |
 | `entity_catalog` | entity | title, company, product codes, top brand names, total reports, deaths, injuries, malfunctions (what a search index needs) |
@@ -351,15 +351,19 @@ list: `schemas.LINK_COLUMNS`. This is the warehouse version of the DVC sample st
   own table, never another producer's rows. `build_links.py` keeps `link_maude_gudid_model` in
   the view once that table exists.
   The tables and the view may be written only to `vigil_md_prod` or a `vigil_md_dev*` dataset.
-- **Model links (`vigil_md_matching`, manual, default dataset `vigil_md_dev`):** `candidates`
-  (Model-Development/matching `s13`, MAUDE rows with no usable UDI link changed since the last
-  load) → `score` (`s12`, the released bundle in `Model-Development/matching/models/`) →
-  `load_links` (one transaction: delete the links of re-scored MAUDE rows, insert, roll back on a
-  duplicate pair). No candidates: the run skips. `full=true` re-scores every row (backfill, new
-  model version). Each run sends one ELK record, `matching_run_metrics`: decision rates, score
+- **Model links (`vigil_md_matching`, started by `vigil_md_load.trigger_matching` after each
+  load, default dataset `vigil_md_prod`; runbook: [`docs/MATCHING_RUNBOOK.md`](docs/MATCHING_RUNBOOK.md)):**
+  `candidates` (Model-Development/matching `s13`, MAUDE rows with no usable UDI link changed since
+  the last load, streamed to parquet) → `score` (`s12`, the released bundle in
+  `Model-Development/matching/models/` with the IE gate in the `ie_gate` param; memory one chunk
+  per worker) → `load_links` (one transaction: delete the links of re-scored MAUDE rows, insert,
+  roll back on a duplicate pair; then the table label `model_version`) → `build_summaries`
+  (`--if-changed`: `entity_reports.link_method = 'model'`, `entity_counts.model_reports`, so the
+  chatbot and the website count them). No candidates: the run skips. `full=true` re-scores every
+  row (backfill); a link table made by another bundle or gate also makes the next run re-score
+  every row. Each run sends one ELK record, `matching_run_metrics`: decision rates, score
   quantiles and histogram, `score_psi` against a baseline report, link counts. These are signals
-  without labels, not precision or recall. Moving the DAG to `vigil_md_prod`, and retraining, are
-  separate tasks.
+  without labels, not precision or recall. Retraining is a separate task.
 - **Monitoring (ELK, Kibana dashboard "Vigil MD matching"):**
   - `matching_chunk_scored`: one record per scored chunk (pairs, seconds, pairs/s, decisions,
     peak memory, resumed). `score` saves each chunk, so its 2 retries continue from the last one.
@@ -685,7 +689,7 @@ $W scripts/warehouse/check_staging.py   --project vigil-md-1792696816 --source m
 ## Known limitations and issues
 
 - **MAUDE scope is 2016–2026 by design** (`START_YEAR` / `END_YEAR` in the DAGs). To extend it, change `END_YEAR` in `vigil_md_acquisition.py` and `vigil_md_full_load.py`.
-- **Exact links run daily; model links run on `vigil_md_dev` only.** `build_links` (enforcement ↔ recall) runs in the warehouse DAGs. The ML matching model is trained and published by CI (`Model-Development/matching/`); the manual `vigil_md_matching` DAG applies it, so far only to the test extract.
+- **Exact links and model links run daily.** `build_links` (enforcement ↔ recall) runs in the warehouse DAGs. The ML matching model is trained and published by CI (`Model-Development/matching/`); `vigil_md_load` starts `vigil_md_matching`, which applies it to the MAUDE rows that changed (`docs/MATCHING_RUNBOOK.md`; the first prod run is a backfill by hand).
 - **The daily DAG runs only while the machine and Docker are running.** A missed run happens when Airflow next runs (`catchup=False` runs the most recent interval).
 - **Sleep stops running tasks.** Closing the laptop pauses Docker, and Airflow then stops the running task. A retry continues with the files not yet loaded (`load_log`). For long loads, keep the charger connected and the lid open.
 - Open issues are tracked in [`docs/issue.md`](docs/issue.md). Example: the parallel fetch tasks can overwrite `manifest_state.json` keys (#5).

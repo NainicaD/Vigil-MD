@@ -197,6 +197,30 @@ def test_summarize_counts():
     assert out["total_reports"] == 10
     assert out["by_event_type"] == {"Injury": 5, "(none)": 4, "Death": 1}
     assert out["by_year"] == {2024: {"Injury": 3}, 2025: {"Injury": 2, "Death": 1}}
+    assert out["model_reports"] == 0                       # a table built before model links
+
+
+def test_summarize_counts_adds_up_the_model_linked_reports():
+    rows = [{"year": 2024, "event_type": "Injury", "reports": 3, "model_reports": 1},
+            {"year": 2025, "event_type": "Death", "reports": 2, "model_reports": 2},
+            {"year": 2025, "event_type": "Injury", "reports": 4, "model_reports": None}]
+    out = summary.summarize_counts(rows)
+    assert (out["total_reports"], out["model_reports"]) == (9, 3)
+
+
+def test_counts_note_shows_the_split_for_devices_only():
+    note = summary.counts_note("device", {"total_reports": 1240, "model_reports": 190})
+    assert note.startswith("1,050 reports linked to this device by UDI and 190 by the matching model")
+    assert "can be wrong" in note
+    assert summary.counts_note("device", {"total_reports": 5, "model_reports": 0}) == summary.LINK_NOTE["device"]
+    assert summary.counts_note("manufacturer", {"total_reports": 5, "model_reports": 4}) == \
+        summary.LINK_NOTE["manufacturer"]
+
+
+def test_counts_query_works_with_and_without_the_model_column():
+    q = queries.counts(T, "device", "dev:1")
+    assert "SELECT * EXCEPT (bucket, entity_type, entity_id)" in q.sql   # no fixed column list
+    queries.assert_read_only(q.sql)
 
 
 def test_summarize_problems():

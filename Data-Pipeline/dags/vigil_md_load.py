@@ -17,8 +17,12 @@ Tasks:
   3. build_links       — after every chain, like build_summaries: rebuild the exact link
                          tables (enforcement ↔ recall) and the links view if a source changed
                          (build_links.py --if-changed)
-  4. alert_on_failure  — triggered only if any task fails
-  5. mark_run_failed   — like the alert, then fails, so the run is "failed" even
+  4. trigger_matching  — after build_summaries and build_links (also when one failed): start
+                         vigil_md_matching on vigil_md_prod, which scores the MAUDE rows that
+                         changed and rebuilds the summaries with the new model links. Not
+                         waited for; one matching run per load run (run_id load__<run_id>)
+  5. alert_on_failure  — triggered only if any task fails
+  6. mark_run_failed   — like the alert, then fails, so the run is "failed" even
                          though build_summaries / build_links succeed after it
 
 Manual trigger: set the ingest_date param (YYYY-MM-DD), or leave it empty to
@@ -34,11 +38,13 @@ from pathlib import Path
 from airflow import DAG
 from airflow.sdk import Param, TaskGroup
 from airflow.providers.standard.operators.python import PythonOperator
+from airflow.providers.standard.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.task.trigger_rule import TriggerRule
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    CHECK_SCRIPTS, EVENT_STEPS, LINKS_TASK, SOURCE_PRIORITY, SUMMARY_TASK, VALIDATE_EXTRA_ARGS,
+    CHECK_SCRIPTS, EVENT_STEPS, LINKS_TASK, MATCHING_DATASET, SOURCE_PRIORITY, SUMMARY_TASK,
+    VALIDATE_EXTRA_ARGS,
     WEIGHT_RULE, DataCheckFailed, events_args, links_args, pool_for, steps_for, summary_args,
     warn_only)
 from vigil_helpers import alert_on_failure, mark_run_failed, run_script  # noqa: E402,F401  (shared, issue #14)
@@ -193,7 +199,21 @@ with DAG(
         trigger_rule=TriggerRule.ONE_FAILED,    # skipped when nothing fails
     )
 
+    # The matching model scores the MAUDE rows that changed in this load (vigil_md_matching,
+    # --since auto). Not waited for: the load run ends; matching has its own run and alerts.
+    # One matching run per load run, also when this run is retried.
+    trigger_matching = TriggerDagRunOperator(
+        task_id="trigger_matching",
+        trigger_dag_id="vigil_md_matching",
+        conf={"dataset": MATCHING_DATASET},
+        trigger_run_id="load__{{ run_id }}",
+        skip_when_already_exists=True,
+        wait_for_completion=False,
+        trigger_rule=TriggerRule.ALL_DONE,      # like summaries / links: the other sources' data is new
+    )
+
     load_group >> summaries
     load_group >> links
-    [load_group, summaries, links] >> alert
-    [load_group, summaries, links] >> mark_failed
+    [summaries, links] >> trigger_matching
+    [load_group, summaries, links, trigger_matching] >> alert
+    [load_group, summaries, links, trigger_matching] >> mark_failed

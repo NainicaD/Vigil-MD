@@ -203,8 +203,10 @@ class Chatbot:
                                 'spent': round(budget.spent_gb, 4)}
 
         found = {e['type'] for e in out['entities'] if e['found']}
+        model_links = any(e.get('model_reports') for e in out['entities']
+                          if e['found'] and e['type'] == 'device')
         sections.append({'kind': 'footer', 'text': '\n'.join(render.footer(
-            found, out['sources'], out['data_as_of']))})
+            found, out['sources'], out['data_as_of'], model_links))})
         return done('answered' if found else 'not_found')
 
     def _entity_sections(self, key: dict, asked: set[str],
@@ -224,7 +226,8 @@ class Chatbot:
         facts = summary.device_summary(self.backend, et, eid, budget)
         has_reports = bool(facts['counts']['total_reports'])
         out['entities'].append({**facts['entity'], 'total_reports':
-                                facts['counts']['total_reports']})
+                                facts['counts']['total_reports'],
+                                'model_reports': facts['counts']['model_reports']})
         self._cite(facts, out)
         blocks = {}
         if facts['entity']['found']:

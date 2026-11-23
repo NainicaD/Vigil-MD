@@ -65,9 +65,11 @@ def entity_params(entity_type: str, entity_id: str) -> dict:
 
 
 def counts(tbl: Table, entity_type: str, entity_id: str) -> Query:
-    """Reports per year and event type."""
+    """Reports per year and event type, and (summary tables built with model links) how many of
+    them the matching model linked. * EXCEPT, not a column list: the query also works on summary
+    tables built before model_reports existed."""
     sql = f"""\
-SELECT year, event_type, reports
+SELECT * EXCEPT (bucket, entity_type, entity_id)
 FROM {tbl('entity_counts')}
 WHERE {ENTITY_FILTER}
 ORDER BY year, event_type"""

@@ -176,6 +176,27 @@ def test_run_record_has_the_storage_sizes(env):
     assert extra["run_dir_bytes"] == M.dir_bytes(env.links.parent) > 0
 
 
+def test_a_clean_load_stamps_the_model_version_last(env):
+    c = env.make()
+    assert run(env, "--model-version", "v1.1.0+e6_e3b_c1_m1") == 0
+    assert c.sql[-1] == ("ALTER TABLE `p.vigil_md_dev.link_maude_gudid_model` SET OPTIONS "
+                         "(labels = [('model_version', 'v1-1-0-e6_e3b_c1_m1')])")
+    (extra,) = [x for msg, x in env.records if msg == "matching_run_metrics"]
+    assert extra["model_version"] == "v1.1.0+e6_e3b_c1_m1"
+
+
+def test_a_failed_load_keeps_the_old_stamp(env):
+    c = env.make(counts={"duplicates": 1})
+    assert run(env, "--model-version", "v1.1.0+e6_e3b_c1_m1") == M.EXIT_CHECK_FAILED
+    assert not any(s.startswith("ALTER TABLE") for s in c.sql)
+
+
+def test_model_label_matches_the_matching_side():
+    # the same rule as Model-Development/matching s13_build_candidates.model_label
+    assert M.model_label("v1.1.0+e6_e3b_c1_m1") == "v1-1-0-e6_e3b_c1_m1"
+    assert len(M.model_label("v" * 100)) == 63
+
+
 def test_no_chunks_file_sends_no_chunk_records(env, tmp_path):
     env.make()
     assert M.main(["--project", P, "--links", str(env.links), "--report", str(env.report)]) == 0

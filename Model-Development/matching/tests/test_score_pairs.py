@@ -152,6 +152,58 @@ def test_parallel_work_dir_gives_the_same_links_and_chunk_counts(files):
     assert strip(chunk_lines(files / "w1")) == strip(chunk_lines(files / "w2"))
 
 
+def test_streaming_chunks_cross_row_groups_and_give_the_same_result(files):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    base = pd.read_parquet(files / "pairs.parquet")
+    seven = pd.concat([base.assign(maude_id=base["maude_id"] + f"-{k}") for k in range(3)]).head(7)
+    pq.write_table(pa.Table.from_pandas(seven, preserve_index=False), files / "pairs.parquet",
+                   row_group_size=2)                               # row groups of 2, chunks of 3
+    one = run(files, "--batch", "7", "--report", str(files / "r1.json")).drop(columns="built_at")
+    work = files / "w"
+    many = run(files, "--batch", "3", "--work-dir", str(work), "--report", str(files / "r3.json")).drop(columns="built_at")
+    pd.testing.assert_frame_equal(one, many)
+    assert [s["pairs"] for s in chunk_lines(work)] == [3, 3, 1]
+    r1, r3 = (json.loads((files / f).read_text()) for f in ("r1.json", "r3.json"))
+    keep = ("n_pairs", "n_maude_rows", "n_match", "n_non_match", "n_insufficient_evidence",
+            "score_hist", "match_kinds", "score_p10", "score_p50", "score_p90")
+    assert {k: r1[k] for k in keep} == {k: r3[k] for k in keep} and r3["n_pairs"] == 7 and r3["n_maude_rows"] == 7
+
+
+def test_no_match_chunks_still_write_a_typed_links_file(files):
+    pd.read_parquet(files / "pairs.parquet").iloc[[1]].to_parquet(files / "pairs.parquet")   # NON_MATCH only
+    links = run(files)
+    assert len(links) == 0 and list(links.columns) == s12.LINK_COLUMNS
+
+
+def test_gate_override_applies_m1_to_an_older_bundle(files):
+    no_model = pair("nomodel", ("medtronic", "pacemaker", None, "A1", "DXY"), PACEMAKER)
+    pd.DataFrame([no_model]).to_parquet(files / "pairs.parquet")   # catalog A1 = GUDID model: identifier agrees
+    as_published = run(files, "--report", str(files / "a.json"))
+    gated = run(files, "--ie-gate", "e6_e3b_c1_m1", "--report", str(files / "b.json"))
+    assert json.loads((files / "b.json").read_text())["ie_gate"] == "e6_e3b_c1_m1"
+    assert json.loads((files / "a.json").read_text())["ie_gate"] == "e6_e3b"          # the bundle names none
+    # catalog equals the GUDID model: kind maude_catalog_eq_gudid_model, so M1 does not touch it
+    assert len(as_published) == len(gated)
+
+
+def test_gate_override_sends_no_model_no_agreement_pairs_to_ie(files):
+    stent_family = pair("fam", ("medtronic", "pacemaker", None, "A9", "DXY"), PACEMAKER)   # catalog agrees with nothing
+    pd.DataFrame([stent_family]).to_parquet(files / "pairs.parquet")
+    run(files, "--report", str(files / "a.json"))
+    run(files, "--ie-gate", "e6_e3b_c1_m1", "--report", str(files / "b.json"))
+    a, b = (json.loads((files / f).read_text()) for f in ("a.json", "b.json"))
+    assert b["n_insufficient_evidence"] == 1 and b["n_match"] == 0
+    assert a["n_insufficient_evidence"] == 0                       # without the override: scored by the model
+
+
+def test_a_changed_gate_never_reuses_checkpoints(files):
+    work = files / "w"
+    run(files, "--work-dir", str(work))
+    with pytest.raises(SystemExit, match="checkpoints of other input"):
+        run(files, "--work-dir", str(work), "--ie-gate", "e6_e3b_c1_m1")
+
+
 def test_missing_input_column_fails_loudly(files):
     pd.read_parquet(files / "pairs.parquet").drop(columns="key_g_pcs").to_parquet(files / "pairs.parquet")
     with pytest.raises(SystemExit, match="key_g_pcs"):

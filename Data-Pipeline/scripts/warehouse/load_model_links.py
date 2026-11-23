@@ -120,6 +120,19 @@ SELECT
 FROM `{target(project, dataset)}`"""
 
 
+def model_label(model_version: str) -> str:
+    """A BigQuery label value (lowercase letters, digits, - and _; at most 63 characters).
+    Same rule as Model-Development/matching s13_build_candidates.model_label: change both together."""
+    return "".join(c if c.isalnum() or c in "-_" else "-" for c in model_version.lower())[:63]
+
+
+def label_sql(project: str, dataset: str, model_version: str) -> str:
+    """Stamp the link table with the bundle + gate that made its links (table metadata, no cost).
+    s13 --since auto compares it with the next run's version: a difference means a full rescore."""
+    return (f"ALTER TABLE `{target(project, dataset)}` "
+            f"SET OPTIONS (labels = [('model_version', '{model_label(model_version)}')])")
+
+
 def check_problems(counts: dict) -> list[str]:
     """What is wrong with the model link table, from its check_sql counts. Pure."""
     problems = []
@@ -171,6 +184,9 @@ def main(argv=None) -> int:
     ap.add_argument("--chunks", type=Path, help="s12 chunks.jsonl: one ELK record per chunk")
     ap.add_argument("--full", action="store_true", help="replace every model link")
     ap.add_argument("--run-id", help="Airflow run_id, for the ELK record")
+    ap.add_argument("--model-version",
+                    help="bundle version + gate that made these links; written as the table label "
+                         "model_version (s13 --since auto reads it)")
     ap.add_argument("--max-gb", type=float, default=MAX_GB)
     ap.add_argument("--print-only", action="store_true", help="print the SQL; no GCP call")
     a = ap.parse_args(argv)
@@ -216,13 +232,16 @@ def main(argv=None) -> int:
         log.error("%s failed its checks: %s", TABLE, "; ".join(problems))
         return EXIT_CHECK_FAILED
     client.query(view).result()
+    if a.model_version:       # only after a clean load: a failed run keeps the old stamp
+        client.query(label_sql(a.project, a.dataset, a.model_version)).result()
 
     report = json.loads(a.report.read_text()) if a.report else {}
     for chunk in read_chunks(a.chunks):
         log.info("matching_chunk_scored", extra={**chunk, "dataset": a.dataset, "run_id": a.run_id})
     storage = storage_sizes(client, a.project, a.dataset, a.links.parent)
-    log.info("matching_run_metrics", extra=run_metrics(report, counts, loaded, a.dataset, a.full,
-                                                       a.run_id, storage))
+    log.info("matching_run_metrics", extra={**run_metrics(report, counts, loaded, a.dataset, a.full,
+                                                          a.run_id, storage),
+                                            "model_version": a.model_version})
     print(f"=== {a.dataset}.{TABLE}: {loaded['n_deleted']:,} links deleted, "
           f"{loaded['n_inserted']:,} inserted, {counts['links']:,} in total; view links updated ===")
     return 0

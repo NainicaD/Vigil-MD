@@ -70,7 +70,7 @@ NEEDS = {
 }
 SOURCES = {
     "device_catalog": ["gudid"],
-    "entity_reports": ["maude"],
+    "entity_reports": ["maude", schemas.MODEL_LINK_TABLE],   # a new load of model links rebuilds it
     "entity_counts": [],
     "entity_problems": ["maude_problems"],
     "entity_recalls": ["recall", "enforcement"],
@@ -85,8 +85,10 @@ def _t(project: str, dataset: str, name: str) -> str:
 
 # ── SQL (pure) ────────────────────────────────────────────────────────────────
 
-def select_sql(name: str, project: str, dataset: str) -> tuple[str, dict]:
-    """The SELECT for one summary table and its parameters {name: (type, value)}."""
+def select_sql(name: str, project: str, dataset: str, model_links: bool = False) -> tuple[str, dict]:
+    """The SELECT for one summary table and its parameters {name: (type, value)}.
+    model_links: the dataset has link_maude_gudid_model, so entity_reports also links reports
+    to devices through the matching model (link_method 'model')."""
     t = lambda n: _t(project, dataset, n)          # noqa: E731
     if name == "device_catalog":
         return f"""\
@@ -137,6 +139,11 @@ LEFT JOIN codes AS c USING (company_norm, brand_key)
 LEFT JOIN udis AS u USING (company_norm, brand_key)""", {"top_models": ("INT64", cfg.TOP_MODELS)}
 
     if name == "entity_reports":
+        model_part = f"""
+  UNION ALL
+  -- matching-model links: left_id is source_record_id|device_seq, right_id a GUDID DI
+  SELECT 'device', d.device_id, SPLIT(m.left_id, '|')[OFFSET(0)], 'model'
+  FROM {t(schemas.MODEL_LINK_TABLE)} AS m JOIN udi_device AS d ON d.udi = m.right_id""" if model_links else ""
         return f"""\
 WITH maude_rows AS (
   SELECT source_record_id, event_type, record_date, product_code, manufacturer_name_norm, udi_di
@@ -150,22 +157,30 @@ udi_device AS (
   SELECT device_id, udi FROM {t('device_catalog')}, UNNEST(udi_dis) AS udi
 ),
 links AS (
-  SELECT 'product_code' AS entity_type, product_code AS entity_id, source_record_id
+  SELECT 'product_code' AS entity_type, product_code AS entity_id, source_record_id,
+         CAST(NULL AS STRING) AS link_method
   FROM maude_rows WHERE product_code IS NOT NULL
-  UNION DISTINCT
-  SELECT 'manufacturer', manufacturer_name_norm, source_record_id
+  UNION ALL
+  SELECT 'manufacturer', manufacturer_name_norm, source_record_id, CAST(NULL AS STRING)
   FROM maude_rows WHERE manufacturer_name_norm IS NOT NULL
-  UNION DISTINCT
-  SELECT 'device', d.device_id, r.source_record_id
-  FROM maude_rows AS r JOIN udi_device AS d ON d.udi = r.udi_di
+  UNION ALL
+  SELECT 'device', d.device_id, r.source_record_id, 'udi'
+  FROM maude_rows AS r JOIN udi_device AS d ON d.udi = r.udi_di{model_part}
+),
+one_row AS (
+  -- one row per (entity, report): a report linked to a device both by UDI and by the model is 'udi'
+  SELECT entity_type, entity_id, source_record_id,
+         IF(LOGICAL_OR(link_method = 'udi'), 'udi', ANY_VALUE(link_method)) AS link_method
+  FROM links GROUP BY entity_type, entity_id, source_record_id
 )
-SELECT l.entity_type, l.entity_id, l.source_record_id, r.event_type, r.record_date
-FROM links AS l JOIN reports AS r USING (source_record_id)""", {}
+SELECT l.entity_type, l.entity_id, l.source_record_id, l.link_method, r.event_type, r.record_date
+FROM one_row AS l JOIN reports AS r USING (source_record_id)""", {}
 
     if name == "entity_counts":
         return f"""\
 SELECT entity_type, entity_id, EXTRACT(YEAR FROM record_date) AS year,
-       IFNULL(event_type, '(none)') AS event_type, COUNT(*) AS reports
+       IFNULL(event_type, '(none)') AS event_type, COUNT(*) AS reports,
+       COUNTIF(link_method = 'model') AS model_reports
 FROM {t('entity_reports')}
 GROUP BY entity_type, entity_id, year, event_type""", {}
 
@@ -290,14 +305,14 @@ CLUSTER = {
 }
 
 
-def create_sql(name: str, project: str, dataset: str) -> tuple[str, dict]:
+def create_sql(name: str, project: str, dataset: str, model_links: bool = False) -> tuple[str, dict]:
     """CREATE OR REPLACE TABLE <dataset>.<name> AS <select> + bucket, partitioned by bucket and
     clustered by entity. Only summary tables."""
     if name not in schemas.SUMMARY_TABLES:
         raise ValueError(f"not a summary table: {name}")
     target = schemas.summary_table(project, name, dataset)
     schemas.assert_not_protected(target)
-    select, params = select_sql(name, project, dataset)
+    select, params = select_sql(name, project, dataset, model_links)
     bucket = (cfg.bucket_sql("'device'", "device_id") if name == "device_catalog"
               else cfg.bucket_sql("entity_type", "entity_id"))
     return (f"CREATE OR REPLACE TABLE `{target}`\n"
@@ -380,19 +395,22 @@ def main(argv=None) -> int:
               "Run again with --yes-recreate to confirm.")
         return EXIT_OVER_BUDGET
 
-    if a.print_only:
+    if a.print_only:        # shows the model-link part, as on a dataset that has model links
         for n in ORDER:
-            sql, params = create_sql(n, a.project, a.dataset)
+            sql, params = create_sql(n, a.project, a.dataset, model_links=True)
             print(f"-- {n}  params: { {k: v for k, (_, v) in params.items()} }\n{sql};\n")
         return 0
 
     from google.cloud import bigquery
     client = bigquery.Client(project=a.project)
     existing = _modified(client, a.project, a.dataset, ORDER)
+    sources = _modified(client, a.project, a.dataset,
+                        list(schemas.SUMMARY_SOURCES) + [schemas.MODEL_LINK_TABLE])
+    model_links = sources[schemas.MODEL_LINK_TABLE] is not None      # table metadata: no cost
+    print(f"model links: {'yes' if model_links else 'none yet'} ({schemas.MODEL_LINK_TABLE})")
 
     todo = ORDER
     if a.if_changed and not a.estimate_only:
-        sources = _modified(client, a.project, a.dataset, schemas.SUMMARY_SOURCES)
         todo = tables_to_build(sources, existing)
         if not todo:
             print("=== every summary table is newer than its inputs: nothing to build ===")
@@ -401,8 +419,8 @@ def main(argv=None) -> int:
 
     spent, built = 0.0, set()
     for n in todo:
-        sql, params = create_sql(n, a.project, a.dataset)
-        ready = all(existing.get(d) is not None or d in built for d in NEEDS[n])
+        sql, params = create_sql(n, a.project, a.dataset, model_links)
+        ready =all(existing.get(d) is not None or d in built for d in NEEDS[n])
         if not ready:
             print(f"  {n:16}   n/a      (priced once {', '.join(NEEDS[n])} exist)")
             continue

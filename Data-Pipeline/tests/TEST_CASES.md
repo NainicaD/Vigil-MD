@@ -42,11 +42,11 @@ The warehouse conversion tests need `ijson`. It is installed in `~/.venvs/vigil-
 | `test_gudid_release.py` | Newest GUDID release from the RSS feed | 8 | pass |
 | `dags/test_vigil_helpers.py` | Shared DAG helpers: live logs, kill on stop, alert names failed tasks | 23 | pass |
 | `test_build_maude_events.py` | MAUDE event tables: staging, problems, text (SQL, cost guard, filter) | 31 | pass |
-| `test_build_summaries.py` | Daily summary tables: SQL, partitioning, build order, rebuild only what changed, cost guard | 55 | pass |
+| `test_build_summaries.py` | Daily summary tables: SQL, partitioning, build order, rebuild only what changed, cost guard, model links in `entity_reports` (`link_method`, `udi` wins) and `entity_counts` (`model_reports`) only when the link table exists | 60 | pass |
 | `test_build_links.py` | Exact link tables and the `links` view: SQL, allowed datasets, checks, rebuild only what changed, cost guard, the view keeps the model links once their table exists | 25 | pass |
-| `test_load_model_links.py` | Model links: default dataset `vigil_md_dev`, allowed datasets, delete scope (incremental vs `--full`), rollback on duplicate pairs, checks (exit 3), the ELK records `matching_run_metrics` (with storage sizes) and `matching_chunk_scored` | 21 | pass |
+| `test_load_model_links.py` | Model links: default dataset `vigil_md_dev`, allowed datasets, delete scope (incremental vs `--full`), rollback on duplicate pairs, checks (exit 3), the ELK records `matching_run_metrics` (with storage sizes) and `matching_chunk_scored`, the `model_version` table label after a clean load | 24 | pass |
 | `test_setup_kibana.py` | `elk/kibana/setup_kibana.py`: every Lens panel consistent, panels cover runs, chunks, UDI check, failures, containers and alerts; rules are ES queries to the alerts index; API call order (connector before rules, failed import stops) | 17 | pass |
-| `dags/test_matching_dag.py` | `vigil_md_matching` and `vigil_md_matching_check`: manual / weekly, default dataset, task order and pools, run folders, `score` retries and checkpoints, ELK callbacks on the working tasks only, exit 4 skips the rest | 14 | not run here (needs the Airflow container) |
+| `dags/test_matching_dag.py` | `vigil_md_matching` and `vigil_md_matching_check`: started by `vigil_md_load.trigger_matching` / weekly, default dataset `vigil_md_prod`, the M1 gate param, task order and pools (incl. `build_summaries`), run folders, `score` retries and checkpoints, model version and `full.flag` → `--full`, ELK callbacks on the working tasks only, exit 4 skips the rest | 17 | not run here (needs the Airflow container) |
 
 ## 1. `test_storage_upload.py`: JSON → NDJSON
 

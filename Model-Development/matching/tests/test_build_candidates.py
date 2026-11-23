@@ -94,10 +94,18 @@ class NotFound(Exception):
 
 
 class FakeClient:
-    def __init__(self, rows=None, dry_gb=1.0, last=None, link_table=True, sib_dry_gb=0.2):
+    def __init__(self, rows=None, dry_gb=1.0, last=None, link_table=True, sib_dry_gb=0.2, labels=None):
         self.rows = pd.DataFrame(rows or [])
         self.dry_gb, self.last, self.link_table, self.sib_dry_gb = dry_gb, last, link_table, sib_dry_gb
+        self.labels = labels or {}
         self.ran, self.dry, self.sib = [], [], []
+
+    def get_table(self, name):
+        if name.endswith(s13.LINK_TABLE):
+            if not self.link_table:
+                raise NotFound(name)
+            return types.SimpleNamespace(labels=self.labels)
+        return types.SimpleNamespace(num_rows=len(self.rows))       # the candidate table
 
     def query(self, sql, job_config=None):
         if sql.startswith("SELECT MAX(built_at)"):
@@ -117,18 +125,28 @@ class FakeClient:
         return types.SimpleNamespace(result=lambda: None, total_bytes_billed=int(self.dry_gb * 1e9))
 
     def list_rows(self, table):
-        return types.SimpleNamespace(to_dataframe=lambda create_bqstorage_client: self.rows)
+        import pyarrow as pa
+
+        def batches(bqstorage_client):                           # 2 rows per batch: several batches
+            t = pa.Table.from_pandas(self.rows, preserve_index=False)
+            return t.to_batches(max_chunksize=2)
+        return types.SimpleNamespace(to_arrow_iterable=batches)
 
 
 @pytest.fixture
 def bq(fake_bigquery, monkeypatch):
-    """QueryJobConfig keeps its kwargs; NotFound comes from a fake google.api_core."""
+    """QueryJobConfig keeps its kwargs; NotFound comes from a fake google.api_core; the Storage
+    Read client is a fake too."""
     fake_bigquery.QueryJobConfig = lambda **kw: types.SimpleNamespace(**{"dry_run": False, **kw})
     fake_bigquery.ScalarQueryParameter = lambda name, typ, value: (name, typ, value)
     exc = types.ModuleType("google.api_core.exceptions")
     exc.NotFound = NotFound
     monkeypatch.setitem(sys.modules, "google.api_core", types.ModuleType("google.api_core"))
     monkeypatch.setitem(sys.modules, "google.api_core.exceptions", exc)
+    storage = types.ModuleType("google.cloud.bigquery_storage")
+    storage.BigQueryReadClient = lambda: "fake-storage-client"
+    sys.modules["google.cloud"].bigquery_storage = storage
+    monkeypatch.setitem(sys.modules, "google.cloud.bigquery_storage", storage)
     return fake_bigquery
 
 
@@ -153,7 +171,39 @@ def test_full_run_writes_the_parquet_and_caps_billing(bq, tmp_path, capsys):
     assert sql.startswith("CREATE OR REPLACE TABLE") and cfg.maximum_bytes_billed == int(5e9)
     assert since_of(cfg) is None
     assert len(pd.read_parquet(out)) == 2
-    assert "2 pairs for 1 MAUDE rows (pool: 5 rows)" in capsys.readouterr().out
+    assert "2 pairs (pool: 5 MAUDE rows)" in capsys.readouterr().out
+
+
+def test_download_streams_every_batch_into_one_file(bq, tmp_path):
+    rows = [{**ROW, "gudid_id": f"g{i}"} for i in range(5)]           # 3 batches of at most 2
+    out = tmp_path / "c.parquet"
+    assert s13.main(["--project", "p", "--full", "--out", str(out)], client=FakeClient(rows=rows)) == 0
+    assert pd.read_parquet(out)["gudid_id"].tolist() == [f"g{i}" for i in range(5)]
+
+
+def test_a_link_table_of_another_version_means_a_full_run_and_a_flag(bq, tmp_path, capsys):
+    out = tmp_path / "c.parquet"
+    client = FakeClient(rows=[ROW], last="2026-11-20T06:00:00+00:00", labels={"model_version": "v1-1-0-e6_e3b_c1"})
+    assert s13.main(["--project", "p", "--out", str(out), "--model-version", "v1.1.0+e6_e3b_c1_m1"],
+                    client=client) == 0
+    assert since_of(client.ran[0][1]) is None
+    assert "links were made by v1-1-0-e6_e3b_c1, this run uses v1-1-0-e6_e3b_c1_m1" in capsys.readouterr().out
+    assert (tmp_path / "full.flag").exists()
+
+
+def test_the_same_version_scores_only_changed_rows_and_clears_an_old_flag(bq, tmp_path):
+    out = tmp_path / "c.parquet"
+    (tmp_path / "full.flag").write_text("old\n")
+    client = FakeClient(rows=[ROW], last="2026-11-20T06:00:00+00:00",
+                        labels={"model_version": s13.model_label("v1.1.0+e6_e3b_c1_m1")})
+    s13.main(["--project", "p", "--out", str(out), "--model-version", "v1.1.0+e6_e3b_c1_m1"], client=client)
+    assert since_of(client.ran[0][1]) == "2026-11-20T06:00:00+00:00"
+    assert not (tmp_path / "full.flag").exists()
+
+
+def test_model_label_is_a_valid_bigquery_label():
+    label = s13.model_label("v1.1.0+e6_e3b_c1_m1")
+    assert label == "v1-1-0-e6_e3b_c1_m1" and re.fullmatch(r"[a-z0-9_-]{1,63}", label)
 
 
 def test_since_auto_uses_the_last_load_or_everything(bq, tmp_path):

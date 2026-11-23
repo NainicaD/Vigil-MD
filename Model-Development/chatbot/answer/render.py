@@ -82,10 +82,14 @@ def headline(result: dict) -> str:
     total = reports(counts_['total_reports'])
     span = year_span(counts_['by_year'])
     if entity['type'] == 'device':
-        company = entity.get('subtitle')
+        company = f' ({entity["subtitle"]})' if entity.get('subtitle') else ''
+        model = counts_.get('model_reports') or 0
+        if model:
+            return templates.HEADLINE['device_model'].format(
+                name=name, company=company, reports=total, span=span,
+                udi=num(counts_['total_reports'] - model), model=num(model))
         return templates.HEADLINE['device'].format(
-            name=name, company=f' ({company})' if company else '',
-            reports=total, span=span)
+            name=name, company=company, reports=total, span=span)
     if entity['type'] == 'product_code':
         title = entity.get('title') or ''
         same = (entity['id'].lower(), f'product code {entity["id"]}'.lower())
@@ -273,20 +277,23 @@ def ambiguous(phrase: str, matches: list) -> list[str]:
 
 
 def footer(entity_types: set[str], sources: list[dict],
-           data_as_of: dict[str, str]) -> list[str]:
+           data_as_of: dict[str, str], model_links: bool = False) -> list[str]:
     """Returns the disclaimer, the UDI note and the sources.
 
     Args:
       entity_types: Types of the entities found; "device" adds the UDI note.
       sources: The query layer's "sources" of every query run.
       data_as_of: Table name -> last modified time (ISO).
+      model_links: A device total includes reports linked by the matching
+        model: the note says so instead.
 
     Returns:
       The closing lines; the date is the oldest table update.
     """
     lines = [templates.DISCLAIMER]
     if 'device' in entity_types:
-        lines.append(templates.UDI_NOTE)
+        lines.append(templates.MODEL_LINK_NOTE if model_links
+                     else templates.UDI_NOTE)
     tables = sorted({t for s in sources for t in s.get('tables', [])})
     if tables:
         names = dict.fromkeys(templates.SOURCE_NAMES.get(t, t) for t in tables)

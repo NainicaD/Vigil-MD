@@ -93,10 +93,26 @@ def test_brand_key_uses_the_search_index_normalization():
 
 
 def test_reports_count_once_per_entity():
-    sql, _ = S.select_sql("entity_reports", P, DS)
-    assert sql.count("UNION DISTINCT") == 2 and "GROUP BY source_record_id" in sql
+    sql, _ = S.select_sql("entity_reports", P, DS, model_links=True)
+    assert "GROUP BY source_record_id" in sql                          # one row per report
+    assert "FROM links GROUP BY entity_type, entity_id, source_record_id" in sql    # one per entity
     counts, _ = S.select_sql("entity_counts", P, DS)
     assert "COUNT(*) AS reports" in counts and "IFNULL(event_type, '(none)')" in counts
+
+
+def test_model_links_add_device_reports_marked_model():
+    sql, _ = S.select_sql("entity_reports", P, DS, model_links=True)
+    assert f"FROM `{P}.{DS}.link_maude_gudid_model` AS m JOIN udi_device AS d ON d.udi = m.right_id" in sql
+    assert "SPLIT(m.left_id, '|')[OFFSET(0)], 'model'" in sql           # report = source_record_id
+    assert "IF(LOGICAL_OR(link_method = 'udi'), 'udi', ANY_VALUE(link_method)) AS link_method" in sql
+    counts, _ = S.select_sql("entity_counts", P, DS)
+    assert "COUNTIF(link_method = 'model') AS model_reports" in counts
+
+
+def test_without_a_model_link_table_there_is_no_model_part():
+    sql, _ = S.select_sql("entity_reports", P, DS)
+    assert "link_maude_gudid_model" not in sql and "'model'" not in sql
+    assert "'udi'" in sql                                               # the method is still recorded
 
 
 def test_device_reports_come_from_exact_udi_links():
@@ -141,7 +157,13 @@ LATER = T0 + dt.timedelta(hours=2)
 
 def test_every_source_feeds_some_summary_table():
     used = {s for srcs in S.SOURCES.values() for s in srcs}
-    assert used == set(schemas.SUMMARY_SOURCES) and set(S.SOURCES) == set(S.ORDER)
+    assert used == set(schemas.SUMMARY_SOURCES) | {schemas.MODEL_LINK_TABLE} and set(S.SOURCES) == set(S.ORDER)
+
+
+def test_a_new_load_of_model_links_rebuilds_the_report_tables():
+    assert S.tables_to_build({**SOURCES0, schemas.MODEL_LINK_TABLE: LATER}, FRESH) == \
+        ["entity_reports", "entity_counts", "entity_problems", "entity_catalog"]
+    assert S.tables_to_build({**SOURCES0, schemas.MODEL_LINK_TABLE: None}, FRESH) == []   # no table yet
 
 
 @pytest.mark.parametrize("changed, expected", [
@@ -164,8 +186,9 @@ def test_missing_summary_tables_and_their_dependents_are_built():
 
 def test_sources_listed_match_the_sql():
     for name in S.ORDER:
-        sql, _ = S.select_sql(name, P, DS)
-        read = {src for src in schemas.SUMMARY_SOURCES if f"`{P}.{DS}.{src}`" in sql}
+        sql, _ = S.select_sql(name, P, DS, model_links=True)
+        read = {src for src in list(schemas.SUMMARY_SOURCES) + [schemas.MODEL_LINK_TABLE]
+                if f"`{P}.{DS}.{src}`" in sql}
         assert read == set(S.SOURCES[name]), (name, read)
 
 
@@ -215,6 +238,17 @@ def client(monkeypatch):
 
 def run(*extra):
     return S.main(["--project", P, *extra])
+
+
+def test_build_reads_model_links_only_when_their_table_exists(client, monkeypatch):
+    seen = []
+    real = S.create_sql
+    monkeypatch.setattr(S, "create_sql", lambda n, p, d, model_links=False: seen.append(model_links) or real(n, p, d, model_links))
+    client(modified={s: T0 for s in schemas.SUMMARY_SOURCES})
+    assert run() == 0 and set(seen) == {False}
+    seen.clear()
+    client(modified={**{s: T0 for s in schemas.SUMMARY_SOURCES}, schemas.MODEL_LINK_TABLE: T0})
+    assert run() == 0 and set(seen) == {True}
 
 
 def test_build_creates_every_table_in_order(client, capsys):

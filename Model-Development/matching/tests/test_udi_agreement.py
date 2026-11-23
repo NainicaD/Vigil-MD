@@ -54,3 +54,7 @@ def test_main_writes_the_report_with_the_bundle(tmp_path):
                      "--bundle", str(tmp_path), "--out", str(tmp_path / "r.json")]) == 0
     r = json.loads((tmp_path / "r.json").read_text())
     assert r["bundle_version"] == "v1.1.0" and r["precision"] == 1.0
+    assert r["ie_gate"] == "e6_e3b"                                   # the bundle names none
+    s14.main(["--candidates", str(tmp_path / "c.parquet"), "--links", str(tmp_path / "l.parquet"),
+              "--bundle", str(tmp_path), "--out", str(tmp_path / "r.json"), "--ie-gate", "e6_e3b_c1_m1"])
+    assert json.loads((tmp_path / "r.json").read_text())["ie_gate"] == "e6_e3b_c1_m1"

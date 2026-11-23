@@ -414,9 +414,15 @@ under 3 letters ("go", "g6") are pre-selected by SQLite. Equal scores rank by re
    confidently; a word with a digit is never dropped, and the retry counts only if it resolves to
    a device (an unknown model name never turns into its company).
 
-**Report counts for devices are exact UDI links.** Reports without a UDI count under the product
-code and manufacturer; predicted links from the matching model will add to device counts through
-the summary tables.
+**Report counts for devices are exact UDI links plus matching-model links.** A report with a UDI
+counts for its device by UDI. A report without a usable UDI counts for a device when the matching
+model linked it (`entity_reports.link_method = 'model'`, `entity_counts.model_reports`). The
+answer then shows the split ("1,240 reports in FDA MAUDE (1,050 linked by UDI, 190 by the matching
+model)"), the footer says that model links can be wrong, and `counts_note` (shown on the website
+next to the total) gives the same split. Without model links the text is unchanged ("linked by
+UDI"). Reports without a UDI also count under the product code and manufacturer. The `counts`
+query selects `* EXCEPT (bucket, entity_type, entity_id)`, so it also works on summary tables
+built before `model_reports` existed.
 
 ```bash
 python -m device_search.build_index                                         # vigil_md_dev

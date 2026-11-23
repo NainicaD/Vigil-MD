@@ -85,9 +85,11 @@ SUMMARY_TASK = "build_summaries"
 SUMMARY_SCRIPT = "scripts/warehouse/build_summaries.py"
 
 
-def summary_args(project: str, if_changed: bool = True) -> list[str]:
-    """CLI args for the daily summary build (after every source's chain). Pure function."""
-    return [SUMMARY_SCRIPT, "--project", project] + (["--if-changed"] if if_changed else [])
+def summary_args(project: str, if_changed: bool = True, dataset: str | None = None) -> list[str]:
+    """CLI args for the summary build (after every source's chain, and after a load of model
+    links). Pure function."""
+    return ([SUMMARY_SCRIPT, "--project", project] + (["--dataset", dataset] if dataset else [])
+            + (["--if-changed"] if if_changed else []))
 
 
 LINKS_TASK = "build_links"
@@ -110,6 +112,16 @@ CHECK_WORK_DIR = f"{MATCHING_WORK_DIR}/check"            # vigil_md_matching_che
 WORK_DIRS = {"vigil_md_matching": MATCHING_WORK_DIR, "vigil_md_matching_check": CHECK_WORK_DIR}
 EVALUATE_SCRIPT = f"{MATCHING_DIR}/scripts/s14_udi_agreement.py"
 EXIT_NOTHING_TO_DO = 4                                   # s13: no candidate pairs
+MATCHING_DATASET = "vigil_md_prod"                       # dev runs: conf {"dataset": "vigil_md_dev"}
+# shortcut: remove after the next bundle release names e6_e3b_c1_m1 in meta.json (docs/EXPERIMENTS.md M1);
+# until then s12 applies the M1 gate on top of the published v1.1.0 bundle.
+MATCHING_IE_GATE = "e6_e3b_c1_m1"
+
+
+def model_version(bundle_meta: dict, ie_gate: str) -> str:
+    """What made a run's links: bundle version + gate. Stamped on the link table, compared by s13
+    --since auto (another version → a full rescore). Pure function."""
+    return f"{bundle_meta.get('version', 'unknown')}+{ie_gate}"
 
 
 def matching_files(run_id: str, work_dir: str = MATCHING_WORK_DIR) -> dict[str, str]:
@@ -121,35 +133,40 @@ def matching_files(run_id: str, work_dir: str = MATCHING_WORK_DIR) -> dict[str, 
 
 
 def candidates_args(project: str, dataset: str, full: bool, out: str, siblings: str,
-                    sample_per_10k: int | None = None) -> list[str]:
+                    sample_per_10k: int | None = None, model_version: str | None = None) -> list[str]:
     """CLI args for s13 (candidate pairs and their sibling keys). With sample_per_10k: the
-    udi_check sample instead of the pool. Pure function."""
+    udi_check sample instead of the pool. model_version: a link table made by another version
+    means a full rescore (s13 --since auto). Pure function."""
     args = [CANDIDATES_SCRIPT, "--project", project, "--dataset", dataset, "--out", out,
             "--siblings-out", siblings]
     if sample_per_10k is not None:
         return args + ["--mode", "udi_check", "--sample-per-10k", str(sample_per_10k)]
-    return args + (["--full"] if full else ["--since", "auto"])
+    return (args + (["--full"] if full else ["--since", "auto"])
+            + (["--model-version", model_version] if model_version else []))
 
 
-def evaluate_args(candidates: str, links: str, bundle: str, out: str) -> list[str]:
+def evaluate_args(candidates: str, links: str, bundle: str, out: str,
+                  ie_gate: str | None = None) -> list[str]:
     """CLI args for s14 (the UDI agreement check). Pure function."""
-    return [EVALUATE_SCRIPT, "--candidates", candidates, "--links", links, "--bundle", bundle,
-            "--out", out]
+    return ([EVALUATE_SCRIPT, "--candidates", candidates, "--links", links, "--bundle", bundle,
+             "--out", out] + (["--ie-gate", ie_gate] if ie_gate else []))
 
 
 def score_args(pairs: str, siblings: str, bundle: str, out: str, report: str, workers: int,
-               work_dir: str, baseline: str | None = None) -> list[str]:
+               work_dir: str, baseline: str | None = None, ie_gate: str | None = None) -> list[str]:
     """CLI args for s12 (score the pairs; checkpoints in work_dir, so a retry continues). Pure."""
     return ([SCORE_SCRIPT, "--pairs", pairs, "--siblings", siblings, "--bundle", bundle,
              "--out", out, "--report", report, "--workers", str(workers), "--work-dir", work_dir]
-            + (["--baseline", baseline] if baseline else []))
+            + (["--baseline", baseline] if baseline else [])
+            + (["--ie-gate", ie_gate] if ie_gate else []))
 
 
 def model_links_args(project: str, dataset: str, links: str, report: str, chunks: str, full: bool,
-                     run_id: str) -> list[str]:
+                     run_id: str, model_version: str | None = None) -> list[str]:
     """CLI args for load_model_links.py. Pure function."""
     return ([MODEL_LINKS_SCRIPT, "--project", project, "--dataset", dataset, "--links", links,
-             "--report", report, "--chunks", chunks, "--run-id", run_id] + (["--full"] if full else []))
+             "--report", report, "--chunks", chunks, "--run-id", run_id] + (["--full"] if full else [])
+            + (["--model-version", model_version] if model_version else []))
 
 
 def events_args(step: str, project: str, ingest_date: str) -> list[str]:

@@ -3,10 +3,15 @@
 Runs sql/scoring/01_candidates.sql on one dataset (default vigil_md_dev, the test extract):
 MAUDE rows with no usable UDI link that changed after --since, each with the GUDID model groups
 that the test-set candidate rules propose. Writes vigil_md_model.match_candidates_<dataset>
-(the only dataset this folder writes to), then downloads it with the row-listing API (free).
+(the only dataset this folder writes to), then streams it into --out batch by batch with the
+BigQuery Storage Read API (memory: one batch; prod has ~37 M pairs).
 
 --since auto (default): MAX(built_at) of <dataset>.link_maude_gudid_model, the last load of model
 links. No such table: every row. --full: every row (backfill, new model version).
+--model-version (bundle version + gate): with --since auto, a link table whose label
+model_version differs (written by load_model_links.py) means every row, so links made by two
+versions never mix. A run of every pool row writes <out folder>/full.flag; the DAG then gives
+the load step --full.
 
 --mode udi_check: instead of the pool, a fixed sample (--sample-per-10k) of rows that HAVE an exact
 UDI link, with true_group_key, for the weekly agreement check (s14_udi_agreement.py). Its table is
@@ -95,17 +100,55 @@ def query_params(since, mode: str = "pool", sample_per_10k: int = 100):
             + [bigquery.ScalarQueryParameter(k, "INT64", v) for k, v in CAPS.items()])
 
 
-def last_load(client, project: str, dataset: str):
-    """When model links were last loaded into this dataset, or None (never: score every row)."""
+def model_label(model_version: str) -> str:
+    """A BigQuery label value (lowercase letters, digits, - and _; at most 63 characters).
+    Same rule as Data-Pipeline load_model_links.model_label: change both together."""
+    return "".join(c if c.isalnum() or c in "-_" else "-" for c in model_version.lower())[:63]
+
+
+def last_load(client, project: str, dataset: str, model_version: str | None = None):
+    """(since, reason). since: when model links were last loaded into this dataset, or None to
+    score every row: no link table yet, or its links were made by another bundle/gate (the table
+    label model_version, written by load_model_links.py), so old and new links never mix."""
     from google.api_core.exceptions import NotFound
+    table = f"{project}.{dataset}.{LINK_TABLE}"
     try:
-        rows = list(client.query(f"SELECT MAX(built_at) AS t FROM `{project}.{dataset}.{LINK_TABLE}`").result())
+        labels = client.get_table(table).labels or {}
     except NotFound:
-        return None
-    return rows[0]["t"] if rows else None
+        return None, "no model links yet"
+    if model_version and labels.get("model_version") != model_label(model_version):
+        return None, (f"links were made by {labels.get('model_version') or 'an unknown version'}, "
+                      f"this run uses {model_label(model_version)}")
+    rows = list(client.query(f"SELECT MAX(built_at) AS t FROM `{table}`").result())
+    return (rows[0]["t"] if rows else None), "changed rows only"
 
 
-def main(argv=None, client=None) -> int:
+def download(client, table: str, out: Path, bqstorage_client=None) -> tuple[int, int | None]:
+    """Stream the candidate table into a parquet file batch by batch (BigQuery Storage Read API,
+    about $1.1 per TiB): memory stays at one batch, whatever the number of pairs (prod ~37 M).
+    Returns (pairs, meta_n_pool_rows)."""
+    import pyarrow.parquet as pq
+    if bqstorage_client is None:
+        from google.cloud import bigquery_storage
+        bqstorage_client = bigquery_storage.BigQueryReadClient()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    writer, n, pool = None, 0, None
+    try:
+        for batch in client.list_rows(table).to_arrow_iterable(bqstorage_client=bqstorage_client):
+            if batch.num_rows == 0:
+                continue
+            if writer is None:
+                writer = pq.ParquetWriter(out, batch.schema)
+                pool = int(batch.column(batch.schema.get_field_index("meta_n_pool_rows"))[0].as_py())
+            writer.write_batch(batch)
+            n += batch.num_rows
+    finally:
+        if writer is not None:
+            writer.close()
+    return n, pool
+
+
+def main(argv=None, client=None, bqstorage_client=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--project", required=True)
     ap.add_argument("--dataset", default="vigil_md_dev", help="where maude and gudid are read")
@@ -118,6 +161,9 @@ def main(argv=None, client=None) -> int:
                     help="pool: rows with no usable UDI link; udi_check: a sample of rows with one")
     ap.add_argument("--sample-per-10k", type=int, default=100,
                     help="udi_check: rows sampled per 10,000 UDI-linked rows (100 = 1%%)")
+    ap.add_argument("--model-version",
+                    help="bundle version + gate (e.g. v1.1.0+e6_e3b_c1_m1): with --since auto, a "
+                         "link table made by another version means a full run")
     ap.add_argument("--max-gb", type=float, default=10.0)
     ap.add_argument("--print-only", action="store_true", help="print the SQL; no GCP call")
     ap.add_argument("--estimate-only", action="store_true", help="dry run only (free)")
@@ -141,12 +187,12 @@ def main(argv=None, client=None) -> int:
     from google.cloud import bigquery
 
     if a.full or a.mode == "udi_check":       # the check scores its whole fixed sample every time
-        since = None
+        since, reason = None, "--full" if a.full else "udi_check sample"
     elif a.since == "auto":
-        since = last_load(client, a.project, a.dataset)
+        since, reason = last_load(client, a.project, a.dataset, a.model_version)
     else:
-        since = dt.datetime.fromisoformat(a.since)
-    print(f"dataset {a.dataset}; MAUDE rows changed after: {since or 'any time (full)'}")
+        since, reason = dt.datetime.fromisoformat(a.since), "--since"
+    print(f"dataset {a.dataset}; MAUDE rows changed after: {since or 'any time (full)'} ({reason})")
 
     max_bytes = int(a.max_gb * 1e9)
     params = query_params(since, a.mode, a.sample_per_10k)
@@ -165,15 +211,18 @@ def main(argv=None, client=None) -> int:
     job.result()
     print(f"billed {(job.total_bytes_billed or 0) / 1e9:.2f} GB -> {table}")
 
-    # create_bqstorage_client=False keeps this on the free tabledata.list path (as s03)
-    df = client.list_rows(table).to_dataframe(create_bqstorage_client=False)
-    if df.empty:
+    if not client.get_table(table).num_rows:            # table metadata: no cost
         print("no candidate pairs: nothing to score")
         return EXIT_NONE
-    a.out.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(a.out, index=False)
-    print(f"{len(df):,} pairs for {df['maude_id'].nunique():,} MAUDE rows "
-          f"(pool: {int(df['meta_n_pool_rows'].iloc[0]):,} rows) -> {a.out}")
+    n_pairs, pool = download(client, table, a.out, bqstorage_client)
+    print(f"{n_pairs:,} pairs (pool: {pool:,} MAUDE rows) -> {a.out}")
+    # The load step must replace every link (--full) when this run scored every row; the DAG
+    # reads this file. A rerun into the same folder that is not full removes an old flag.
+    flag = a.out.parent / "full.flag"
+    if since is None and a.mode == "pool":
+        flag.write_text(reason + "\n")
+    elif flag.exists():
+        flag.unlink()
 
     sib_out = a.siblings_out or a.out.with_suffix(".siblings.csv")
     sib_est = int(client.query(sib_sql, job_config=bigquery.QueryJobConfig(

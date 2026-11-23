@@ -296,6 +296,12 @@ services:
         echo "Files in shared volumes:"
         echo
         ls -la /opt/airflow/{logs,dags,plugins,config}
+        echo
+        # The DAGs' pools (Data-Pipeline/dags/vigil_checks.py). Without them a task in the pool
+        # stays "scheduled" with no error. "pools set" creates or updates: safe on every start.
+        echo "Creating the Vigil MD pools"
+        /entrypoint airflow pools set vigil_warehouse 1 "BigQuery writers"
+        /entrypoint airflow pools set vigil_upload 1 "GCS uploads (unzip)"
 
     # yamllint enable rule:line-length
     environment:

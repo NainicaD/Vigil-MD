@@ -33,8 +33,8 @@ from airflow.task.trigger_rule import TriggerRule
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    CHECK_WORK_DIR, EXIT_NOTHING_TO_DO, MATCHING_BUNDLE, READ_ONLY_POOL, WAREHOUSE_POOL,
-    candidates_args, evaluate_args, matching_files, score_args)
+    CHECK_WORK_DIR, EXIT_NOTHING_TO_DO, MATCHING_BUNDLE, MATCHING_DATASET, MATCHING_IE_GATE,
+    READ_ONLY_POOL, WAREHOUSE_POOL, candidates_args, evaluate_args, matching_files, score_args)
 from vigil_helpers import (  # noqa: E402
     alert_on_failure, mark_run_failed, matching_task_failed, matching_task_retry, run_script,
     send_to_elk)
@@ -54,7 +54,8 @@ default_args = {
 def _params(context) -> dict:
     p = context["params"]
     return {"dataset": p["dataset"], "sample_per_10k": int(p["sample_per_10k"]),
-            "bundle": p["bundle"], "files": matching_files(context["run_id"], CHECK_WORK_DIR)}
+            "bundle": p["bundle"], "ie_gate": p["ie_gate"] or None,
+            "files": matching_files(context["run_id"], CHECK_WORK_DIR)}
 
 
 def build_candidates(**context):
@@ -74,13 +75,13 @@ def score_pairs(**context):
     p = _params(context)
     f = p["files"]
     run_script(*score_args(f["candidates"], f["siblings"], p["bundle"], f["links"], f["report"],
-                           1, f["dir"]))
+                           1, f["dir"], ie_gate=p["ie_gate"]))
 
 
 def evaluate(**context):
     p = _params(context)
     f = p["files"]
-    run_script(*evaluate_args(f["candidates"], f["links"], p["bundle"], f["check_report"]))
+    run_script(*evaluate_args(f["candidates"], f["links"], p["bundle"], f["check_report"], p["ie_gate"]))
 
 
 def send_report(**context):
@@ -100,12 +101,14 @@ with DAG(
     catchup=False,
     max_active_runs=1,
     params={
-        "dataset":        Param("vigil_md_dev", type="string",
-                                description="vigil_md_dev (test extract) or vigil_md_prod"),
+        "dataset":        Param(MATCHING_DATASET, type="string",
+                                description="vigil_md_prod, or vigil_md_dev (test extract)"),
         "sample_per_10k": Param(100, type="integer", minimum=1, maximum=10000,
                                 description="UDI-linked MAUDE rows sampled per 10,000 (100 = 1%)"),
         "bundle":         Param(MATCHING_BUNDLE, type="string",
                                 description="released bundle folder, relative to Data-Pipeline/"),
+        "ie_gate":        Param(MATCHING_IE_GATE, type="string",
+                                description="IE gate applied on top of the bundle; empty = the bundle's own"),
     },
     tags=["vigil-md", "matching", "model", "monitoring"],
 ) as dag:
