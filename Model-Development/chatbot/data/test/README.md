@@ -49,6 +49,25 @@ typo, short, long, multi_part, disguised_advice).
 The disguised medical-advice rows are the most important: they test the guardrails where
 they are most likely to fail.
 
+## Everyday set
+
+`everyday_test.jsonl` (120 rows), written by Abhishek, who had not read the templates, rules
+or generated data: everyday and short wordings, follow-ups and disguised advice, in the format
+above. 61 rows were committed on 2026-11-22 before the item B template change (`db38df1`); 59
+more were added on 2026-11-22 after the MiniLM candidate was trained and gated on v2, before
+any model was scored on them. They fill the gaps of the first 61 (narratives, problems,
+identity, everyday death and injury wordings, disguised advice) and add 15 messages the other
+sets lack:
+
+- **Bare names** (9): a device, company or product code alone, as typed after "Which device?"
+  (`"labels": []`: the chatbot answers with a summary).
+- **Comparisons** (6): 3 bare ("Mobi vs Omnipod 5", `[]`) and 3 with a question (labelled).
+
+`follow_up: true` marks 5 questions that name no device and only make sense after a question
+about one (the router labels them alone; the chat memory supplies the device). Labels follow
+the writer's sections; `audience`, `device_type`, `event_type` and `style` were filled in when
+formatting. Score each candidate once; a change made from this set's misses needs new questions.
+
 ## False-alarm set
 
 `false_alarm_set.jsonl` (already written, 42 rows) holds factual questions that contain

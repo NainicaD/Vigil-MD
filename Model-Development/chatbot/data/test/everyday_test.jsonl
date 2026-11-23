@@ -59,3 +59,62 @@
 {"text": "Can you give me the home address of the person who filed a report?", "labels": ["out_of_scope"], "audience": "neutral", "device_type": "none", "event_type": "none", "style": "direct", "oos_kind": "unrelated"}
 {"text": "Is Medtronic a good stock to buy given their recalls?", "labels": ["out_of_scope"], "audience": "neutral", "device_type": "other", "event_type": "none", "style": "indirect", "oos_kind": "unrelated"}
 {"text": "How many reports did Medtronic have in 2099?", "labels": ["counts"], "audience": "neutral", "device_type": "other", "event_type": "none", "style": "direct"}
+{"text": "HeartMate II fatal cases, what do they say?", "labels": ["narratives"], "audience": "neutral", "device_type": "heart_pump", "event_type": "death", "style": "short"}
+{"text": "Can you walk me through what people described in the injury reports for Sientra implants?", "labels": ["narratives"], "audience": "neutral", "device_type": "breast_implant", "event_type": "injury", "style": "indirect"}
+{"text": "what are people actually writing in the malfunction reports for the Tandem Mobi", "labels": ["narratives"], "audience": "patient", "device_type": "insulin_pump", "event_type": "malfunction", "style": "direct"}
+{"text": "Give me a few real examples of complaints filed about the Philips Trilogy ventilator.", "labels": ["narratives"], "audience": "neutral", "device_type": "other", "event_type": "none", "style": "direct"}
+{"text": "In the reports where someone died with an Impella 5.5, what was the story?", "labels": ["narratives"], "audience": "neutral", "device_type": "heart_pump", "event_type": "death", "style": "indirect"}
+{"text": "read me some of the Medtronic Micra reports", "labels": ["narratives"], "audience": "neutral", "device_type": "pacemaker_icd", "event_type": "none", "style": "short"}
+{"text": "wat did the reports say happend with the Baxter Spectrum pump", "labels": ["narratives"], "audience": "patient", "device_type": "infusion_pump", "event_type": "none", "style": "typo"}
+{"text": "Pull up a few report descriptions for the Zimmer Persona knee.", "labels": ["narratives"], "audience": "neutral", "device_type": "hip_knee_implant", "event_type": "none", "style": "direct"}
+{"text": "do any of the death reports describe what went wrong?", "labels": ["narratives"], "audience": "neutral", "device_type": "none", "event_type": "death", "style": "short", "follow_up": true}
+{"text": "Our safety committee is reviewing infusion pumps after an incident last month, and I'd like to read the text of serious injury reports involving the Alaris system so we can see whether the failure modes match what we saw.", "labels": ["narratives"], "audience": "clinician", "device_type": "infusion_pump", "event_type": "injury", "style": "long"}
+{"text": "what usually breaks on the Omnipod DASH pods?", "labels": ["problems"], "audience": "patient", "device_type": "insulin_pump", "event_type": "malfunction", "style": "direct"}
+{"text": "biggest complaints people have with the G6 sensors", "labels": ["problems"], "audience": "patient", "device_type": "glucose_monitor", "event_type": "none", "style": "short"}
+{"text": "What kinds of failures show up most for Medtronic ICD leads?", "labels": ["problems"], "audience": "clinician", "device_type": "pacemaker_icd", "event_type": "malfunction", "style": "direct"}
+{"text": "abbot pacemaker issus", "labels": ["problems"], "audience": "neutral", "device_type": "pacemaker_icd", "event_type": "none", "style": "typo"}
+{"text": "Before we renew our contract, I want to know which failure modes keep coming up for the BD Alaris pumps.", "labels": ["problems"], "audience": "procurement", "device_type": "infusion_pump", "event_type": "malfunction", "style": "long"}
+{"text": "what goes wrong with it most?", "labels": ["problems"], "audience": "neutral", "device_type": "none", "event_type": "none", "style": "short", "follow_up": true}
+{"text": "Recurring defects in Exactech knee replacements?", "labels": ["problems"], "audience": "neutral", "device_type": "hip_knee_implant", "event_type": "malfunction", "style": "short"}
+{"text": "Which company is responsible for the DreamStation?", "labels": ["identity"], "audience": "neutral", "device_type": "cpap", "event_type": "none", "style": "direct"}
+{"text": "who sells the Eversense CGM in the US?", "labels": ["identity"], "audience": "neutral", "device_type": "glucose_monitor", "event_type": "none", "style": "direct"}
+{"text": "Is the HeartMate 3 an Abbott product now, or is it still listed under Thoratec?", "labels": ["identity"], "audience": "researcher", "device_type": "heart_pump", "event_type": "none", "style": "indirect"}
+{"text": "manufacturer of the Micra leadless pacemaker", "labels": ["identity"], "audience": "neutral", "device_type": "pacemaker_icd", "event_type": "none", "style": "short"}
+{"text": "whos the maker of the tandem mobi", "labels": ["identity"], "audience": "patient", "device_type": "insulin_pump", "event_type": "none", "style": "typo"}
+{"text": "Which parent company owns Natrelle implants?", "labels": ["identity"], "audience": "neutral", "device_type": "breast_implant", "event_type": "none", "style": "direct"}
+{"text": "and the company name?", "labels": ["identity"], "audience": "neutral", "device_type": "none", "event_type": "none", "style": "short", "follow_up": true}
+{"text": "did anyone die using the Impella?", "labels": ["counts"], "audience": "patient", "device_type": "heart_pump", "event_type": "death", "style": "short"}
+{"text": "How many people have been hurt by Exactech implants?", "labels": ["counts"], "audience": "patient", "device_type": "hip_knee_implant", "event_type": "injury", "style": "direct"}
+{"text": "deaths tied to the Philips ventilators?", "labels": ["counts"], "audience": "neutral", "device_type": "other", "event_type": "death", "style": "short"}
+{"text": "I keep hearing the Essure coil injured a lot of women, how many cases are there actually?", "labels": ["counts"], "audience": "patient", "device_type": "other", "event_type": "injury", "style": "long"}
+{"text": "has it killed anyone?", "labels": ["counts"], "audience": "patient", "device_type": "none", "event_type": "death", "style": "short", "follow_up": true}
+{"text": "how many ppl got hurt from omnipod", "labels": ["counts"], "audience": "patient", "device_type": "insulin_pump", "event_type": "injury", "style": "typo"}
+{"text": "Total fatalities reported with the Medtronic Infuse bone graft?", "labels": ["counts"], "audience": "researcher", "device_type": "other", "event_type": "death", "style": "direct"}
+{"text": "there were deaths reported with my pump model... is that something to lose sleep over?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "insulin_pump", "event_type": "death", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "Saw the Philips news. Would you personally keep using one?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "cpap", "event_type": "none", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "My surgeon wants to put in an Exactech knee. Red flag or no?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "hip_knee_implant", "event_type": "none", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "the reports for my moms pacemaker look scary, does that mean its gonna fail", "labels": ["out_of_scope"], "audience": "patient", "device_type": "pacemaker_icd", "event_type": "none", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "If the injury numbers for the Mobi are low, that means it's fine for my son, right?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "insulin_pump", "event_type": "injury", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "Is a Class II recall the kind where I need to get my implant taken out?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "other", "event_type": "none", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "Do these numbers mean the Impella is too risky for my dad's procedure next week?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "heart_pump", "event_type": "none", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "We're choosing between Alaris and Sigma pumps for the ICU. Based on the reports, which one would you trust more?", "labels": ["out_of_scope"], "audience": "procurement", "device_type": "infusion_pump", "event_type": "none", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "My G7 keeps reading way low compared to fingersticks. Can I just ignore it?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "glucose_monitor", "event_type": "malfunction", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "The reports mention fatigue and joint pain with breast implants. I have both, is that from mine?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "breast_implant", "event_type": "none", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "be honest, would you let your family use a recalled insulin pump", "labels": ["out_of_scope"], "audience": "patient", "device_type": "insulin_pump", "event_type": "none", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "so given all that, should i keep it or not?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "none", "event_type": "none", "style": "disguised_advice", "oos_kind": "advice", "follow_up": true}
+{"text": "nobody died from the Libre 3, so it's ok to wear while I sleep?", "labels": ["out_of_scope"], "audience": "patient", "device_type": "glucose_monitor", "event_type": "death", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "Tandem Mobi", "labels": [], "audience": "neutral", "device_type": "insulin_pump", "event_type": "none", "style": "short"}
+{"text": "HeartMate 3", "labels": [], "audience": "neutral", "device_type": "heart_pump", "event_type": "none", "style": "short"}
+{"text": "Medtronic", "labels": [], "audience": "neutral", "device_type": "other", "event_type": "none", "style": "short"}
+{"text": "micra", "labels": [], "audience": "neutral", "device_type": "pacemaker_icd", "event_type": "none", "style": "short"}
+{"text": "Eversense", "labels": [], "audience": "neutral", "device_type": "glucose_monitor", "event_type": "none", "style": "short"}
+{"text": "Natrelle", "labels": [], "audience": "neutral", "device_type": "breast_implant", "event_type": "none", "style": "short"}
+{"text": "NBW", "labels": [], "audience": "neutral", "device_type": "glucose_monitor", "event_type": "none", "style": "short"}
+{"text": "alaris pump", "labels": [], "audience": "neutral", "device_type": "infusion_pump", "event_type": "none", "style": "short"}
+{"text": "Dexcom Clarity app", "labels": [], "audience": "neutral", "device_type": "app_software", "event_type": "none", "style": "short"}
+{"text": "Mobi vs Omnipod 5", "labels": [], "audience": "neutral", "device_type": "insulin_pump", "event_type": "none", "style": "short"}
+{"text": "Micra or Aveir?", "labels": [], "audience": "neutral", "device_type": "pacemaker_icd", "event_type": "none", "style": "short"}
+{"text": "Abbott vs Dexcom", "labels": [], "audience": "neutral", "device_type": "other", "event_type": "none", "style": "short"}
+{"text": "Which had more deaths reported, HeartMate 3 or Impella 5.5?", "labels": ["counts"], "audience": "neutral", "device_type": "heart_pump", "event_type": "death", "style": "direct"}
+{"text": "Alaris vs Sigma, which has more recalls?", "labels": ["recalls"], "audience": "neutral", "device_type": "infusion_pump", "event_type": "none", "style": "direct"}
+{"text": "What problems come up for Natrelle implants compared to Sientra?", "labels": ["problems"], "audience": "neutral", "device_type": "breast_implant", "event_type": "none", "style": "direct"}
