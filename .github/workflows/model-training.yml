@@ -8,7 +8,10 @@
 #                BigQuery data, then the model gate (ci/gate.py: metric floors, no worse than the
 #                champion, bias gaps; a failure keeps the champion), uploads the models, MLflow data,
 #                scores and gate report as a workflow artifact, and on a push publishes the gated
-#                model to Artifact Registry (s11).
+#                model to Artifact Registry (s11). The retraining trigger in the Airflow DAGs
+#                (precision below 0.90 or score drift above 0.2) starts it by API with
+#                publish=true; then it publishes too. Every train run ends with a result e-mail
+#                (ci/notify.py).
 #
 # GCP access is keyless (Workload Identity Federation): no service-account key is stored in GitHub.
 # Pull requests never get it, so a fork cannot spend the team's query budget. One-time setup and
@@ -34,11 +37,27 @@ on:
         description: "Re-download the label set and re-run the s04 queries (ignores the cache)"
         type: boolean
         default: false
+      # The retraining trigger (Data-Pipeline/dags: decide_retrain, check_drift) starts this
+      # workflow with reason and publish=true; a run started by hand keeps publish=false.
+      reason:
+        description: "Why this run was started (shown in the run summary and the result e-mail)"
+        default: ""
+      publish:
+        description: "Publish the model if the gate passes (a run on push always does)"
+        type: boolean
+        default: false
+      package:
+        description: "Artifact Registry package (a test package keeps branch tests out of the real one)"
+        default: "matching-same-device"
+      semver:
+        description: "auto = newest version + 1 patch; the first version of a new package, e.g. 0.0.1"
+        default: "auto"
 
-# One training run per branch at a time; a newer push cancels the older run.
+# One training run per branch at a time; a newer push cancels the older push run. Runs started by
+# hand or by the retraining trigger have their own group and are never cancelled by a push.
 concurrency:
-  group: model-training-${{ github.ref }}
-  cancel-in-progress: true
+  group: model-training-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || 'push' }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
@@ -109,6 +128,10 @@ jobs:
       PROJECT: ${{ vars.GCP_PROJECT_ID }}
       TRIALS: ${{ github.event.inputs.trials || '10' }}
       REFRESH: ${{ github.event.inputs.refresh_data || 'false' }}
+      # inputs reach the scripts only as environment variables, never inside a run: line
+      REASON: ${{ github.event.inputs.reason || '' }}
+      PACKAGE: ${{ github.event.inputs.package || 'matching-same-device' }}
+      SEMVER: ${{ github.event.inputs.semver || 'auto' }}
       S04_ARGS: >-
         --table label_set_v2 --data data/label_set_v2.parquet --manifest labels/label_set_v2.manifest.json
         --out data/label_set_v2_fs2_features.parquet --siblings data/sibling_keys_v2.csv --feature-set fs2
@@ -121,6 +144,10 @@ jobs:
           cache-dependency-path: Model-Development/matching/requirements*.txt
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-ml.txt
+
+      - name: Why this run
+        if: env.REASON != ''
+        run: printf '**Started by the retraining trigger:** %s\n\n' "$REASON" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Authenticate to GCP (Workload Identity Federation)
         uses: google-github-actions/auth@v2
@@ -201,12 +228,31 @@ jobs:
             Model-Development/matching/data/label_set_v2_fs2_features.manifest.json
             Model-Development/matching/data/label_set_v2_fs2_features.tfidf.pkl
 
-      # Only after the gate passed (a failed step skips this), only on a push. s11 refuses again if
-      # gate.json did not pass or the tree has uncommitted files, and skips an existing version.
+      # Only after the gate passed (a failed step skips this), on a push or a run started with
+      # publish=true (the retraining trigger). s11 refuses again if gate.json did not pass or the
+      # tree has uncommitted files, and skips an existing version or the same decisions.
       - uses: google-github-actions/setup-gcloud@v2
-        if: success() && github.event_name == 'push'
+        if: success() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
       - name: Publish the gated model to Artifact Registry (s11)
-        if: success() && github.event_name == 'push'
+        id: publish
+        if: success() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
         run: |
-          python scripts/s11_package_final.py --exp none --semver auto --lineage ci --hand data/hand_features.csv
-          gcloud artifacts versions list --project vigil-md-1792696816 --location us-central1 --repository vigil-md-models --package matching-same-device --sort-by=~createTime --limit 5 | tee -a "$GITHUB_STEP_SUMMARY"
+          python scripts/s11_package_final.py --exp none --semver "$SEMVER" --package "$PACKAGE" --lineage ci --hand data/hand_features.csv | tee "$RUNNER_TEMP/publish.log"
+          gcloud artifacts versions list --project vigil-md-1792696816 --location us-central1 --repository vigil-md-models --package "$PACKAGE" --sort-by=~createTime --limit 5 | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The result e-mail (Model Deployment guidelines 5.5): published / champion kept / no change /
+      # failed. Needs the repository secrets SMTP_USER, SMTP_PASSWORD (a Gmail app password) and
+      # ALERT_EMAIL_TO; without them it is skipped. An e-mail problem never fails the run.
+      - name: E-mail the result
+        if: always()
+        continue-on-error: true
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+          PUBLISH_OUTCOME: ${{ steps.publish.outcome }}
+          PUBLISH_REQUESTED: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REF_NAME: ${{ github.ref_name }}
+        run: python ci/notify.py --publish-log "$RUNNER_TEMP/publish.log" --gate-json data/scores/gate.json --summary "$GITHUB_STEP_SUMMARY"

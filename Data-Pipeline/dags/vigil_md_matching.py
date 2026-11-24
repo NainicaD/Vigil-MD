@@ -23,7 +23,12 @@ Tasks:
                          for a dataset in vigil_checks.MODEL_LINK_SUMMARY_DATASETS (vigil_md_dev;
                          vigil_md_prod once the chatbot that labels model links is deployed);
                          for other datasets it changes nothing.
-  candidates, score, load_links and build_summaries send "matching_task_failed" /
+  4b. check_drift      — after score, next to load_links (it never holds up the load): score_psi
+                         above 0.2 (the Kibana drift level) starts the GitHub workflow
+                         model-training.yml on retrain_ref, at most once per 7 days, with an
+                         e-mail and an ELK record "matching_retrain_triggered" (as in
+                         vigil_md_matching_check). No retry: a retry could start it twice.
+  candidates, score, load_links, build_summaries and check_drift send "matching_task_failed" /
   "matching_task_retry" to ELK when they fail or retry (vigil_helpers callbacks).
   5. alert_on_failure  — triggered only if any task fails
   6. mark_run_failed   — like the alert, then fails, so the run is "failed"
@@ -38,8 +43,10 @@ Before the first run (docs/MATCHING_RUNBOOK.md):
   - add xgboost and scikit-learn to _PIP_ADDITIONAL_REQUIREMENTS in .env (see .env.example)
 
 Params: dataset, full (backfill / new model version), workers, bundle, ie_gate (the IE gate s12
-applies; default M1 on top of v1.1.0 until a bundle with M1 is released), baseline (an earlier
-report.json: adds score_psi to this run's report).
+applies; default M1 on top of v1.1.0 until a bundle with M1 is released), baseline (the reference
+report.json for drift, default vigil_checks.MATCHING_BASELINE: adds score_psi to this run's report;
+s12 skips it for fewer than 1,000 pairs or another bundle or gate), retrain_ref (the branch a
+triggered retraining run trains from).
 """
 from __future__ import annotations
 
@@ -57,11 +64,12 @@ from airflow.task.trigger_rule import TriggerRule
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    EXIT_NOTHING_TO_DO, MATCHING_BUNDLE, MATCHING_DATASET, MATCHING_IE_GATE, READ_ONLY_POOL,
-    WAREHOUSE_POOL, candidates_args, matching_files, model_links_args, model_version, score_args,
-    summary_args)
+    EXIT_NOTHING_TO_DO, MATCHING_BASELINE, MATCHING_BUNDLE, MATCHING_DATASET, MATCHING_IE_GATE,
+    READ_ONLY_POOL, RETRAIN_REF, WAREHOUSE_POOL, candidates_args, matching_files, model_links_args,
+    model_version, retrain_reason, score_args, summary_args)
 from vigil_helpers import (  # noqa: E402
-    REPO, alert_on_failure, mark_run_failed, matching_task_failed, matching_task_retry, run_script)
+    REPO, alert_on_failure, mark_run_failed, matching_task_failed, matching_task_retry,
+    retrain_if_needed, run_script)
 
 log = logging.getLogger(__name__)
 
@@ -108,8 +116,21 @@ def build_candidates(**context):
 def score_pairs(**context):
     p = _params(context)
     f = p["files"]
+    baseline = p["baseline"]
+    if baseline and not (REPO / baseline).exists():
+        log.warning("no drift baseline at %s: scoring without score_psi", baseline)
+        baseline = None
     run_script(*score_args(f["candidates"], f["siblings"], p["bundle"], f["links"], f["report"],
-                           p["workers"], f["dir"], p["baseline"], p["ie_gate"]))
+                           p["workers"], f["dir"], baseline, p["ie_gate"]))
+
+
+def check_drift(**context):
+    p = _params(context)
+    report = json.loads(Path(p["files"]["report"]).read_text())
+    psi = report.get("score_psi")           # None or missing: no baseline, or s12 skipped it
+    return retrain_if_needed(retrain_reason(psi=psi), context, context["params"]["retrain_ref"],
+                             {"score_psi": psi, "score_psi_skipped": report.get("score_psi_skipped"),
+                              "n_pairs": report.get("n_pairs"), "dataset": p["dataset"]})
 
 
 def load_links(**context):
@@ -145,8 +166,11 @@ with DAG(
                           description="released bundle folder, relative to Data-Pipeline/"),
         "ie_gate":  Param(MATCHING_IE_GATE, type="string",
                           description="IE gate applied on top of the bundle; empty = the bundle's own"),
-        "baseline": Param("", type="string",
-                          description="an earlier report.json for score_psi; empty = none"),
+        "baseline": Param(MATCHING_BASELINE, type="string",
+                          description="reference report.json for score_psi, relative to Data-Pipeline/; "
+                                      "empty = none (a missing file also means none)"),
+        "retrain_ref": Param(RETRAIN_REF, type="string",
+                             description="the branch a triggered model-training run trains from"),
     },
     tags=["vigil-md", "matching", "model"],
 ) as dag:
@@ -159,6 +183,8 @@ with DAG(
                            **ELK_CALLBACKS)
     summaries = PythonOperator(task_id="build_summaries", python_callable=build_summaries,
                                pool=WAREHOUSE_POOL, **ELK_CALLBACKS)
+    drift = PythonOperator(task_id="check_drift", python_callable=check_drift, pool=READ_ONLY_POOL,
+                           retries=0, **ELK_CALLBACKS)
 
     alert = PythonOperator(task_id="alert_on_failure", python_callable=alert_on_failure,
                            trigger_rule=TriggerRule.ONE_FAILED)
@@ -166,5 +192,6 @@ with DAG(
                                  trigger_rule=TriggerRule.ONE_FAILED)
 
     candidates >> score >> links >> summaries
-    [candidates, score, links, summaries] >> alert
-    [candidates, score, links, summaries] >> mark_failed
+    score >> drift
+    [candidates, score, links, summaries, drift] >> alert
+    [candidates, score, links, summaries, drift] >> mark_failed

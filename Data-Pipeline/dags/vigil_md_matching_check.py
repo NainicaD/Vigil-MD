@@ -13,7 +13,12 @@ Tasks:
   3. evaluate          — s14_udi_agreement.py → check_report.json: precision, recall,
                          candidate recall, model recall.
   4. send_report       — one ELK record "matching_udi_agreement".
-  5. alert_on_failure, mark_run_failed — as in vigil_md_matching.
+  5. decide_retrain    — precision below retrain_precision (default 0.90, the Kibana alert level)
+                         starts the GitHub workflow model-training.yml on retrain_ref (it retrains
+                         and publishes only a model that passes the gate), at most once per 7 days;
+                         e-mail and ELK record "matching_retrain_triggered". No retry: a retry
+                         could start the workflow twice.
+  6. alert_on_failure, mark_run_failed — as in vigil_md_matching.
 
 Files between tasks: CHECK_WORK_DIR/<run_id>/. candidates, score and evaluate send
 "matching_task_failed" / "matching_task_retry" to ELK.
@@ -34,10 +39,11 @@ from airflow.task.trigger_rule import TriggerRule
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
     CHECK_WORK_DIR, EXIT_NOTHING_TO_DO, MATCHING_BUNDLE, MATCHING_DATASET, MATCHING_IE_GATE,
-    READ_ONLY_POOL, WAREHOUSE_POOL, candidates_args, evaluate_args, matching_files, score_args)
+    READ_ONLY_POOL, RETRAIN_PRECISION, RETRAIN_REF, WAREHOUSE_POOL, candidates_args, evaluate_args,
+    matching_files, retrain_reason, score_args)
 from vigil_helpers import (  # noqa: E402
-    alert_on_failure, mark_run_failed, matching_task_failed, matching_task_retry, run_script,
-    send_to_elk)
+    alert_on_failure, mark_run_failed, matching_task_failed, matching_task_retry, retrain_if_needed,
+    run_script, send_to_elk)
 
 PROJECT = "vigil-md-1792696816"
 ELK_CALLBACKS = {"on_failure_callback": matching_task_failed,
@@ -92,6 +98,16 @@ def send_report(**context):
                                            "run_id": context["run_id"]})
 
 
+def decide_retrain(**context):
+    p = _params(context)
+    report = json.loads(Path(p["files"]["check_report"]).read_text())
+    floor = float(context["params"]["retrain_precision"])
+    reason = retrain_reason(precision=report.get("precision"), precision_floor=floor)
+    return retrain_if_needed(reason, context, context["params"]["retrain_ref"],
+                             {"precision": report.get("precision"), "precision_floor": floor,
+                              "dataset": p["dataset"]})
+
+
 with DAG(
     dag_id="vigil_md_matching_check",
     description="Vigil MD — weekly UDI agreement check of the matching model",
@@ -112,6 +128,10 @@ with DAG(
                                 description="released bundle folder, relative to Data-Pipeline/"),
         "ie_gate":        Param(MATCHING_IE_GATE, type="string",
                                 description="IE gate applied on top of the bundle; empty = the bundle's own"),
+        "retrain_precision": Param(RETRAIN_PRECISION, type="number", minimum=0, maximum=1,
+                                   description="retrain when precision is below this (0.99 = a demo trigger)"),
+        "retrain_ref":    Param(RETRAIN_REF, type="string",
+                                description="the branch the triggered model-training run trains from"),
     },
     tags=["vigil-md", "matching", "model", "monitoring"],
 ) as dag:
@@ -123,12 +143,14 @@ with DAG(
     check = PythonOperator(task_id="evaluate", python_callable=evaluate, pool=READ_ONLY_POOL,
                            **ELK_CALLBACKS)
     send = PythonOperator(task_id="send_report", python_callable=send_report)
+    retrain = PythonOperator(task_id="decide_retrain", python_callable=decide_retrain, retries=0,
+                             **ELK_CALLBACKS)
 
     alert = PythonOperator(task_id="alert_on_failure", python_callable=alert_on_failure,
                            trigger_rule=TriggerRule.ONE_FAILED)
     mark_failed = PythonOperator(task_id="mark_run_failed", python_callable=mark_run_failed,
                                  trigger_rule=TriggerRule.ONE_FAILED)
 
-    candidates >> score >> check >> send
-    [candidates, score, check, send] >> alert
-    [candidates, score, check, send] >> mark_failed
+    candidates >> score >> check >> send >> retrain
+    [candidates, score, check, send, retrain] >> alert
+    [candidates, score, check, send, retrain] >> mark_failed

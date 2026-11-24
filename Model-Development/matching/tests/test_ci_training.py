@@ -226,9 +226,47 @@ def test_gate_blocks_publishing(wf):
     assert gate < publish, names
     assert "--report-only" not in steps[gate]["run"]        # a worse model fails the job
     assert "if" not in steps[gate]                          # the gate always runs after training
-    assert steps[publish]["if"] == "success() && github.event_name == 'push'"
-    assert "--lineage ci" in steps[publish]["run"] and "--semver auto" in steps[publish]["run"]
+    assert steps[publish]["if"] == ("success() && (github.event_name == 'push' || "
+                                    "(github.event_name == 'workflow_dispatch' && inputs.publish))")
+    assert "--lineage ci" in steps[publish]["run"] and '--semver "$SEMVER"' in steps[publish]["run"]
+    assert '--package "$PACKAGE"' in steps[publish]["run"]
     assert "--print-only" not in steps[publish]["run"]
+    env = wf["jobs"]["train"]["env"]
+    assert env["SEMVER"] == "${{ github.event.inputs.semver || 'auto' }}"          # a push: auto
+    assert env["PACKAGE"] == "${{ github.event.inputs.package || 'matching-same-device' }}"
+
+
+def test_dispatch_inputs_for_the_retraining_trigger(wf):
+    inputs = wf["on"]["workflow_dispatch"]["inputs"]
+    assert inputs["publish"]["type"] == "boolean" and inputs["publish"]["default"] is False   # by hand: as before
+    assert inputs["reason"]["default"] == "" and inputs["package"]["default"] == "matching-same-device"
+    assert inputs["semver"]["default"] == "auto"
+    assert set(inputs) == {"trials", "refresh_data", "reason", "publish", "package", "semver"}
+
+
+def test_free_text_inputs_never_reach_a_run_line(wf):
+    """A crafted reason must not run as shell code: inputs go through env only."""
+    for job in wf["jobs"].values():
+        for s in job["steps"]:
+            assert "inputs." not in s.get("run", ""), s.get("name")
+    assert wf["jobs"]["train"]["env"]["REASON"] == "${{ github.event.inputs.reason || '' }}"
+
+
+def test_a_push_does_not_cancel_a_triggered_run(wf):
+    c = wf["concurrency"]
+    assert "github.event_name == 'workflow_dispatch' && 'dispatch' || 'push'" in c["group"]
+    assert c["cancel-in-progress"] == "${{ github.event_name != 'workflow_dispatch' }}"
+
+
+def test_the_result_is_mailed_after_every_train_run(wf):
+    steps = wf["jobs"]["train"]["steps"]
+    mail = steps[-1]
+    assert "ci/notify.py" in mail["run"] and mail["if"] == "always()" and mail["continue-on-error"] is True
+    assert mail["env"]["SMTP_PASSWORD"] == "${{ secrets.SMTP_PASSWORD }}"
+    assert mail["env"]["GATE_OUTCOME"] == "${{ steps.gate.outcome }}"
+    assert mail["env"]["PUBLISH_OUTCOME"] == "${{ steps.publish.outcome }}"
+    publish = next(s for s in steps if "s11_package_final" in s.get("run", ""))
+    assert publish["id"] == "publish" and '"$RUNNER_TEMP/publish.log"' in publish["run"]   # outside the repo: s11's clean-tree check
 
 
 def test_smoke_runs_the_gate_report_only(wf):

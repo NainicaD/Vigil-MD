@@ -198,6 +198,21 @@ def best_link_per_device(links: pd.DataFrame) -> pd.DataFrame:
 
 
 PSI_WARN = 0.2     # common rule of thumb: above 0.2 the score distribution moved a lot
+# Below this many pairs chance alone moves the PSI. Runs drawn from the prod backfill's own score
+# distribution (reports/score_baseline.json), worst of 1,000 simulated runs: 100 pairs 0.43,
+# 300 pairs 0.18, 1,000 pairs 0.03 (2026-11-24).
+PSI_MIN_PAIRS = 1000
+
+
+def psi_skip_reason(report: dict, baseline: dict) -> str | None:
+    """Why score_psi is not computed for this run against this baseline, or None. A run that is too
+    small is noise, and another bundle or gate scores differently (that is not drift). Pure."""
+    if report["n_pairs"] < PSI_MIN_PAIRS:
+        return f"{report['n_pairs']} pairs < {PSI_MIN_PAIRS}: too few for a stable PSI"
+    run, base = ((r.get("bundle_version"), r.get("ie_gate")) for r in (report, baseline))
+    if run != base:
+        return f"baseline is from {'+'.join(map(str, base))}, this run {'+'.join(map(str, run))}"
+    return None
 
 
 def psi(hist: list[int], baseline: list[int], eps: float = 1e-4) -> float:
@@ -250,7 +265,10 @@ class Totals:
         if pool is not None:      # from s13: MAUDE rows in the pool, with or without candidates
             report["n_pool_rows"] = pool
         if baseline is not None:
-            report["score_psi"] = psi(report["score_hist"], baseline["score_hist"])
+            skip = psi_skip_reason(report, baseline)
+            report["score_psi"] = None if skip else psi(report["score_hist"], baseline["score_hist"])
+            if skip:
+                report["score_psi_skipped"] = skip
         if stats:
             new = [s for s in stats if not s["resumed"]]
             busy = sum(s["seconds"] for s in new)
@@ -379,7 +397,9 @@ def main(argv=None) -> int:
         report = totals.report(meta, gate, time.monotonic() - started, pool, baseline, stats)
         a.report.parent.mkdir(parents=True, exist_ok=True)
         a.report.write_text(json.dumps(report, indent=2))
-        if report.get("score_psi", 0) > PSI_WARN:
+        if report.get("score_psi_skipped"):
+            print(f"score_psi not computed: {report['score_psi_skipped']}")
+        if (report.get("score_psi") or 0) > PSI_WARN:
             print(f"WARNING: score_psi {report['score_psi']:.3f} > {PSI_WARN}: the score "
                   f"distribution moved against {a.baseline}", file=sys.stderr)
     return 0

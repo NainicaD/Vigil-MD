@@ -10,10 +10,16 @@ code runs, and (on the shared branches) retrains the models on the real BigQuery
 |---|---|---|---|---|
 | `test` | every pull request and push that touches `Model-Development/` | no | `python -m pytest`: the mocked tests | ~2 min |
 | `smoke-train` | same | no | `ci/make_ci_feature_table.py` makes a synthetic feature table, `s05` builds the hand-sheet features from the committed sheet, `s06` trains all four models on the synthetic table (1 trial, no MLflow), `ci/check_training_outputs.py` checks the outputs, `s08` scores the hand sheet, `ci/gate.py --report-only` proves the gate runs (never fails here) | ~3 min |
-| `train` | push to `main` (a merged PR), or **Actions → model-training → Run workflow** | yes | `s03 → s04 → s05 → s06 → s08` on the real label set, checks the outputs, runs the **model gate**, uploads the results; on a push, if the gate passed, **publishes** the model to Artifact Registry (`s11`) | 20-60 min |
+| `train` | push to `main` (a merged PR), **Actions → model-training → Run workflow**, or the retraining trigger of the Airflow DAGs (by API) | yes | `s03 → s04 → s05 → s06 → s08` on the real label set, checks the outputs, runs the **model gate**, uploads the results; on a push or a run with `publish=true`, if the gate passed, **publishes** the model to Artifact Registry (`s11`); then e-mails the result (`ci/notify.py`) | 20-60 min |
 
 - `train` needs `test` and `smoke-train` to pass first.
-- A newer push to the same branch cancels the older run (`concurrency`).
+- A newer push to the same branch cancels the older push run (`concurrency`). Runs started by hand or by the trigger have their own group and are not cancelled by a push.
+
+**Inputs of a run by hand or by the trigger:** `trials`, `refresh_data`, `reason` (why: shown in the run summary and the e-mail), `publish` (default false: train and gate only), `package` (default `matching-same-device`; give a test package such as `matching-same-device-test` on a branch, so a test never becomes a real release), `semver` (default `auto` = newest + 1 patch; the first version of a new package needs one, e.g. `0.0.1`). The retraining trigger (`Data-Pipeline/docs/MATCHING_RUNBOOK.md`, section 8b) sends `reason` and `publish=true`.
+
+**Result e-mail:** the last step sends one e-mail per train run: published (with the version), champion kept (the gate failed, with the failed checks), no change (`s11` skipped the same decisions or an existing version), not published (a run without `publish`), or failed. It needs three repository secrets (Settings → Secrets and variables → Actions → **Secrets**): `SMTP_USER`, `SMTP_PASSWORD` (a Gmail app password) and `ALERT_EMAIL_TO`. Without them the result is only written to the run summary. An e-mail problem never fails the run.
+
+**What a retrain can change today:** the label set (`label_set_v2`) is fixed and training uses fixed seeds, so a retrain on the same labels gives the same model and `s11` reports "no change". A new model needs new or corrected labels.
 - `train` is skipped, not failed, until the GCP setup in section 3 is done.
 - The smoke run's numbers mean nothing: the data is synthetic. It only proves the code runs end to end.
 
@@ -116,7 +122,7 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" --project "$PROJECT_ID"
 
 **Running it.** GitHub shows **Run workflow** only for workflows on the default branch (`main`).
 The file is on `main`, so manual runs (with the `trials` and `refresh_data` inputs) are available;
-a manual run trains and gates but does not publish. Training also runs on a push to `main` that touches
+a manual run trains and gates, and publishes only with `publish=true`. Training also runs on a push to `main` that touches
 `Model-Development/matching/` (a merged pull request), and a push run publishes the next patch version
 when the gate passes.
 

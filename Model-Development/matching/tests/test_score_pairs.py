@@ -89,7 +89,8 @@ def test_report_has_decisions_scores_and_bundle(files):
     assert r["cutoff"] == 0.5 and r["bundle_version"] == "unknown" and "score_psi" not in r
 
 
-def test_psi_against_itself_is_zero_and_a_shift_warns_without_failing(files, capsys):
+def test_psi_against_itself_is_zero_and_a_shift_warns_without_failing(files, capsys, monkeypatch):
+    monkeypatch.setattr(s12, "PSI_MIN_PAIRS", 1)          # the fixture has 3 pairs
     run(files, "--report", str(files / "base.json"))
     run(files, "--report", str(files / "same.json"), "--baseline", str(files / "base.json"))
     assert json.loads((files / "same.json").read_text())["score_psi"] == pytest.approx(0)
@@ -99,6 +100,37 @@ def test_psi_against_itself_is_zero_and_a_shift_warns_without_failing(files, cap
     run(files, "--report", str(files / "r.json"), "--baseline", str(files / "shifted.json"))
     assert json.loads((files / "r.json").read_text())["score_psi"] > s12.PSI_WARN
     assert "WARNING: score_psi" in capsys.readouterr().err
+
+
+def test_psi_is_skipped_for_a_small_run_with_the_reason(files, capsys):
+    run(files, "--report", str(files / "base.json"))                    # 3 pairs < PSI_MIN_PAIRS
+    capsys.readouterr()
+    run(files, "--report", str(files / "r.json"), "--baseline", str(files / "base.json"))
+    r = json.loads((files / "r.json").read_text())
+    assert r["score_psi"] is None and "too few" in r["score_psi_skipped"]
+    out = capsys.readouterr()
+    assert "score_psi not computed" in out.out and "WARNING: score_psi" not in out.err
+
+
+def test_psi_is_skipped_against_another_model_or_gate(files, monkeypatch):
+    monkeypatch.setattr(s12, "PSI_MIN_PAIRS", 1)
+    run(files, "--report", str(files / "base.json"))
+    base = json.loads((files / "base.json").read_text())
+    (files / "old.json").write_text(json.dumps({**base, "bundle_version": "v0.9.0", "score_hist": [0] * 9 + [100]}))
+    run(files, "--report", str(files / "r.json"), "--baseline", str(files / "old.json"))
+    r = json.loads((files / "r.json").read_text())
+    assert r["score_psi"] is None and "v0.9.0" in r["score_psi_skipped"]
+
+
+@pytest.mark.parametrize("report, baseline, reason", [
+    ({"n_pairs": 999, "bundle_version": "v1", "ie_gate": "g"}, {"bundle_version": "v1", "ie_gate": "g"}, "too few"),
+    ({"n_pairs": 1000, "bundle_version": "v1", "ie_gate": "g"}, {"bundle_version": "v1", "ie_gate": "g"}, None),
+    ({"n_pairs": 5000, "bundle_version": "v1", "ie_gate": "g2"}, {"bundle_version": "v1", "ie_gate": "g"}, "v1+g"),
+    ({"n_pairs": 5000, "bundle_version": "v2", "ie_gate": "g"}, {"bundle_version": "v1", "ie_gate": "g"}, "v1+g"),
+])
+def test_psi_skip_reason(report, baseline, reason):
+    got = s12.psi_skip_reason(report, baseline)
+    assert got is None if reason is None else reason in got
 
 
 def chunk_lines(work):

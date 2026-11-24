@@ -46,6 +46,24 @@ def test_no_schedule_prod_by_default_and_the_m1_gate(dag):
     assert dag.params["ie_gate"] == "e6_e3b_c1_m1"
 
 
+def test_drift_baseline_is_the_committed_reference_by_default(dag):
+    from vigil_checks import MATCHING_BASELINE
+    assert dag.params["baseline"] == MATCHING_BASELINE
+    assert MATCHING_BASELINE.endswith("Model-Development/matching/reports/score_baseline.json")
+
+
+@pytest.mark.parametrize("exists", [True, False])
+def test_score_passes_the_baseline_only_if_the_file_exists(mod, monkeypatch, tmp_path, exists):
+    calls = []
+    monkeypatch.setattr(mod, "run_script", lambda *a: calls.append(a))
+    monkeypatch.setattr(mod, "REPO", tmp_path)
+    if exists:
+        (tmp_path / "base.json").write_text("{}")
+    mod.score_pairs(**{**CONTEXT, "params": {**CONTEXT["params"], "baseline": "base.json"}})
+    (score,) = calls
+    assert (score[score.index("--baseline") + 1] == "base.json") if exists else ("--baseline" not in score)
+
+
 def test_task_order_and_pools(dag):
     t = tasks(dag)
     assert t["candidates"].downstream_task_ids >= {"score"}
@@ -54,7 +72,8 @@ def test_task_order_and_pools(dag):
     assert t["candidates"].pool == "vigil_warehouse" and t["load_links"].pool == "vigil_warehouse"
     assert t["build_summaries"].pool == "vigil_warehouse" and t["score"].pool == "default_pool"
     for name in ("alert_on_failure", "mark_run_failed"):
-        assert t[name].upstream_task_ids == {"candidates", "score", "load_links", "build_summaries"}
+        assert t[name].upstream_task_ids == {"candidates", "score", "load_links", "build_summaries",
+                                             "check_drift"}
         assert str(t[name].trigger_rule).lower().endswith("one_failed")
 
 

@@ -9,6 +9,8 @@ check    = anomaly checks (scripts/warehouse/check_staging.py)
 Both exit 3 when they find a data problem. That is not retried, because the
 data would be the same; other errors are retried as usual.
 """
+from datetime import datetime, timedelta
+
 from airflow.sdk.exceptions import AirflowFailException
 
 EXIT_DATA_FAIL = 3
@@ -121,12 +123,56 @@ MATCHING_BUNDLE = f"{MATCHING_DIR}/models/matching-same-device-v1.1.0"
 MATCHING_WORK_DIR = "/opt/airflow/logs/matching"         # outside the repo, shared by the workers
 CHECK_WORK_DIR = f"{MATCHING_WORK_DIR}/check"            # vigil_md_matching_check: never mixed
 WORK_DIRS = {"vigil_md_matching": MATCHING_WORK_DIR, "vigil_md_matching_check": CHECK_WORK_DIR}
+# The reference score distribution for drift (s12 --baseline -> score_psi): the report.json of the
+# prod backfill with the bundle and gate above. s12 skips the PSI for a run of another bundle or gate,
+# or of fewer than 1,000 pairs. Without the file, vigil_md_matching scores without a baseline.
+# Replace the file after a new bundle's first full run.
+MATCHING_BASELINE = f"{MATCHING_DIR}/reports/score_baseline.json"
 EVALUATE_SCRIPT = f"{MATCHING_DIR}/scripts/s14_udi_agreement.py"
 EXIT_NOTHING_TO_DO = 4                                   # s13: no candidate pairs
 MATCHING_DATASET = "vigil_md_prod"                       # dev runs: conf {"dataset": "vigil_md_dev"}
 # shortcut: remove after the next bundle release names e6_e3b_c1_m1 in meta.json (docs/EXPERIMENTS.md M1);
 # until then s12 applies the M1 gate on top of the published v1.1.0 bundle.
 MATCHING_IE_GATE = "e6_e3b_c1_m1"
+
+
+# ── Retraining trigger (Model Deployment guidelines 5.3) ──────────────────────
+# vigil_md_matching_check (precision) and vigil_md_matching (drift) start the GitHub workflow
+# model-training.yml when a threshold is crossed: it retrains, gates and publishes a better model
+# only. At most one started run per RETRAIN_COOLDOWN_DAYS, so a check that stays low does not
+# retrain every week. The token is VIGIL_GITHUB_TOKEN in .env (Actions: read and write).
+RETRAIN_PRECISION = 0.90        # the same level as the Kibana alert "UDI agreement precision below 0.90"
+RETRAIN_PSI = 0.2               # the same level as s12 PSI_WARN and the Kibana drift rule
+RETRAIN_COOLDOWN_DAYS = 7
+RETRAIN_REPO = "NainicaD/Vigil-MD"
+RETRAIN_WORKFLOW = "model-training.yml"
+RETRAIN_REF = "main"            # the branch the triggered run trains from; DAG param retrain_ref
+
+
+def retrain_reason(precision: float | None = None, psi: float | None = None,
+                   precision_floor: float = RETRAIN_PRECISION, psi_max: float = RETRAIN_PSI) -> str | None:
+    """Why the model should be retrained, or None. precision: the weekly UDI check; psi: a run's
+    score_psi (None when s12 skipped it). Pure function."""
+    reasons = []
+    if precision is not None and precision < precision_floor:
+        reasons.append(f"UDI precision {precision:.3f} < {precision_floor:.2f}")
+    if psi is not None and psi > psi_max:
+        reasons.append(f"score drift (PSI) {psi:.3f} > {psi_max:.2f}")
+    return "; ".join(reasons) or None
+
+
+def recent_run(runs: list[dict], now: datetime, days: int = RETRAIN_COOLDOWN_DAYS) -> dict | None:
+    """The newest GitHub workflow run created less than `days` ago, or None. runs: the "workflow_runs"
+    of the GitHub API (created_at like "2026-11-24T13:44:33Z"). Pure function."""
+    def created(r):
+        return datetime.fromisoformat(r["created_at"].replace("Z", "+00:00"))
+    recent = [r for r in runs if now - created(r) < timedelta(days=days)]
+    return max(recent, key=created) if recent else None
+
+
+def dispatch_body(ref: str, reason: str) -> dict:
+    """The body of the workflow_dispatch call: train from ref and publish if the gate passes. Pure."""
+    return {"ref": ref, "inputs": {"reason": reason[:200], "publish": "true"}}
 
 
 def model_version(bundle_meta: dict, ie_gate: str) -> str:
