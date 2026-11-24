@@ -66,6 +66,24 @@ def test_rules_are_es_queries_that_write_to_the_alerts_index():
         assert action["frequency"]["notify_when"] == "onActiveAlert"               # Kibana 8.x requires it
 
 
+def test_udi_precision_has_a_warning_band_and_an_alert_below_it():
+    warn = K.rule_body(*K.RULES["vigil-md-udi-precision-warn"])
+    alert = K.rule_body(*K.RULES["vigil-md-udi-precision-alert"])
+    q = lambda b: b["params"]["searchConfiguration"]["query"]["query"]          # noqa: E731
+    assert q(warn) == "message:matching_udi_agreement and precision < 0.95 and precision >= 0.90"
+    assert q(alert) == "message:matching_udi_agreement and precision < 0.90"
+    assert warn["name"].startswith("Warning:") and alert["name"].startswith("Alert:")
+    # today's prod result, 0.941, is in the warning band only
+    assert 0.90 <= 0.941 < 0.95
+
+
+def test_the_retired_single_level_rule_is_deleted_on_every_run(api):
+    calls, _ = api
+    K.main()
+    assert ("DELETE", f"/api/alerting/rule/{K.fixed_uuid('vigil-md-udi-precision')}") in calls
+    assert ("POST", f"/api/alerting/rule/{K.fixed_uuid('vigil-md-udi-precision')}") not in calls
+
+
 def test_no_run_rule_fires_when_there_is_no_record():
     body = K.rule_body(*K.RULES["vigil-md-no-matching-run"])
     p = body["params"]

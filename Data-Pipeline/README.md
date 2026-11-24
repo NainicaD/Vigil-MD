@@ -376,12 +376,12 @@ list: `schemas.LINK_COLUMNS`. This is the warehouse version of the DVC sample st
   - `matching_run_metrics` also has storage: link and candidate table bytes (table metadata, free)
     and the run folder's bytes.
   - `matching_task_failed` / `matching_task_retry`: sent by the task callbacks (`vigil_helpers.py`).
-  - `matching_udi_agreement`: the weekly `vigil_md_matching_check` DAG (Monday 07:00, starts paused)
+  - `matching_udi_agreement`: the weekly `vigil_md_matching_check` DAG (Monday 07:00 UTC on vigil_md_prod, starts unpaused)
     scores a 1% sample of MAUDE rows that have an exact UDI link and compares the links with the
     row's own UDI (precision, recall, candidate recall). A trend: UDI rows are easier than the pool.
   - Container CPU, memory and disk I/O: Metricbeat (`docker-compose.elk.yml`, `metricbeat-*`).
   - `python3 elk/kibana/setup_kibana.py` creates the data views, the dashboard and 5 alert rules
-    (no run in 8 days, `score_psi > 0.2`, a failed task, UDI precision < 0.95, a chunk above
+    (no run in 8 days, `score_psi > 0.2`, a failed task, UDI precision: a warning from 0.90 to 0.95 and an alert below 0.90, a chunk above
     3000 MB). Alerts go to the index `vigil-md-alerts`. Kibana needs `KIBANA_ENCRYPTION_KEY` in `.env`.
 - **PROD (2026-11-10):** 40,447 links; 2 of 40,449 enforcement records and 19,256 of 59,703
   recall products have no partner (recall products not, or not yet, in the enforcement

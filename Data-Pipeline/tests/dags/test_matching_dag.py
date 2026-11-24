@@ -139,6 +139,7 @@ def check_mod():
 
 def test_check_runs_weekly_on_prod_by_default(check_dag):
     assert "0 7 * * 1" in repr(check_dag.timetable) and check_dag.catchup is False
+    assert check_dag.is_paused_upon_creation is False            # weekly without a manual unpause
     assert check_dag.params["dataset"] == "vigil_md_prod" and check_dag.params["sample_per_10k"] == 100
     assert check_dag.params["ie_gate"] == "e6_e3b_c1_m1"
     t = tasks(check_dag)

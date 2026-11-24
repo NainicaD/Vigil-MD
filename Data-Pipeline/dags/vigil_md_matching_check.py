@@ -1,6 +1,6 @@
 """Vigil MD — Weekly UDI agreement check of the matching model
 
-Every Monday 07:00 (Airflow creates it paused: unpause it to start the schedule). Some MAUDE rows
+Every Monday 07:00 UTC, on vigil_md_prod. It starts unpaused (is_paused_upon_creation=False). Some MAUDE rows
 have an exact UDI link to GUDID, so their device is known. The model never sees the UDI (a banned
 feature), so these rows test it. Read the numbers as a trend: rows with a UDI are easier than the
 pool. Nothing is loaded into a link table.
@@ -98,6 +98,9 @@ with DAG(
     default_args=default_args,
     start_date=datetime(2026, 11, 1),
     schedule="0 7 * * 1",
+    # the weekly quality signal for prod: runs without a manual unpause on a new laptop
+    # (docker-compose.yaml pauses new DAGs by default)
+    is_paused_upon_creation=False,
     catchup=False,
     max_active_runs=1,
     params={

@@ -68,12 +68,19 @@ docker compose exec airflow-worker airflow dags list-import-errors     # "No dat
 
 ## 5. Unpause the DAGs
 
-New DAGs start paused. In the Airflow UI (http://localhost:8080), or:
+**Run the DAGs on one laptop only.** The daily runs are on Nainica's laptop. On every other laptop, keep all DAGs paused: two laptops would write the same prod tables (`match_candidates_vigil_md_prod`, `link_maude_gudid_model`) and pay for every run twice.
+
+On the laptop that runs them: new DAGs start paused, except `vigil_md_matching_check`, which starts unpaused and runs every Monday 07:00 UTC. In the Airflow UI (http://localhost:8080), or:
 ```bash
 docker compose exec airflow-worker airflow dags unpause vigil_md_matching
-docker compose exec airflow-worker airflow dags unpause vigil_md_matching_check
 ```
-`vigil_md_acquisition` and `vigil_md_load` have their own setup (`Data-Pipeline/README.md`).
+`vigil_md_acquisition` and `vigil_md_load` start the daily runs. They have their own setup (`Data-Pipeline/README.md`).
+
+On a laptop that must not run them, check that all DAGs are paused, `vigil_md_matching_check` too:
+```bash
+docker compose exec airflow-worker airflow dags list
+docker compose exec airflow-worker airflow dags pause vigil_md_matching_check
+```
 
 ## 6. Optional: price the first run (free)
 
@@ -109,7 +116,10 @@ The summary tables include model links only for the datasets in `MODEL_LINK_SUMM
 
 Why: chatbot code older than this branch says "N reports linked by UDI" for every report of a device. With model links in the summaries, that would be false. So prod is switched on only after the chatbot that labels model links ("... with this device's UDI, ... matched by device details") is deployed.
 
+Status on 2026-11-24: the prod backfill is done (5,278,191 links, one per reported device; UDI check precision 0.941). The chatbot that labels model links is on `model-dev/batch-scorer` only, not on `main`; the live chatbot was last deployed from `main` on 2026-11-18. So prod stays UDI-only.
+
 To switch prod on (after the backfill and that deploy):
+0. Check the deploy: the branch is merged into `main`, and the latest `chatbot-publish.yml` run on `main` succeeded after the merge (`gh run list --workflow chatbot-publish.yml -L 3`). Do not go on before this.
 1. Add `"vigil_md_prod"` to `MODEL_LINK_SUMMARY_DATASETS` in a pull request.
 2. Rebuild the prod summaries once. `--if-changed` may find nothing to do, because a daily build after the last link load is newer than the link table. Price it first; about 11 GB:
    ```bash
@@ -145,7 +155,8 @@ A new bundle or gate makes the next run score every row again automatically: `lo
 | No records in Kibana | `VIGIL_LOGSTASH_HOST` is not set, or ELK is stopped | step 2, step 4 |
 | `score` is killed (exit 137) | not enough memory | `workers=1`, or more WSL memory (step 1) |
 | "checkpoints of other input" | the run folder has parts from another candidate file, batch, bundle or gate | delete `Data-Pipeline/logs/matching/<run_id>/parts` |
-| UDI precision alert | precision below 0.95 in the weekly check | expected with v1.1.0 without the M1 gate; see EXPERIMENTS.md M1 |
+| UDI precision warning | precision 0.90 to 0.95 in the weekly check | prod was 0.941 on 2026-11-24 (one link per device, gate M1): UDI vs model-number disagreements (mostly Dexcom) and missed candidates. Watch the trend |
+| UDI precision alert | precision below 0.90 in the weekly check | something changed: compare with the last check report; see EXPERIMENTS.md M1 and the gate param `ie_gate` |
 
 ## Known limits
 

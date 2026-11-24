@@ -50,13 +50,21 @@ RULES = {
         (1, "d"), ">", 0, "1h"),
     "vigil-md-task-failed": (
         "Matching task failed", "message:matching_task_failed", (15, "m"), ">", 0, "5m"),
-    "vigil-md-udi-precision": (
-        "UDI agreement precision below 0.95", "message:matching_udi_agreement and precision < 0.95",
+    # UDI agreement precision (weekly check): 0.95 or more = fine; 0.90 to 0.95 = warning; under 0.90 = alert
+    "vigil-md-udi-precision-warn": (
+        "Warning: UDI agreement precision 0.90 to 0.95",
+        "message:matching_udi_agreement and precision < 0.95 and precision >= 0.90",
+        (1, "d"), ">", 0, "1d"),
+    "vigil-md-udi-precision-alert": (
+        "Alert: UDI agreement precision below 0.90",
+        "message:matching_udi_agreement and precision < 0.90",
         (1, "d"), ">", 0, "1d"),
     "vigil-md-memory-high": (
         "Scoring chunk above 3000 MB", "message:matching_chunk_scored and max_rss_mb > 3000",
         (15, "m"), ">", 0, "15m"),
 }
+# Rules of an earlier version of this script: deleted on every run, so they never keep firing.
+RETIRED_RULES = ["vigil-md-udi-precision"]          # one level at 0.95, now warn + alert
 
 
 # ── HTTP ──────────────────────────────────────────────────────────────────────
@@ -228,6 +236,8 @@ def main() -> int:
     call("POST", f"/api/actions/connector/{CONNECTOR}", {
         "connector_type_id": ".index", "name": "vigil-md-alerts index",
         "config": {"index": "vigil-md-alerts", "refresh": True, "executionTimeField": "@timestamp"}})
+    for name in RETIRED_RULES:
+        call("DELETE", f"/api/alerting/rule/{fixed_uuid(name)}", ok_missing=True)
     for name, spec in RULES.items():
         rule_id = fixed_uuid(name)
         call("DELETE", f"/api/alerting/rule/{rule_id}", ok_missing=True)
