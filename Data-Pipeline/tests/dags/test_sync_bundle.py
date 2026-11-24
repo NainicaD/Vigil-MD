@@ -219,3 +219,45 @@ def test_a_test_package_is_kept_apart(tmp_path):
     got = H.sync_bundle(package="matching-same-device-test", session=reg, root=root)
     assert got["bundle"].endswith("/matching-same-device-test-v0.0.1")
     assert reg.downloads[0] == "matching-same-device-test:v0.0.1:manifest.json"
+
+
+# ── the task sync_bundle and its place in the DAGs ───────────────────────────
+
+class FakeTI:
+    def __init__(self, xcom):
+        self.xcom = xcom
+
+    def xcom_pull(self, task_ids):
+        return self.xcom[task_ids]
+
+
+def test_a_bundle_set_by_hand_wins_and_nothing_is_downloaded(monkeypatch):
+    monkeypatch.setattr(H, "sync_bundle", lambda *a, **k: pytest.fail("must not be called"))
+    got = H.choose_bundle(params={"bundle": "../Model-Development/matching/models/old", "bundle_package": "x"})
+    assert got == {"bundle": "../Model-Development/matching/models/old", "version": None, "new": False}
+
+
+def test_an_empty_bundle_param_uses_the_newest_published_one(monkeypatch):
+    seen = []
+    monkeypatch.setattr(H, "sync_bundle", lambda package: seen.append(package) or {"bundle": "b", "version": "v1", "new": False})
+    H.choose_bundle(params={"bundle": "", "bundle_package": "matching-same-device-test"})
+    assert seen == ["matching-same-device-test"]
+
+
+def test_tasks_use_the_folder_sync_bundle_chose_unless_one_was_set():
+    ti = FakeTI({"sync_bundle": {"bundle": "chosen", "version": "v1.1.3", "new": True}})
+    assert H.bundle_folder({"params": {"bundle": ""}, "ti": ti}) == "chosen"
+    assert H.bundle_folder({"params": {"bundle": "by-hand"}, "ti": ti}) == "by-hand"
+
+
+@pytest.mark.parametrize("dag_id, first", [("vigil_md_matching", "candidates"),
+                                           ("vigil_md_matching_check", "candidates")])
+def test_sync_bundle_runs_first_in_both_dags(dag_id, first):
+    from airflow.models import DagBag
+    dag = DagBag(dag_folder=str(ROOT / "dags")).get_dag(dag_id)
+    t = {x.task_id: x for x in dag.tasks}
+    assert t["sync_bundle"].upstream_task_ids == set()
+    assert t[first].upstream_task_ids == {"sync_bundle"}
+    assert {"alert_on_failure", "mark_run_failed"} <= t["sync_bundle"].downstream_task_ids
+    assert dag.params["bundle"] == ""                                # empty = the newest published
+    assert dag.params["bundle_package"] == "matching-same-device"

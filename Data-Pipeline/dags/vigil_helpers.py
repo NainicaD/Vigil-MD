@@ -384,6 +384,23 @@ def sync_bundle(package: str = BUNDLE_PACKAGE, session=None, root: Path = REPO) 
     return result(version, new=True)
 
 
+def choose_bundle(**context) -> dict:
+    """Task sync_bundle, the first task of both matching DAGs. A folder in the param bundle (set by
+    hand, e.g. a rollback) wins and nothing is downloaded; otherwise sync_bundle() picks the newest
+    published version of the param bundle_package. The returned dict goes to XCom."""
+    params = context["params"]
+    if params.get("bundle"):
+        log.warning("bundle set by hand: %s (the newest published version is not checked)", params["bundle"])
+        return {"bundle": params["bundle"], "version": None, "new": False}
+    return sync_bundle(params.get("bundle_package") or BUNDLE_PACKAGE)
+
+
+def bundle_folder(context) -> str:
+    """The bundle folder a matching task uses: the param bundle if it was set by hand, else the
+    folder task sync_bundle chose (XCom)."""
+    return context["params"].get("bundle") or context["ti"].xcom_pull(task_ids="sync_bundle")["bundle"]
+
+
 def send_to_elk(message: str, fields: dict) -> None:
     """One structured record through scripts/logger.py (Logstash at VIGIL_LOGSTASH_HOST)."""
     sys.path.insert(0, str(REPO))

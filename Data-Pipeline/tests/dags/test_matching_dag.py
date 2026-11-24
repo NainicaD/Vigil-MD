@@ -72,8 +72,8 @@ def test_task_order_and_pools(dag):
     assert t["candidates"].pool == "vigil_warehouse" and t["load_links"].pool == "vigil_warehouse"
     assert t["build_summaries"].pool == "vigil_warehouse" and t["score"].pool == "default_pool"
     for name in ("alert_on_failure", "mark_run_failed"):
-        assert t[name].upstream_task_ids == {"candidates", "score", "load_links", "build_summaries",
-                                             "check_drift"}
+        assert t[name].upstream_task_ids == {"sync_bundle", "candidates", "score", "load_links",
+                                             "build_summaries", "check_drift"}
         assert str(t[name].trigger_rule).lower().endswith("one_failed")
 
 

@@ -5,6 +5,10 @@ or by hand. The default dataset is vigil_md_prod; give conf {"dataset": "vigil_m
 test extract. The first prod run is a backfill by hand: full=true (docs/MATCHING_RUNBOOK.md).
 
 Tasks:
+  0. sync_bundle       — vigil_helpers.choose_bundle: the newest published version of
+                         bundle_package (Artifact Registry), downloaded and checked against
+                         manifest.json if it is not on disk yet; the folder goes to the other
+                         tasks through XCom. A folder in the param bundle wins (rollback).
   1. candidates        — s13_build_candidates.py: MAUDE rows with no usable UDI link that changed
                          since the last load (or all: full=true, or the link table was made by
                          another bundle/gate) → vigil_md_model.match_candidates_<dataset> and a
@@ -36,13 +40,12 @@ Tasks:
 Files between tasks: MATCHING_WORK_DIR/<run_id>/ (Data-Pipeline/logs on the host).
 
 Before the first run (docs/MATCHING_RUNBOOK.md):
-  - download the bundle once (the repo is mounted, so the workers see it):
-      gcloud artifacts generic download --package matching-same-device --version v1.1.0 \\
-          --repository vigil-md-models --location us-central1 \\
-          --destination Model-Development/matching/models/matching-same-device-v1.1.0
+  - the bundle is downloaded by sync_bundle; the containers need the mounted gcloud login
+    (~/.config/gcloud) and Artifact Registry Reader on vigil-md-models
   - add xgboost and scikit-learn to _PIP_ADDITIONAL_REQUIREMENTS in .env (see .env.example)
 
-Params: dataset, full (backfill / new model version), workers, bundle, ie_gate (the IE gate s12
+Params: dataset, full (backfill / new model version), workers, bundle (empty = the newest
+published version; a folder = that one), bundle_package, ie_gate (the IE gate s12
 applies; default M1 on top of v1.1.0 until a bundle with M1 is released), baseline (the reference
 report.json for drift, default vigil_checks.MATCHING_BASELINE: adds score_psi to this run's report;
 s12 skips it for fewer than 1,000 pairs or another bundle or gate), retrain_ref (the branch a
@@ -64,12 +67,12 @@ from airflow.task.trigger_rule import TriggerRule
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    EXIT_NOTHING_TO_DO, MATCHING_BASELINE, MATCHING_BUNDLE, MATCHING_DATASET, MATCHING_IE_GATE,
+    EXIT_NOTHING_TO_DO, MATCHING_BASELINE, MATCHING_DATASET, MATCHING_IE_GATE,
     READ_ONLY_POOL, RETRAIN_PACKAGE, RETRAIN_REF, RETRAIN_SEMVER, WAREHOUSE_POOL, candidates_args,
     matching_files, model_links_args, model_version, retrain_reason, score_args, summary_args)
 from vigil_helpers import (  # noqa: E402
-    REPO, alert_on_failure, mark_run_failed, matching_task_failed, matching_task_retry,
-    retrain_if_needed, run_script)
+    BUNDLE_PACKAGE, REPO, alert_on_failure, bundle_folder, choose_bundle, mark_run_failed,
+    matching_task_failed, matching_task_retry, retrain_if_needed, run_script)
 
 log = logging.getLogger(__name__)
 
@@ -90,7 +93,7 @@ default_args = {
 def _params(context) -> dict:
     p = context["params"]
     return {"dataset": p["dataset"], "full": bool(p["full"]), "workers": int(p["workers"]),
-            "bundle": p["bundle"], "ie_gate": p["ie_gate"] or None, "baseline": p["baseline"] or None,
+            "bundle": bundle_folder(context), "ie_gate": p["ie_gate"] or None, "baseline": p["baseline"] or None,
             "files": matching_files(context["run_id"])}
 
 
@@ -164,8 +167,12 @@ with DAG(
                           description="score every MAUDE row of the pool (backfill, new model)"),
         "workers":  Param(2, type="integer", minimum=1,
                           description="scoring processes; each holds one copy of the bundle"),
-        "bundle":   Param(MATCHING_BUNDLE, type="string",
-                          description="released bundle folder, relative to Data-Pipeline/"),
+        "bundle":   Param("", type="string",
+                          description="empty = the newest published version (task sync_bundle); "
+                                      "a folder relative to Data-Pipeline/ = that one (rollback)"),
+        "bundle_package": Param(BUNDLE_PACKAGE, type="string",
+                                description="sync_bundle uses the newest version of this package; "
+                                            "a test: matching-same-device-test"),
         "ie_gate":  Param(MATCHING_IE_GATE, type="string",
                           description="IE gate applied on top of the bundle; empty = the bundle's own"),
         "baseline": Param(MATCHING_BASELINE, type="string",
@@ -181,6 +188,7 @@ with DAG(
     tags=["vigil-md", "matching", "model"],
 ) as dag:
 
+    sync = PythonOperator(task_id="sync_bundle", python_callable=choose_bundle, **ELK_CALLBACKS)
     candidates = PythonOperator(task_id="candidates", python_callable=build_candidates,
                                 pool=WAREHOUSE_POOL, **ELK_CALLBACKS)
     score = PythonOperator(task_id="score", python_callable=score_pairs, pool=READ_ONLY_POOL,
@@ -197,7 +205,7 @@ with DAG(
     mark_failed = PythonOperator(task_id="mark_run_failed", python_callable=mark_run_failed,
                                  trigger_rule=TriggerRule.ONE_FAILED)
 
-    candidates >> score >> links >> summaries
+    sync >> candidates >> score >> links >> summaries
     score >> drift
-    [candidates, score, links, summaries, drift] >> alert
-    [candidates, score, links, summaries, drift] >> mark_failed
+    [sync, candidates, score, links, summaries, drift] >> alert
+    [sync, candidates, score, links, summaries, drift] >> mark_failed

@@ -121,8 +121,8 @@ MATCHING_DIR = "../Model-Development/matching"          # relative to Data-Pipel
 CANDIDATES_SCRIPT = f"{MATCHING_DIR}/scripts/s13_build_candidates.py"
 SCORE_SCRIPT = f"{MATCHING_DIR}/scripts/s12_score_pairs.py"
 MODEL_LINKS_SCRIPT = "scripts/warehouse/load_model_links.py"
-# Downloaded by hand from Artifact Registry (package matching-same-device); see the DAG docstring.
-MATCHING_BUNDLE = f"{MATCHING_DIR}/models/matching-same-device-v1.1.0"
+# The bundle is no longer a fixed folder: task sync_bundle (vigil_helpers.sync_bundle) picks the newest
+# published version. The DAG param bundle still takes a folder by hand (rollback).
 MATCHING_WORK_DIR = "/opt/airflow/logs/matching"         # outside the repo, shared by the workers
 CHECK_WORK_DIR = f"{MATCHING_WORK_DIR}/check"            # vigil_md_matching_check: never mixed
 WORK_DIRS = {"vigil_md_matching": MATCHING_WORK_DIR, "vigil_md_matching_check": CHECK_WORK_DIR}
