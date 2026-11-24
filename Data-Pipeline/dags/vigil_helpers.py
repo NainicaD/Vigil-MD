@@ -11,7 +11,8 @@ send_email        one HTML e-mail to VIGIL_ALERT_EMAIL_TO (used by the alert and
 retrain_if_needed starts the GitHub workflow model-training.yml when a check found a reason,
                   at most once per 7 days (matching DAGs)
 sync_bundle       finds the newest published model bundle, downloads and checks it if it is
-                  not on disk yet, and returns its folder (first task of the matching DAGs)
+                  not on disk yet, and returns its folder (first task of the matching DAGs);
+                  choose_bundle e-mails "vX.Y.Z now in use" when it downloaded a new one
 mark_run_failed   task (trigger_rule one_failed) that fails, so the run's state is "failed"
                   even when the last tasks (all_done summaries/links, the alert) succeed
 """
@@ -384,15 +385,38 @@ def sync_bundle(package: str = BUNDLE_PACKAGE, session=None, root: Path = REPO) 
     return result(version, new=True)
 
 
+def build_bundle_message(version: str, package: str, dag_id: str, run_id: str) -> tuple[str, str]:
+    """The e-mail subject and HTML body when a new bundle is taken into use. Pure function."""
+    from html import escape  # pylint: disable=import-outside-toplevel
+    subject = f"[Vigil-MD] Matching model {version} now in use"
+    html = (f"<p>The matching DAGs now use <b>{escape(package)} {escape(version)}</b>, the newest version "
+            f"published to Artifact Registry. It passed the model gate before it was published.</p>"
+            f"<p>Taken into use by <b>{dag_id}</b>, run <code>{escape(run_id)}</code>.</p>"
+            f"<ul><li>vigil_md_matching re-scores every MAUDE row of the pool once, because the model "
+            f"version changed.</li>"
+            f"<li>The drift check (score_psi) is skipped until the baseline is rebuilt for this "
+            f"version (vigil_checks.MATCHING_BASELINE).</li>"
+            f"<li>To go back: set the DAG param <code>bundle</code> to the previous folder.</li></ul>"
+            f'<p><a href="{airflow_url(dag_id)}">Airflow</a></p>')
+    return subject, html
+
+
 def choose_bundle(**context) -> dict:
     """Task sync_bundle, the first task of both matching DAGs. A folder in the param bundle (set by
     hand, e.g. a rollback) wins and nothing is downloaded; otherwise sync_bundle() picks the newest
-    published version of the param bundle_package. The returned dict goes to XCom."""
+    published version of the param bundle_package, and a version downloaded just now is announced
+    by e-mail ("now in use"). The returned dict goes to XCom."""
     params = context["params"]
     if params.get("bundle"):
         log.warning("bundle set by hand: %s (the newest published version is not checked)", params["bundle"])
         return {"bundle": params["bundle"], "version": None, "new": False}
-    return sync_bundle(params.get("bundle_package") or BUNDLE_PACKAGE)
+    package = params.get("bundle_package") or BUNDLE_PACKAGE
+    chosen = sync_bundle(package)
+    if chosen["new"]:
+        # only the run that downloads it sends this; the next runs find the folder on disk
+        send_email(*build_bundle_message(chosen["version"], package, context["ti"].dag_id,
+                                         context["run_id"]))
+    return chosen
 
 
 def bundle_folder(context) -> str:

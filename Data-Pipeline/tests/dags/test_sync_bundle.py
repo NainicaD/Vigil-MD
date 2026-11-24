@@ -237,11 +237,27 @@ def test_a_bundle_set_by_hand_wins_and_nothing_is_downloaded(monkeypatch):
     assert got == {"bundle": "../Model-Development/matching/models/old", "version": None, "new": False}
 
 
-def test_an_empty_bundle_param_uses_the_newest_published_one(monkeypatch):
-    seen = []
-    monkeypatch.setattr(H, "sync_bundle", lambda package: seen.append(package) or {"bundle": "b", "version": "v1", "new": False})
-    H.choose_bundle(params={"bundle": "", "bundle_package": "matching-same-device-test"})
+class FakeTaskInstance:
+    dag_id = "vigil_md_matching"
+
+
+@pytest.mark.parametrize("new, mails", [(True, 1), (False, 0)])
+def test_an_empty_bundle_param_uses_the_newest_published_one(monkeypatch, new, mails):
+    seen, sent = [], []
+    monkeypatch.setattr(H, "sync_bundle",
+                        lambda package: seen.append(package) or {"bundle": "b", "version": "v0.0.1", "new": new})
+    monkeypatch.setattr(H, "send_email", lambda subject, html: sent.append(subject) or True)
+    H.choose_bundle(params={"bundle": "", "bundle_package": "matching-same-device-test"},
+                    ti=FakeTaskInstance(), run_id="manual__1")
     assert seen == ["matching-same-device-test"]
+    assert sent == ["[Vigil-MD] Matching model v0.0.1 now in use"] * mails   # only a new download
+
+
+def test_the_now_in_use_message_names_the_version_and_the_way_back():
+    subject, html = H.build_bundle_message("v1.1.3", "matching-same-device", "vigil_md_matching", "manual__1")
+    assert subject == "[Vigil-MD] Matching model v1.1.3 now in use"
+    assert "matching-same-device v1.1.3" in html and "manual__1" in html
+    assert "re-scores" in html and "drift" in html and "<code>bundle</code>" in html
 
 
 def test_tasks_use_the_folder_sync_bundle_chose_unless_one_was_set():
