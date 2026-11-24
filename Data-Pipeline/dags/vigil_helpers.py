@@ -7,6 +7,9 @@ for DAGs.
 run_script        runs a repo script and streams its output into the task log
                   line by line (live), keeping each line's log level
 alert_on_failure  e-mail task (trigger_rule one_failed) that names the failed tasks
+send_email        one HTML e-mail to VIGIL_ALERT_EMAIL_TO (used by the alert and the retrain trigger)
+retrain_if_needed starts the GitHub workflow model-training.yml when a check found a reason,
+                  at most once per 7 days (matching DAGs)
 mark_run_failed   task (trigger_rule one_failed) that fails, so the run's state is "failed"
                   even when the last tasks (all_done summaries/links, the alert) succeed
 """
@@ -18,6 +21,7 @@ import re
 import subprocess
 import sys
 from collections import deque
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from airflow.sdk.exceptions import AirflowFailException
@@ -104,47 +108,134 @@ def build_failure_message(dag_id: str, run_id: str, failed_task_ids: list[str],
     return subject, html
 
 
-def alert_on_failure(**context):
-    """Runs when any upstream task fails. Sends email alert naming the failed tasks."""
+def send_email(subject: str, html: str) -> bool:
+    """One HTML e-mail through smtp.gmail.com:587 to VIGIL_ALERT_EMAIL_TO. Skipped with a warning
+    when the settings are missing; a send error is logged, not raised. True if sent."""
     import smtplib
     from email.mime.text import MIMEText
-
-    ti = context["ti"]
-    dag_run = context.get("dag_run")
-    run_id = dag_run.run_id if dag_run else "unknown"
-
-    url = (f"{os.environ.get('VIGIL_AIRFLOW_URL', 'http://localhost:8080')}"
-           f"/dags/{ti.dag_id}/grid")
-
-    failed = failed_task_ids(ti, run_id) if dag_run else []
-    log.error("PIPELINE FAILURE in run %s: %s", run_id, ", ".join(failed) or "unknown tasks")
 
     to = os.environ.get("VIGIL_ALERT_EMAIL_TO")
     smtp_user = os.environ.get("AIRFLOW__SMTP__SMTP_USER")
     smtp_password = os.environ.get("AIRFLOW__SMTP__SMTP_PASSWORD")
-
     if not to:
         log.warning("VIGIL_ALERT_EMAIL_TO not set, skipping email")
-        return
+        return False
     if not smtp_user or not smtp_password:
         log.warning("SMTP credentials not set, skipping email")
-        return
+        return False
 
-    subject, html = build_failure_message(ti.dag_id, run_id, failed, url)
     msg = MIMEText(html, "html")
     msg["Subject"] = subject
     msg["From"] = smtp_user
     msg["To"] = to
-
     try:
         with smtplib.SMTP("smtp.gmail.com", 587) as s:
             s.ehlo()
             s.starttls()
             s.login(smtp_user, smtp_password)
             s.send_message(msg)
-        log.info("Alert email sent to %s", to)
+        log.info("Email sent to %s: %s", to, subject)
+        return True
     except Exception:
-        log.exception("Failed to send alert email")
+        log.exception("Failed to send email: %s", subject)
+        return False
+
+
+def airflow_url(dag_id: str) -> str:
+    return f"{os.environ.get('VIGIL_AIRFLOW_URL', 'http://localhost:8080')}/dags/{dag_id}/grid"
+
+
+def alert_on_failure(**context):
+    """Runs when any upstream task fails. Sends email alert naming the failed tasks."""
+    ti = context["ti"]
+    dag_run = context.get("dag_run")
+    run_id = dag_run.run_id if dag_run else "unknown"
+
+    failed = failed_task_ids(ti, run_id) if dag_run else []
+    log.error("PIPELINE FAILURE in run %s: %s", run_id, ", ".join(failed) or "unknown tasks")
+    send_email(*build_failure_message(ti.dag_id, run_id, failed, airflow_url(ti.dag_id)))
+
+
+# ── Retraining trigger (GitHub workflow_dispatch) ─────────────────────────────
+
+GITHUB_API = "https://api.github.com"
+GITHUB_TIMEOUT_S = 30
+
+
+def _github(method: str, path: str, token: str, **kw):
+    """One GitHub REST call. The token goes in the header only, never in a log or an error."""
+    import requests  # pylint: disable=import-outside-toplevel
+    return requests.request(method, f"{GITHUB_API}{path}", timeout=GITHUB_TIMEOUT_S, headers={
+        "Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"}, **kw)
+
+
+def dispatched_runs(token: str, repo: str, workflow: str, since: datetime) -> list[dict]:
+    """The workflow's runs started by workflow_dispatch since `since` (GitHub API)."""
+    r = _github("GET", f"/repos/{repo}/actions/workflows/{workflow}/runs", token, params={
+        "event": "workflow_dispatch", "created": f">={since:%Y-%m-%d}", "per_page": 20})
+    if r.status_code != 200:
+        raise RuntimeError(f"GitHub: listing {workflow} runs failed (HTTP {r.status_code}): {r.text[:300]}")
+    return r.json().get("workflow_runs", [])
+
+
+def start_workflow(token: str, repo: str, workflow: str, body: dict) -> None:
+    """workflow_dispatch: GitHub answers 204 and returns no run ID."""
+    r = _github("POST", f"/repos/{repo}/actions/workflows/{workflow}/dispatches", token, json=body)
+    if r.status_code != 204:
+        raise RuntimeError(f"GitHub: starting {workflow} on {body['ref']} failed "
+                           f"(HTTP {r.status_code}): {r.text[:300]}")
+
+
+def build_retrain_message(reason: str, dag_id: str, run_id: str, ref: str, repo: str,
+                          workflow: str, package: str = "matching-same-device") -> tuple[str, str]:
+    """The e-mail subject and HTML body when retraining is started. Pure function."""
+    from html import escape  # pylint: disable=import-outside-toplevel
+    runs = f"https://github.com/{repo}/actions/workflows/{workflow}"
+    subject = f"[Vigil-MD] Retraining started: {reason}"
+    html = (f"<p>The matching model is being retrained: <b>{escape(reason)}</b>.</p>"
+            f"<p>Found by <b>{dag_id}</b>, run <code>{run_id}</code>. The workflow trains from "
+            f"<code>{escape(ref)}</code> and publishes a new model to <code>{escape(package)}</code> "
+            f"only if it passes the model gate; "
+            f"a second e-mail reports the result.</p>"
+            f'<p><a href="{runs}">Workflow runs on GitHub</a> · <a href="{airflow_url(dag_id)}">Airflow</a></p>')
+    return subject, html
+
+
+def retrain_if_needed(reason: str | None, context: dict, ref: str, metrics: dict,
+                      package: str | None = None, semver: str | None = None) -> str:
+    """Start model-training.yml when `reason` is set, at most once per cooldown. Returns the outcome:
+    "not_needed", "cooldown" or "started". Each outcome but "not_needed" leaves an ELK record
+    matching_retrain_triggered and is logged. Raises (the task fails, so the failure e-mail goes out)
+    when retraining is needed but the token is missing or GitHub refuses."""
+    from vigil_checks import (  # pylint: disable=import-outside-toplevel
+        RETRAIN_COOLDOWN_DAYS, RETRAIN_PACKAGE, RETRAIN_REPO, RETRAIN_SEMVER, RETRAIN_WORKFLOW,
+        dispatch_body, recent_run)
+    package, semver = package or RETRAIN_PACKAGE, semver or RETRAIN_SEMVER
+    dag_id, run_id = context["ti"].dag_id, context["run_id"]
+    if reason is None:
+        log.info("no retraining needed: %s", metrics)
+        return "not_needed"
+    token = os.environ.get("VIGIL_GITHUB_TOKEN")
+    if not token:
+        raise AirflowFailException(f"retraining needed ({reason}) but VIGIL_GITHUB_TOKEN is not set "
+                                   "in .env: start model-training by hand, or add the token")
+    now = datetime.now(timezone.utc)
+    last = recent_run(dispatched_runs(token, RETRAIN_REPO, RETRAIN_WORKFLOW,
+                                      now - timedelta(days=RETRAIN_COOLDOWN_DAYS)), now)
+    fields = {"reason": reason, "dag_id": dag_id, "run_id": run_id, "ref": ref, "package": package,
+              **metrics}
+    if last:
+        log.warning("retraining needed (%s) but a run started %s (%s): once per %d days, not started",
+                    reason, last["created_at"], last.get("html_url"), RETRAIN_COOLDOWN_DAYS)
+        send_to_elk("matching_retrain_triggered", {**fields, "outcome": "cooldown",
+                                                   "last_run_url": last.get("html_url")})
+        return "cooldown"
+    start_workflow(token, RETRAIN_REPO, RETRAIN_WORKFLOW, dispatch_body(ref, reason, package, semver))
+    log.warning("retraining started (%s): %s on %s, publishing to %s", reason, RETRAIN_WORKFLOW, ref, package)
+    send_to_elk("matching_retrain_triggered", {**fields, "outcome": "started"})
+    send_email(*build_retrain_message(reason, dag_id, run_id, ref, RETRAIN_REPO, RETRAIN_WORKFLOW, package))
+    return "started"
 
 
 # ── ELK records from the matching DAGs ────────────────────────────────────────

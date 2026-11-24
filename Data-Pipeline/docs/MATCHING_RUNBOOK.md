@@ -8,8 +8,8 @@ The pipeline links MAUDE reports that have no usable UDI to GUDID devices. The c
 | DAG | When | What it does |
 |---|---|---|
 | `vigil_md_load` | after each daily acquisition | loads the FDA data, then starts `vigil_md_matching` (task `trigger_matching`) |
-| `vigil_md_matching` | started by `vigil_md_load`, or by hand | `candidates` → `score` → `load_links` → `build_summaries` on `vigil_md_prod` (summaries include model links only once switched on, section 7b) |
-| `vigil_md_matching_check` | every Monday 07:00 UTC | the UDI agreement check: precision and recall on MAUDE rows whose device is known from their UDI |
+| `vigil_md_matching` | started by `vigil_md_load`, or by hand | `candidates` → `score` → `load_links` → `build_summaries` on `vigil_md_prod` (summaries include model links only once switched on, section 7b); `check_drift` after `score` (section 8b) |
+| `vigil_md_matching_check` | every Monday 07:00 UTC | the UDI agreement check: precision and recall on MAUDE rows whose device is known from their UDI; then `decide_retrain` (section 8b) |
 
 A daily run scores only the MAUDE rows that changed since the last load. The first run on prod scores every row (the backfill, step 7).
 
@@ -137,6 +137,22 @@ After the backfill, `vigil_md_load` starts `vigil_md_matching` after each load. 
 
 A new bundle or gate makes the next run score every row again automatically: `load_model_links.py` writes the table label `model_version`, and `s13` compares it.
 
+**Drift.** Each run compares its score distribution with the reference `Model-Development/matching/reports/score_baseline.json` (the prod backfill's `report.json`; `MATCHING_BASELINE` in `vigil_checks.py`) and records `score_psi` (Kibana alert above 0.2). `s12` skips it, with `score_psi_skipped` saying why, for a run of fewer than 1,000 pairs (chance alone moves the PSI of small runs) or for a run of another bundle or gate. Without the file, runs score as before, without `score_psi`. After a new bundle's first full run, replace the file with that run's `report.json`.
+
+## 8b. Automatic retraining
+
+Two tasks decide whether the model is retrained:
+- `decide_retrain`, at the end of the weekly check: UDI precision below 0.90 (param `retrain_precision`).
+- `check_drift`, after `score` in each matching run: `score_psi` above 0.2. Runs with fewer than 1,000 pairs, or without a baseline, never trigger.
+
+The levels are the same as the Kibana alerts. When one is crossed, the task starts the GitHub workflow `model-training.yml` on the branch `retrain_ref` (default `main`), with inputs `reason`, `publish=true`, `package` (param `retrain_package`, default `matching-same-device`) and `semver` (param `retrain_semver`, default `auto`). The workflow retrains, runs the model gate and publishes a new bundle only if the gate passes. The task sends a "Retraining started" e-mail (`VIGIL_ALERT_EMAIL_TO`) and the ELK record `matching_retrain_triggered` (dashboard panel "Retraining decisions").
+
+At most one retraining is started per 7 days: if a manual (`workflow_dispatch`) run of `model-training.yml` started in the last 7 days, by the DAGs or by hand, the task records `outcome: cooldown` and starts nothing. These two tasks have no retry, because a retry could start the workflow twice.
+
+Setup, once: create a fine-grained GitHub token (GitHub → Settings → Developer settings → Fine-grained tokens) for this repository only, with the permission "Actions: read and write". Put it in `.env` as `VIGIL_GITHUB_TOKEN` and recreate the containers (`docker compose up -d`). Without the token everything runs as before, and a needed retrain fails its task, so the failure e-mail goes out.
+
+Test or demo (on `vigil_md_dev`, without a real drop): trigger `vigil_md_matching_check` with conf `{"dataset": "vigil_md_dev", "retrain_precision": 0.99, "retrain_ref": "<your branch>", "retrain_package": "matching-same-device-test", "retrain_semver": "0.0.1"}`. The test package keeps a test from becoming a real release; `0.0.1` because `auto` needs an existing version (later tests: `auto`). Until the workflow with the `reason` and `publish` inputs is on `main`, GitHub refuses a start on `main` (HTTP 422), so set `retrain_ref` to the branch that has it.
+
 ## 9. Where to look
 
 | What | Where |
@@ -156,7 +172,10 @@ A new bundle or gate makes the next run score every row again automatically: `lo
 | `score` is killed (exit 137) | not enough memory | `workers=1`, or more WSL memory (step 1) |
 | "checkpoints of other input" | the run folder has parts from another candidate file, batch, bundle or gate | delete `Data-Pipeline/logs/matching/<run_id>/parts` |
 | UDI precision warning | precision 0.90 to 0.95 in the weekly check | prod was 0.941 on 2026-11-24 (one link per device, gate M1): UDI vs model-number disagreements (mostly Dexcom) and missed candidates. Watch the trend |
-| UDI precision alert | precision below 0.90 in the weekly check | something changed: compare with the last check report; see EXPERIMENTS.md M1 and the gate param `ie_gate` |
+| UDI precision alert | precision below 0.90 in the weekly check | something changed: compare with the last check report; see EXPERIMENTS.md M1 and the gate param `ie_gate`. `decide_retrain` starts retraining (section 8b) |
+| `decide_retrain` or `check_drift` failed: "VIGIL_GITHUB_TOKEN is not set" | a retrain was needed, no token | add the token (section 8b), or start `model-training` by hand in GitHub Actions |
+| … failed: "HTTP 401" / "HTTP 403" | the token is wrong, expired, or lacks "Actions: read and write" | make a new token (section 8b) |
+| … failed: "HTTP 422" | the branch `retrain_ref` has no `model-training.yml` with the inputs `reason` and `publish` | use a branch that has them (section 8b) |
 
 ## Known limits
 

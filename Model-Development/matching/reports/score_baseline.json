@@ -1,0 +1,42 @@
+{
+  "n_pairs": 35255575,
+  "n_maude_rows": 7931968,
+  "n_match": 5938247,
+  "n_non_match": 20872858,
+  "n_insufficient_evidence": 8444470,
+  "rate_match": 0.168434268906407,
+  "rate_non_match": 0.5920441802466702,
+  "rate_insufficient_evidence": 0.23952155084692278,
+  "score_p10": 0.0005,
+  "score_p50": 0.0045,
+  "score_p90": 0.9985,
+  "score_hist": [
+    21127906,
+    333587,
+    412907,
+    597518,
+    581438,
+    524139,
+    370684,
+    638463,
+    713866,
+    9955067
+  ],
+  "match_kinds": {
+    "same_model_key": 2589930,
+    "maude_catalog_eq_gudid_model": 2544010,
+    "maude_model_eq_gudid_catalog": 471824,
+    "catalog_eq_catalog": 248828,
+    "contains": 83655
+  },
+  "bundle_version": "v1.1.0",
+  "cutoff": 0.6179018616676331,
+  "ie_gate": "e6_e3b_c1_m1",
+  "seconds": 4170.5,
+  "n_pool_rows": 10674670,
+  "n_chunks": 353,
+  "n_chunks_resumed": 0,
+  "pairs_per_s": 4254.4,
+  "chunk_seconds_max": 33.653,
+  "peak_rss_mb": 870.2
+}

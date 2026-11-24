@@ -6,7 +6,8 @@ rules are deleted, then created again.
 
   data views   vigil-md-logs (vigil-md-logs-*), metricbeat (metricbeat-*), vigil-md-alerts
   dashboard    "Vigil MD matching": decision rates, score drift, throughput, chunk memory, link
-               table size, UDI agreement, failed tasks and retries, container memory and CPU,
+               table size, UDI agreement, retraining decisions, failed tasks and retries,
+               container memory and CPU,
                alerts. Lens panels, built below (no hand-written ndjson file to keep in sync).
   connector    an Index connector: every alert is written to the index vigil-md-alerts
                (the basic license has no e-mail connector)
@@ -164,6 +165,9 @@ def panels() -> list[dict]:
         lens("vm-udi-agreement", "UDI agreement check (weekly)", LOGS, "message:matching_udi_agreement",
              {"p": col("precision", "average", "precision"), "r": col("recall", "average", "recall"),
               "c": col("candidate_recall", "average", "candidate recall")}),
+        lens("vm-retrain", "Retraining decisions (started / held back by the 7-day limit)", LOGS,
+             "message:matching_retrain_triggered and outcome:*", {"c": col(None, "count", "decisions")},
+             breakdown="outcome.keyword", series="bar_stacked"),
         lens("vm-task-events", "Failed tasks and retries", LOGS,
              "message:matching_task_failed or message:matching_task_retry",
              {"c": col(None, "count", "tasks")}, breakdown="message.keyword", series="bar_stacked"),
