@@ -10,6 +10,8 @@ alert_on_failure  e-mail task (trigger_rule one_failed) that names the failed ta
 send_email        one HTML e-mail to VIGIL_ALERT_EMAIL_TO (used by the alert and the retrain trigger)
 retrain_if_needed starts the GitHub workflow model-training.yml when a check found a reason,
                   at most once per 7 days (matching DAGs)
+sync_bundle       finds the newest published model bundle, downloads and checks it if it is
+                  not on disk yet, and returns its folder (first task of the matching DAGs)
 mark_run_failed   task (trigger_rule one_failed) that fails, so the run's state is "failed"
                   even when the last tasks (all_done summaries/links, the alert) succeed
 """
@@ -239,6 +241,148 @@ def retrain_if_needed(reason: str | None, context: dict, ref: str, metrics: dict
 
 
 # ── ELK records from the matching DAGs ────────────────────────────────────────
+
+# ── Model bundle pick-up (Model Deployment guidelines 5.4, the redeploy) ──────
+# Artifact Registry is reached through its web API with the application-default credentials
+# that docker-compose mounts (~/.config/gcloud). The Airflow image has no gcloud CLI.
+AR_API = "https://artifactregistry.googleapis.com"
+AR_REPOSITORY = "projects/vigil-md-1792696816/locations/us-central1/repositories/vigil-md-models"
+AR_TIMEOUT_S = 120
+BUNDLE_PACKAGE = "matching-same-device"
+
+
+def _registry_session():
+    """An HTTP session that signs each request with the mounted Google credentials."""
+    import google.auth  # pylint: disable=import-outside-toplevel
+    from google.auth.transport.requests import AuthorizedSession  # pylint: disable=import-outside-toplevel
+    credentials, _ = google.auth.default(scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    return AuthorizedSession(credentials)
+
+
+def published_versions(package: str, session) -> list[str]:
+    """The version names of a package in Artifact Registry, e.g. ["v1.0.0", "v1.1.0"]."""
+    from urllib.parse import quote  # pylint: disable=import-outside-toplevel
+    url = f"{AR_API}/v1/{AR_REPOSITORY}/packages/{quote(package, safe='')}/versions"
+    names = []
+    page_token = None
+    while True:                                   # the API answers in pages
+        params = {"pageSize": 1000}
+        if page_token:
+            params["pageToken"] = page_token
+        r = session.get(url, params=params, timeout=AR_TIMEOUT_S)
+        r.raise_for_status()
+        body = r.json()
+        # each name is the full path, ".../packages/<package>/versions/v1.1.0": keep the last part
+        names += [v["name"].rsplit("/", 1)[-1] for v in body.get("versions", [])]
+        page_token = body.get("nextPageToken")
+        if not page_token:
+            return names
+
+
+def download_bundle_file(package: str, version: str, file_name: str, dest: Path, session) -> None:
+    """Download one file of a published bundle to dest. In a generic repository a file is
+    named <package>:<version>:<file name>."""
+    from urllib.parse import quote  # pylint: disable=import-outside-toplevel
+    file_id = quote(f"{package}:{version}:{file_name}", safe="")
+    r = session.get(f"{AR_API}/download/v1/{AR_REPOSITORY}/files/{file_id}:download",
+                    params={"alt": "media"}, timeout=AR_TIMEOUT_S)
+    r.raise_for_status()
+    dest.write_bytes(r.content)
+
+
+def _read_manifest(folder: Path) -> dict:
+    """manifest.json of a bundle folder, or {} when it is missing (bundle_problems then fails
+    every file)."""
+    import json  # pylint: disable=import-outside-toplevel
+    path = folder / "manifest.json"
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def _newest_local_bundle(package: str, models: Path) -> str | None:
+    """The newest bundle version of `package` already on disk that passes the sha256 check."""
+    from vigil_checks import bundle_problems, newest_version  # pylint: disable=import-outside-toplevel
+    if not models.exists():
+        return None
+    prefix = f"{package}-"
+    good = []
+    for folder in models.iterdir():
+        # "matching-same-device-v1.1.0" -> "v1.1.0". A folder of another package
+        # ("matching-same-device-test-v0.0.1" -> "test-v0.0.1") is not a version name, so it is ignored.
+        if folder.is_dir() and folder.name.startswith(prefix):
+            if not bundle_problems(folder, _read_manifest(folder)):
+                good.append(folder.name[len(prefix):])
+    return newest_version(good)
+
+
+def sync_bundle(package: str = BUNDLE_PACKAGE, session=None, root: Path = REPO) -> dict:
+    """Make sure the newest published bundle of `package` is on disk and intact, and say which one
+    to use. Returns {"bundle": folder relative to Data-Pipeline/, "version": "v1.1.3",
+    "new": True if it was downloaded just now}.
+
+    - Already on disk and intact: used as it is, no download.
+    - Not on disk: the files are downloaded into a temporary folder, checked against manifest.json,
+      and only then renamed to the real folder, so a half-finished download is never used.
+    - Artifact Registry cannot be reached (no network, no login): the newest intact bundle already
+      on disk is used, with a warning. With none on disk, this fails.
+    - A damaged bundle (a sha256 that differs from manifest.json) always fails; it is never used.
+    root: the Data-Pipeline folder (tests pass a temporary one)."""
+    import shutil  # pylint: disable=import-outside-toplevel
+    from vigil_checks import BUNDLE_FILES, MATCHING_DIR, bundle_problems, newest_version  # pylint: disable=import-outside-toplevel
+
+    models_rel = f"{MATCHING_DIR}/models"           # relative to Data-Pipeline/, as the bundle param
+    models = root / models_rel
+
+    def result(version: str, new: bool) -> dict:
+        return {"bundle": f"{models_rel}/{package}-{version}", "version": version, "new": new}
+
+    def fall_back(error: Exception) -> dict:
+        local = _newest_local_bundle(package, models)
+        if local is None:
+            raise RuntimeError(f"Artifact Registry could not be reached ({error}) and no intact "
+                               f"{package} bundle is on disk in {models_rel}") from error
+        log.warning("Artifact Registry could not be reached (%s): using %s, already on disk",
+                    error, local)
+        return result(local, new=False)
+
+    # 1. which version is the newest published one?
+    try:
+        session = session or _registry_session()
+        version = newest_version(published_versions(package, session))
+    except Exception as e:  # pylint: disable=broad-except  # network, login or API error
+        return fall_back(e)
+    if version is None:
+        raise RuntimeError(f"Artifact Registry has no v<MAJOR>.<MINOR>.<PATCH> version of {package}")
+
+    # 2. already on disk? Then check it and use it.
+    folder = models / f"{package}-{version}"
+    if folder.exists():
+        problems = bundle_problems(folder, _read_manifest(folder))
+        if problems:
+            raise RuntimeError(f"{folder.name} on disk is damaged, not used: {problems}")
+        log.info("bundle %s is on disk and intact", folder.name)
+        return result(version, new=False)
+
+    # 3. download into a temporary folder
+    partial = models / f".{package}-{version}.partial"
+    shutil.rmtree(partial, ignore_errors=True)       # left over from an earlier, interrupted try
+    partial.mkdir(parents=True)
+    try:
+        download_bundle_file(package, version, "manifest.json", partial / "manifest.json", session)
+        for file_name in BUNDLE_FILES:
+            download_bundle_file(package, version, file_name, partial / file_name, session)
+    except Exception as e:  # pylint: disable=broad-except
+        shutil.rmtree(partial, ignore_errors=True)
+        return fall_back(e)
+
+    # 4. check it; only an intact bundle gets its real name
+    problems = bundle_problems(partial, _read_manifest(partial))
+    if problems:
+        shutil.rmtree(partial, ignore_errors=True)
+        raise RuntimeError(f"downloaded {package} {version} is damaged, not used: {problems}")
+    partial.rename(folder)
+    log.warning("downloaded new bundle %s from Artifact Registry", folder.name)
+    return result(version, new=True)
+
 
 def send_to_elk(message: str, fields: dict) -> None:
     """One structured record through scripts/logger.py (Logstash at VIGIL_LOGSTASH_HOST)."""
