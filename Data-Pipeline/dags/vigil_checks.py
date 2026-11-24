@@ -9,7 +9,10 @@ check    = anomaly checks (scripts/warehouse/check_staging.py)
 Both exit 3 when they find a data problem. That is not retried, because the
 data would be the same; other errors are retried as usual.
 """
+import hashlib
+import re
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from airflow.sdk.exceptions import AirflowFailException
 
@@ -149,6 +152,44 @@ RETRAIN_WORKFLOW = "model-training.yml"
 RETRAIN_REF = "main"            # the branch the triggered run trains from; DAG param retrain_ref
 RETRAIN_PACKAGE = "matching-same-device"   # where a passing model is published; DAG param retrain_package
 RETRAIN_SEMVER = "auto"         # newest + 1 patch; a test package's first version needs e.g. 0.0.1
+
+
+# ── Model bundle pick-up (Model Deployment guidelines 5.4, the redeploy) ──────
+# sync_bundle (first task of both matching DAGs) uses the newest published version of the bundle.
+# Only bundles that passed the model gate are published, so the newest one is approved.
+BUNDLE_FILES = ("model.json", "tfidf.pkl", "meta.json", "README.txt")   # what manifest.json must list
+
+
+def newest_version(names: list[str]) -> str | None:
+    """The highest version name of the form v<MAJOR>.<MINOR>.<PATCH>, or None if there is none.
+    The numbers are compared as numbers, so v1.1.10 is newer than v1.1.9 (as text it would not be).
+    Names of another form are ignored. Pure function."""
+    best_name = None
+    best_numbers = None
+    for name in names:
+        m = re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)", name)
+        if m is None:
+            continue
+        numbers = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        if best_numbers is None or numbers > best_numbers:
+            best_name = name
+            best_numbers = numbers
+    return best_name
+
+
+def bundle_problems(folder: str | Path, manifest: dict) -> list[str]:
+    """What is wrong with a downloaded bundle folder, compared with its manifest.json (already read
+    into a dict). Empty list = every file is there and has the sha256 the manifest names. Reads the
+    files, changes nothing."""
+    listed = manifest.get("sha256", {})
+    problems = [f"{name}: not listed in manifest.json" for name in BUNDLE_FILES if name not in listed]
+    for name, expected in listed.items():
+        path = Path(folder) / name
+        if not path.exists():
+            problems.append(f"{name}: missing")
+        elif hashlib.sha256(path.read_bytes()).hexdigest() != expected:
+            problems.append(f"{name}: sha256 differs from manifest.json")
+    return problems
 
 
 def retrain_reason(precision: float | None = None, psi: float | None = None,
