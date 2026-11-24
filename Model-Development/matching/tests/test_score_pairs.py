@@ -204,6 +204,34 @@ def test_a_changed_gate_never_reuses_checkpoints(files):
         run(files, "--work-dir", str(work), "--ie-gate", "e6_e3b_c1_m1")
 
 
+def _links(*rows):
+    return pd.DataFrame(rows, columns=["left_id", "right_id", "match_kind", "score"])
+
+
+def test_one_link_per_reported_device_keeps_the_strongest_kind_over_a_higher_score():
+    out = s12.best_link_per_device(_links(
+        ("r1|1", "gA", "maude_catalog_eq_gudid_model", 0.999),    # catalog matches another record
+        ("r1|1", "gB", "same_model_key", 0.96)))                  # model number matches: kept
+    assert out["right_id"].tolist() == ["gB"]
+
+
+def test_a_report_that_lists_two_devices_keeps_one_link_for_each():
+    out = s12.best_link_per_device(_links(
+        ("r1|1", "sensor", "same_model_key", 0.9),
+        ("r1|2", "transmitter", "same_model_key", 0.9),
+        ("r1|2", "other", "catalog_eq_catalog", 0.99)))
+    assert sorted(out["right_id"]) == ["sensor", "transmitter"]
+
+
+def test_score_then_right_id_break_ties_the_same_way_every_run():
+    rows = [("r1|1", "gZ", "contains", 0.8), ("r1|1", "gB", "same_model_key", 0.9),
+            ("r1|1", "gA", "same_model_key", 0.9)]
+    for order in (rows, rows[::-1]):
+        assert s12.best_link_per_device(_links(*order))["right_id"].tolist() == ["gA"]
+    out = s12.best_link_per_device(_links(("r2|1", "g1", "contains", 0.7), ("r2|1", "g2", "conflict", 0.8)))
+    assert out["right_id"].tolist() == ["g2"]                      # other kinds: highest score
+
+
 def test_missing_input_column_fails_loudly(files):
     pd.read_parquet(files / "pairs.parquet").drop(columns="key_g_pcs").to_parquet(files / "pairs.parquet")
     with pytest.raises(SystemExit, match="key_g_pcs"):

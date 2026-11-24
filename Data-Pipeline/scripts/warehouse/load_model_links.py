@@ -50,7 +50,6 @@ EXIT_BAD_INPUT = 2
 EXIT_CHECK_FAILED = 3
 MAX_GB = 5.0
 TABLE = schemas.MODEL_LINK_TABLE
-CHECK_MAX_BYTES = 200_000_000
 
 
 # ── Table names and SQL (pure) ────────────────────────────────────────────────
@@ -77,8 +76,24 @@ def create_sql(project: str, dataset: str) -> str:
             f"CLUSTER BY link_type, left_id")
 
 
+# s12 writes every MATCH pair. A reported device's model number and its catalog number can each
+# equal a different GUDID record, and the model (pairs scored alone) says MATCH to both. The table
+# keeps one link per reported device: strongest kind, then highest score, then smallest right_id.
+# A report that lists several devices (device_seq) keeps one link per device. Same order as
+# Model-Development/matching s12_score_pairs.LINK_KIND_ORDER: change both together.
+LINK_KIND_ORDER = ["same_model_key", "maude_model_eq_gudid_catalog", "maude_catalog_eq_gudid_model",
+                   "catalog_eq_catalog"]
+
+
+def kind_rank_sql() -> str:
+    """LINK_KIND_ORDER as a SQL rank: 0 = strongest, other kinds last. Pure."""
+    whens = " ".join(f"WHEN '{k}' THEN {i}" for i, k in enumerate(LINK_KIND_ORDER))
+    return f"CASE match_kind {whens} ELSE {len(LINK_KIND_ORDER)} END"
+
+
 def merge_sql(project: str, dataset: str, full: bool) -> str:
-    """One transaction: delete the re-scored rows' links, insert the new ones, dup check."""
+    """One transaction: delete the re-scored rows' links, insert the best link per reported device,
+    dup check."""
     t = target(project, dataset)
     cols = ", ".join(c for c, _ in schemas.LINK_COLUMNS)
     scope = "TRUE" if full else f"left_id IN (SELECT maude_id FROM `{candidates_table(project, dataset)}`)"
@@ -92,8 +107,11 @@ BEGIN TRANSACTION;
 DELETE FROM `{t}` WHERE {scope};
 SET n_deleted = @@row_count;
 
+-- one inferred link per reported device (left_id = report|device_seq); see LINK_KIND_ORDER
 INSERT INTO `{t}` ({cols})
-SELECT {cols} FROM `{load_table(project, dataset)}`;
+SELECT {cols} FROM `{load_table(project, dataset)}`
+WHERE TRUE
+QUALIFY ROW_NUMBER() OVER (PARTITION BY left_id ORDER BY {kind_rank_sql()}, score DESC, right_id) = 1;
 SET n_inserted = @@row_count;
 
 SET dup_keys = (
@@ -226,7 +244,7 @@ def main(argv=None) -> int:
             return EXIT_CHECK_FAILED
         raise
     counts = dict(next(iter(client.query(check, job_config=bigquery.QueryJobConfig(
-        maximum_bytes_billed=CHECK_MAX_BYTES)).result())))
+        maximum_bytes_billed=cap)).result())))  # the check scans the whole link table: same cap as the load
     problems = check_problems(counts)
     if problems:
         log.error("%s failed its checks: %s", TABLE, "; ".join(problems))

@@ -26,15 +26,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.s12_score_pairs import best_link_per_device  # noqa: E402
+
 
 def agreement(cands: pd.DataFrame, links: pd.DataFrame) -> dict:
-    """The check's numbers from the candidates and the MATCH links of one udi_check run. Pure."""
+    """The check's numbers from the candidates and the MATCH links of one udi_check run, after the
+    loader's rule (one inferred link per reported device), so it measures the links as loaded. Pure."""
     if cands["true_group_key"].isna().all():
         raise SystemExit("no true_group_key: these candidates are not from s13 --mode udi_check")
+    n_links_all = len(links)
+    links = best_link_per_device(links)
     n_rows = int(cands["meta_n_pool_rows"].iloc[0])
     right = cands[cands["cand_group_key"] == cands["true_group_key"]]
     # a DI listed twice in GUDID can represent two groups: count each link once
@@ -48,7 +56,8 @@ def agreement(cands: pd.DataFrame, links: pd.DataFrame) -> dict:
         return round(a / b, 6) if b else None
 
     return {"n_rows": n_rows, "n_rows_with_candidates": int(cands["maude_id"].nunique()),
-            "n_pairs": len(cands), "n_links": len(links), "n_links_right": len(correct),
+            "n_pairs": len(cands), "n_links_all": n_links_all, "n_links": len(links),
+            "n_links_right": len(correct),
             "candidate_recall": share(rows_found, n_rows),
             "precision": share(len(correct), len(links)),
             "recall": share(rows_linked_right, n_rows),

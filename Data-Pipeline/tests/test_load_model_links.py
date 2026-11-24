@@ -50,6 +50,21 @@ def test_incremental_run_deletes_only_the_rescored_maude_rows():
     assert "FROM `p.vigil_md_staging.link_maude_gudid_model_load_vigil_md_dev`" in sql
 
 
+def test_insert_keeps_one_inferred_link_per_reported_device():
+    sql = M.merge_sql(P, "vigil_md_dev", full=False)
+    insert = sql[sql.index("INSERT INTO"):sql.index("SET n_inserted")]
+    assert "WHERE TRUE\nQUALIFY ROW_NUMBER() OVER (PARTITION BY left_id ORDER BY " in insert
+    assert insert.rstrip().endswith(", score DESC, right_id) = 1;")
+    assert ("CASE match_kind WHEN 'same_model_key' THEN 0 WHEN 'maude_model_eq_gudid_catalog' THEN 1 "
+            "WHEN 'maude_catalog_eq_gudid_model' THEN 2 WHEN 'catalog_eq_catalog' THEN 3 ELSE 4 END") in insert
+
+
+def test_kind_order_is_the_same_as_s12():
+    # Model-Development/matching/scripts/s12_score_pairs.py LINK_KIND_ORDER (the UDI check applies it)
+    assert M.LINK_KIND_ORDER == ["same_model_key", "maude_model_eq_gudid_catalog",
+                                 "maude_catalog_eq_gudid_model", "catalog_eq_catalog"]
+
+
 def test_full_run_deletes_every_model_link():
     assert "DELETE FROM `p.vigil_md_dev.link_maude_gudid_model` WHERE TRUE;" in M.merge_sql(P, "vigil_md_dev", full=True)
 
@@ -143,6 +158,13 @@ def test_load_creates_loads_merges_checks_then_rebuilds_the_view(env):
     (table, cfg), = c.loads
     assert table == "p.vigil_md_staging.link_maude_gudid_model_load_vigil_md_dev"
     assert c.caps and all(0 < cap <= 5e9 for cap in c.caps)
+
+
+def test_the_check_has_the_runs_cap_not_a_small_fixed_one(env):
+    # prod (2026-11-24): the check scanned 255 MB and a fixed 200 MB cap failed it after the load
+    c = env.make()
+    assert run(env, "--max-gb", "1") == 0
+    assert c.caps == [int(1e9), int(1e9)]                                  # the merge, then the check
 
 
 def test_view_includes_the_exact_and_the_model_links():

@@ -357,7 +357,9 @@ list: `schemas.LINK_COLUMNS`. This is the warehouse version of the DVC sample st
   the last load, streamed to parquet) → `score` (`s12`, the released bundle in
   `Model-Development/matching/models/` with the IE gate in the `ie_gate` param; memory one chunk
   per worker) → `load_links` (one transaction: delete the links of re-scored MAUDE rows, insert,
-  roll back on a duplicate pair; then the table label `model_version`) → `build_summaries`
+  roll back on a duplicate pair; one link per reported device, `left_id` = report|device_seq: the
+  strongest match kind, then the highest score, so a report that lists several devices keeps one
+  link per device; then the table label `model_version`) → `build_summaries`
   (`--if-changed`: `entity_reports.link_method = 'model'`, `entity_counts.model_reports`, so the
   chatbot and the website count them). **Switch:** summaries include model links only for the
   datasets in `dags/vigil_checks.py` `MODEL_LINK_SUMMARY_DATASETS` (`build_summaries.py

@@ -18,7 +18,9 @@ def cands():
 
 
 def links(*pairs):
-    return pd.DataFrame(list(pairs), columns=["left_id", "right_id"])
+    """MATCH links as s12 writes them; (left_id, right_id[, match_kind, score])."""
+    rows = [(*p, "same_model_key", 0.9)[:4] if len(p) == 2 else p for p in pairs]
+    return pd.DataFrame(rows, columns=["left_id", "right_id", "match_kind", "score"])
 
 
 def test_numbers_on_a_fixed_example():
@@ -39,6 +41,13 @@ def test_a_link_to_another_group_is_not_right():
 def test_no_links_gives_no_precision_and_zero_recall():
     r = s14.agreement(cands(), links())
     assert r["precision"] is None and r["recall"] == 0.0 and r["candidate_recall"] == 0.5
+
+
+def test_an_extra_match_for_one_device_does_not_count_against_it():
+    # m1's model number matches g1 (right); its catalog number matches g2 (another group)
+    r = s14.agreement(cands(), links(("m1", "g1", "same_model_key", 0.95),
+                                     ("m1", "g2", "maude_catalog_eq_gudid_model", 0.99)))
+    assert (r["n_links_all"], r["n_links"], r["precision"]) == (2, 1, 1.0)
 
 
 def test_pool_candidates_are_refused():

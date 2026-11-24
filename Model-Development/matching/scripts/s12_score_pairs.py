@@ -180,6 +180,23 @@ def to_links(scored: pd.DataFrame, built_at: datetime) -> pd.DataFrame:
     return links[LINK_COLUMNS].reset_index(drop=True)
 
 
+# One inferred link per reported device (a MAUDE row: report + device_seq). A device's model number
+# and its catalog number can each equal a different GUDID record; the model, scoring pairs alone,
+# says MATCH to both. Keep the strongest kind, then the highest score. A report that lists several
+# devices keeps one link per device. Same order as Data-Pipeline load_model_links.LINK_KIND_ORDER.
+LINK_KIND_ORDER = ["same_model_key", "maude_model_eq_gudid_catalog", "maude_catalog_eq_gudid_model",
+                   "catalog_eq_catalog"]
+
+
+def best_link_per_device(links: pd.DataFrame) -> pd.DataFrame:
+    """One link per left_id: strongest match kind (LINK_KIND_ORDER, others after), then highest
+    score, then smallest right_id (the same result on every run). Pure."""
+    rank = links["match_kind"].map({k: i for i, k in enumerate(LINK_KIND_ORDER)}).fillna(len(LINK_KIND_ORDER))
+    return (links.assign(_rank=rank)
+            .sort_values(["_rank", "score", "right_id"], ascending=[True, False, True], kind="mergesort")
+            .drop_duplicates("left_id").drop(columns="_rank"))
+
+
 PSI_WARN = 0.2     # common rule of thumb: above 0.2 the score distribution moved a lot
 
 
