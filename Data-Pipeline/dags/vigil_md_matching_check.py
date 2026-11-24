@@ -39,8 +39,8 @@ from airflow.task.trigger_rule import TriggerRule
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
     CHECK_WORK_DIR, EXIT_NOTHING_TO_DO, MATCHING_BUNDLE, MATCHING_DATASET, MATCHING_IE_GATE,
-    READ_ONLY_POOL, RETRAIN_PRECISION, RETRAIN_REF, WAREHOUSE_POOL, candidates_args, evaluate_args,
-    matching_files, retrain_reason, score_args)
+    READ_ONLY_POOL, RETRAIN_PACKAGE, RETRAIN_PRECISION, RETRAIN_REF, RETRAIN_SEMVER, WAREHOUSE_POOL,
+    candidates_args, evaluate_args, matching_files, retrain_reason, score_args)
 from vigil_helpers import (  # noqa: E402
     alert_on_failure, mark_run_failed, matching_task_failed, matching_task_retry, retrain_if_needed,
     run_script, send_to_elk)
@@ -103,9 +103,11 @@ def decide_retrain(**context):
     report = json.loads(Path(p["files"]["check_report"]).read_text())
     floor = float(context["params"]["retrain_precision"])
     reason = retrain_reason(precision=report.get("precision"), precision_floor=floor)
-    return retrain_if_needed(reason, context, context["params"]["retrain_ref"],
+    params = context["params"]
+    return retrain_if_needed(reason, context, params["retrain_ref"],
                              {"precision": report.get("precision"), "precision_floor": floor,
-                              "dataset": p["dataset"]})
+                              "dataset": p["dataset"]},
+                             params["retrain_package"], params["retrain_semver"])
 
 
 with DAG(
@@ -132,6 +134,10 @@ with DAG(
                                    description="retrain when precision is below this (0.99 = a demo trigger)"),
         "retrain_ref":    Param(RETRAIN_REF, type="string",
                                 description="the branch the triggered model-training run trains from"),
+        "retrain_package": Param(RETRAIN_PACKAGE, type="string",
+                                 description="where a passing model is published; a test: matching-same-device-test"),
+        "retrain_semver": Param(RETRAIN_SEMVER, type="string",
+                                description="auto = newest + 1 patch; a new test package needs e.g. 0.0.1"),
     },
     tags=["vigil-md", "matching", "model", "monitoring"],
 ) as dag:

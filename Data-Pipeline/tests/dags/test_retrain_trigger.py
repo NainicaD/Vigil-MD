@@ -37,6 +37,8 @@ def test_retrain_reason(precision, psi, expected):
 
 def test_retrain_reason_with_a_demo_floor():
     assert C.retrain_reason(precision=0.941, precision_floor=0.99) == "UDI precision 0.941 < 0.99"
+    # the dev test of 24 Nov showed "0.992 < 1.00" for a floor of 0.999
+    assert C.retrain_reason(precision=0.992224, precision_floor=0.999) == "UDI precision 0.992 < 0.999"
 
 
 def test_recent_run_is_the_newest_within_the_cooldown():
@@ -53,6 +55,21 @@ def test_dispatch_body_publishes_and_caps_the_reason():
     body = C.dispatch_body("main", "x" * 500)
     assert body["ref"] == "main" and body["inputs"]["publish"] == "true"
     assert len(body["inputs"]["reason"]) == 200
+    assert body["inputs"]["package"] == "matching-same-device" and body["inputs"]["semver"] == "auto"
+
+
+def test_dispatch_body_for_a_test_package():
+    body = C.dispatch_body("monitoring/retrain-trigger", "r", "matching-same-device-test", "0.0.1")
+    assert body["inputs"] == {"reason": "r", "publish": "true", "package": "matching-same-device-test",
+                              "semver": "0.0.1"}
+
+
+def test_dispatch_inputs_exist_in_the_workflow():
+    """GitHub refuses (HTTP 422) a dispatch with an input the workflow does not declare."""
+    import yaml
+    wf = yaml.safe_load((ROOT.parent / ".github" / "workflows" / "model-training.yml").read_text())
+    declared = (wf.get("on") or wf[True])["workflow_dispatch"]["inputs"]
+    assert set(C.dispatch_body("main", "r")["inputs"]) <= set(declared)
 
 
 def test_trigger_levels_match_the_alerts():
@@ -137,13 +154,23 @@ def test_a_reason_starts_the_workflow_mails_and_records(fakes):
     assert H.retrain_if_needed("UDI precision 0.884 < 0.90", CTX, "main", {"precision": 0.884}) == "started"
     (repo, wf, body), = fakes["started"]
     assert (repo, wf) == ("NainicaD/Vigil-MD", "model-training.yml")
-    assert body == {"ref": "main", "inputs": {"reason": "UDI precision 0.884 < 0.90", "publish": "true"}}
+    assert body == {"ref": "main", "inputs": {"reason": "UDI precision 0.884 < 0.90", "publish": "true",
+                                              "package": "matching-same-device", "semver": "auto"}}
     (msg, fields), = fakes["elk"]
     assert msg == "matching_retrain_triggered" and fields["outcome"] == "started"
+    assert fields["package"] == "matching-same-device"
     assert fields["precision"] == 0.884 and fields["run_id"] == "scheduled__2026-11-30"
     assert "tok" not in json.dumps(fields)
     (subject, html), = fakes["mail"]
     assert subject == "[Vigil-MD] Retraining started: UDI precision 0.884 < 0.90" and "model gate" in html
+
+
+def test_a_test_package_reaches_the_workflow_and_the_email(fakes):
+    H.retrain_if_needed("r", CTX, "monitoring/retrain-trigger", {}, "matching-same-device-test", "0.0.1")
+    (_, _, body), = fakes["started"]
+    assert body["inputs"]["package"] == "matching-same-device-test" and body["inputs"]["semver"] == "0.0.1"
+    (_, html), = fakes["mail"]
+    assert "matching-same-device-test" in html
 
 
 def test_a_run_in_the_last_7_days_holds_it_back(fakes):
@@ -182,7 +209,8 @@ def load(name):
 def capture(mod, monkeypatch):
     seen = []
     monkeypatch.setattr(mod, "retrain_if_needed",
-                        lambda reason, ctx, ref, metrics: seen.append((reason, ref, metrics)) or "x")
+                        lambda reason, ctx, ref, metrics, package, semver:
+                        seen.append((reason, ref, metrics, package, semver)) or "x")
     return seen
 
 
@@ -194,9 +222,11 @@ def test_decide_retrain_reads_the_check_report(monkeypatch, tmp_path, floor, rea
     (tmp_path / "r.json").write_text('{"precision": 0.941206, "recall": 0.700654}')
     mod.decide_retrain(ti=TI(), run_id="r", params={
         "dataset": "vigil_md_dev", "sample_per_10k": 100, "bundle": "b", "ie_gate": "",
-        "retrain_precision": floor, "retrain_ref": "monitoring/retrain-trigger"})
-    (got, ref, metrics), = seen
+        "retrain_precision": floor, "retrain_ref": "monitoring/retrain-trigger",
+        "retrain_package": "matching-same-device-test", "retrain_semver": "0.0.1"})
+    (got, ref, metrics, package, semver), = seen
     assert got == reason and ref == "monitoring/retrain-trigger"
+    assert (package, semver) == ("matching-same-device-test", "0.0.1")
     assert metrics == {"precision": 0.941206, "precision_floor": floor, "dataset": "vigil_md_dev"}
 
 
@@ -213,9 +243,11 @@ def test_check_drift_reads_the_run_report(monkeypatch, tmp_path, report, reason)
     (tmp_path / "report.json").write_text(json.dumps(report))
     mod.check_drift(ti=TI(), run_id="r", params={
         "dataset": "vigil_md_prod", "full": False, "workers": 1, "bundle": "b", "ie_gate": "",
-        "baseline": "", "retrain_ref": "main"})
-    (got, ref, metrics), = seen
+        "baseline": "", "retrain_ref": "main", "retrain_package": "matching-same-device",
+        "retrain_semver": "auto"})
+    (got, ref, metrics, package, semver), = seen
     assert got == reason and ref == "main" and metrics["n_pairs"] == report["n_pairs"]
+    assert (package, semver) == ("matching-same-device", "auto")
 
 
 def test_the_trigger_tasks_have_no_retry_and_their_place_in_the_dags():
@@ -228,7 +260,9 @@ def test_the_trigger_tasks_have_no_retry_and_their_place_in_the_dags():
     assert drift.upstream_task_ids == {"score"} and drift.downstream_task_ids >= {"alert_on_failure"}
     assert "check_drift" not in matching.get_task("load_links").upstream_task_ids   # never holds up the load
     assert check.params["retrain_precision"] == 0.90 and check.params["retrain_ref"] == "main"
-    assert matching.params["retrain_ref"] == "main"
+    for dag in (check, matching):
+        assert dag.params["retrain_ref"] == "main" and dag.params["retrain_semver"] == "auto"
+        assert dag.params["retrain_package"] == "matching-same-device"           # the real package by default
     for dag, name in ((check, "decide_retrain"), (matching, "check_drift")):
         assert name in dag.get_task("alert_on_failure").upstream_task_ids
         assert name in dag.get_task("mark_run_failed").upstream_task_ids

@@ -147,17 +147,21 @@ RETRAIN_COOLDOWN_DAYS = 7
 RETRAIN_REPO = "NainicaD/Vigil-MD"
 RETRAIN_WORKFLOW = "model-training.yml"
 RETRAIN_REF = "main"            # the branch the triggered run trains from; DAG param retrain_ref
+RETRAIN_PACKAGE = "matching-same-device"   # where a passing model is published; DAG param retrain_package
+RETRAIN_SEMVER = "auto"         # newest + 1 patch; a test package's first version needs e.g. 0.0.1
 
 
 def retrain_reason(precision: float | None = None, psi: float | None = None,
                    precision_floor: float = RETRAIN_PRECISION, psi_max: float = RETRAIN_PSI) -> str | None:
     """Why the model should be retrained, or None. precision: the weekly UDI check; psi: a run's
     score_psi (None when s12 skipped it). Pure function."""
+    def level(x: float) -> str:          # 0.90 -> "0.90", 0.999 -> "0.999" (not rounded to "1.00")
+        return f"{x:.2f}" if round(x, 2) == x else f"{x:.3f}"
     reasons = []
     if precision is not None and precision < precision_floor:
-        reasons.append(f"UDI precision {precision:.3f} < {precision_floor:.2f}")
+        reasons.append(f"UDI precision {precision:.3f} < {level(precision_floor)}")
     if psi is not None and psi > psi_max:
-        reasons.append(f"score drift (PSI) {psi:.3f} > {psi_max:.2f}")
+        reasons.append(f"score drift (PSI) {psi:.3f} > {level(psi_max)}")
     return "; ".join(reasons) or None
 
 
@@ -170,9 +174,12 @@ def recent_run(runs: list[dict], now: datetime, days: int = RETRAIN_COOLDOWN_DAY
     return max(recent, key=created) if recent else None
 
 
-def dispatch_body(ref: str, reason: str) -> dict:
-    """The body of the workflow_dispatch call: train from ref and publish if the gate passes. Pure."""
-    return {"ref": ref, "inputs": {"reason": reason[:200], "publish": "true"}}
+def dispatch_body(ref: str, reason: str, package: str = RETRAIN_PACKAGE,
+                  semver: str = RETRAIN_SEMVER) -> dict:
+    """The body of the workflow_dispatch call: train from ref and publish to package if the gate
+    passes. A test on a branch gives a test package, so it never becomes a real release. Pure."""
+    return {"ref": ref, "inputs": {"reason": reason[:200], "publish": "true",
+                                   "package": package, "semver": semver}}
 
 
 def model_version(bundle_meta: dict, ie_gate: str) -> str:

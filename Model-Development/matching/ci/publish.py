@@ -36,9 +36,15 @@ def dirty_files(root: Path) -> list[str]:
 
 
 def newest(package: str, run=subprocess.run) -> tuple[int, int, int] | None:
-    """The highest v<MAJOR.MINOR.PATCH> in the registry, or None."""
-    out = run(["gcloud", "artifacts", "versions", "list", *ar_args(package), "--format=value(name)"],
-              capture_output=True, text=True, check=True).stdout
+    """The highest v<MAJOR.MINOR.PATCH> in the registry, or None (also for a package that does not
+    exist yet: gcloud answers 404 NOT_FOUND until its first version is uploaded). Other errors raise."""
+    cmd = ["gcloud", "artifacts", "versions", "list", *ar_args(package), "--format=value(name)"]
+    res = run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        if "NOT_FOUND" in res.stderr or "does not exist" in res.stderr:
+            return None
+        raise subprocess.CalledProcessError(res.returncode, cmd, res.stdout, res.stderr)
+    out = res.stdout
     found = [tuple(map(int, m.groups())) for m in re.finditer(r"v(\d+)\.(\d+)\.(\d+)\s*$", out, re.M)]
     return max(found) if found else None
 

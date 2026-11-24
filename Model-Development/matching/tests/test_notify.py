@@ -26,6 +26,13 @@ def test_outcome(gate, publish, requested, log, status):
     assert notify.outcome(gate, publish, requested, log)[0] == status
 
 
+def test_a_failed_publish_quotes_the_last_line_of_s11():
+    log = "run abc (1 found, newest taken)\ncommit the serving code first, so the git tag points at it:\n M vigil_model/predict.py\n"
+    status, detail = notify.outcome("success", "failure", True, log)
+    assert status == "failed" and detail.endswith(": M vigil_model/predict.py")
+    assert notify.outcome("success", "failure", True, "")[1].endswith("see the run log")
+
+
 def test_published_names_the_version():
     assert "matching-same-device v1.1.1" in notify.outcome("success", "success", True, PUBLISHED)[1]
 

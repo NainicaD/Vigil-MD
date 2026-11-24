@@ -128,13 +128,16 @@ class FakeRun:
     """Records gcloud/git calls; `describe` returns `exists`, `list` returns `versions`, and `download --name f`
     writes published[f] (the newest version's manifest.json / meta.json) to the destination."""
 
-    def __init__(self, exists=False, versions="", published=None):
+    def __init__(self, exists=False, versions="", published=None, list_error=None):
         self.calls, self.exists, self.versions, self.published = [], exists, versions, published or {}
+        self.list_error = list_error            # stderr of a failing `versions list`, like real gcloud
 
     def __call__(self, cmd, **kw):
         self.calls.append(cmd)
         if "describe" in cmd:
             return subprocess.CompletedProcess(cmd, 0 if self.exists else 1, "", "")
+        if "list" in cmd and self.list_error:
+            return subprocess.CompletedProcess(cmd, 1, "", self.list_error)
         if "download" in cmd:
             name, dest = cmd[cmd.index("--name") + 1], cmd[cmd.index("--destination") + 1]
             (Path(dest) / name).write_text(json.dumps(self.published[name]))
@@ -172,6 +175,25 @@ def test_publish_uploads_then_annotates(tmp_path, monkeypatch):
     assert _publish(tmp_path, run, monkeypatch) == 0
     assert [c[3] for c in run.calls] == ["describe", "list", "upload", "update"]
     assert "--annotations=mlflow=gh-run-7,git=git-abc1234" in run.calls[-1]
+
+
+# what gcloud printed for a package with no version yet (the first live publish to a test package, 2026-11-24)
+NO_PACKAGE = ('ERROR: (gcloud.artifacts.versions.list) HttpError accessing <...>: response: <{\'status\': 404}>, '
+              'content <{"error": {"code": 404, "message": "Requested package does not exist: '
+              '\\"projects/p/locations/l/repositories/r/packages/matching-same-device-test\\"", "status": "NOT_FOUND"}}>')
+
+
+def test_publish_to_a_package_that_does_not_exist_yet(tmp_path, monkeypatch):
+    _bundle(tmp_path)
+    run = FakeRun(list_error=NO_PACKAGE)
+    assert _publish(tmp_path, run, monkeypatch) == 0
+    assert [c[3] for c in run.calls] == ["describe", "list", "upload", "update"]
+    assert pub.newest("matching-same-device-test", run=FakeRun(list_error=NO_PACKAGE)) is None
+
+
+def test_other_registry_errors_still_raise():
+    with pytest.raises(subprocess.CalledProcessError):
+        pub.newest("m", run=FakeRun(list_error="ERROR: (gcloud.artifacts.versions.list) PERMISSION_DENIED"))
 
 
 def test_publish_skips_a_bundle_that_decides_like_the_newest_version(tmp_path, monkeypatch):

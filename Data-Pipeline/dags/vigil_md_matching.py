@@ -65,8 +65,8 @@ from airflow.task.trigger_rule import TriggerRule
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
     EXIT_NOTHING_TO_DO, MATCHING_BASELINE, MATCHING_BUNDLE, MATCHING_DATASET, MATCHING_IE_GATE,
-    READ_ONLY_POOL, RETRAIN_REF, WAREHOUSE_POOL, candidates_args, matching_files, model_links_args,
-    model_version, retrain_reason, score_args, summary_args)
+    READ_ONLY_POOL, RETRAIN_PACKAGE, RETRAIN_REF, RETRAIN_SEMVER, WAREHOUSE_POOL, candidates_args,
+    matching_files, model_links_args, model_version, retrain_reason, score_args, summary_args)
 from vigil_helpers import (  # noqa: E402
     REPO, alert_on_failure, mark_run_failed, matching_task_failed, matching_task_retry,
     retrain_if_needed, run_script)
@@ -128,9 +128,11 @@ def check_drift(**context):
     p = _params(context)
     report = json.loads(Path(p["files"]["report"]).read_text())
     psi = report.get("score_psi")           # None or missing: no baseline, or s12 skipped it
-    return retrain_if_needed(retrain_reason(psi=psi), context, context["params"]["retrain_ref"],
+    params = context["params"]
+    return retrain_if_needed(retrain_reason(psi=psi), context, params["retrain_ref"],
                              {"score_psi": psi, "score_psi_skipped": report.get("score_psi_skipped"),
-                              "n_pairs": report.get("n_pairs"), "dataset": p["dataset"]})
+                              "n_pairs": report.get("n_pairs"), "dataset": p["dataset"]},
+                             params["retrain_package"], params["retrain_semver"])
 
 
 def load_links(**context):
@@ -171,6 +173,10 @@ with DAG(
                                       "empty = none (a missing file also means none)"),
         "retrain_ref": Param(RETRAIN_REF, type="string",
                              description="the branch a triggered model-training run trains from"),
+        "retrain_package": Param(RETRAIN_PACKAGE, type="string",
+                                 description="where a passing model is published; a test: matching-same-device-test"),
+        "retrain_semver": Param(RETRAIN_SEMVER, type="string",
+                                description="auto = newest + 1 patch; a new test package needs e.g. 0.0.1"),
     },
     tags=["vigil-md", "matching", "model"],
 ) as dag:

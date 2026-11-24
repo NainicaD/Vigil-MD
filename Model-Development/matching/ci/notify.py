@@ -29,7 +29,8 @@ def outcome(gate: str, publish: str, publish_requested: bool, log: str) -> tuple
     if not publish_requested:
         return "not published", "the gate passed; this run was started without publish"
     if publish == "failure":
-        return "failed", "the gate passed, but publishing failed; see the run log"
+        last = next((line for line in reversed(log.splitlines()) if line.strip()), "")
+        return "failed", "the gate passed, but publishing failed" + (f": {last.strip()[:300]}" if last else "; see the run log")
     if publish != "success":
         return "failed", f"the gate passed, but the publish step did not run ({publish or 'not run'})"
     m = re.search(r"^published (\S+) (v\d+\.\d+\.\d+)", log, re.M)

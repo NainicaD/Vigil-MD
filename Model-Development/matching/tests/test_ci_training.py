@@ -267,6 +267,10 @@ def test_the_result_is_mailed_after_every_train_run(wf):
     assert mail["env"]["PUBLISH_OUTCOME"] == "${{ steps.publish.outcome }}"
     publish = next(s for s in steps if "s11_package_final" in s.get("run", ""))
     assert publish["id"] == "publish" and '"$RUNNER_TEMP/publish.log"' in publish["run"]   # outside the repo: s11's clean-tree check
+    # GitHub's default shell is `bash -e` without pipefail: `s11 | tee` would pass when s11 fails
+    # (the first live run on 2026-11-24 did). stderr too, so the e-mail can quote s11's error.
+    lines = [line.strip() for line in publish["run"].splitlines() if line.strip() and not line.strip().startswith("#")]
+    assert lines[0] == "set -o pipefail" and "2>&1 | tee" in lines[1]
 
 
 def test_smoke_runs_the_gate_report_only(wf):

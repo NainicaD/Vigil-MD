@@ -145,13 +145,13 @@ Two tasks decide whether the model is retrained:
 - `decide_retrain`, at the end of the weekly check: UDI precision below 0.90 (param `retrain_precision`).
 - `check_drift`, after `score` in each matching run: `score_psi` above 0.2. Runs with fewer than 1,000 pairs, or without a baseline, never trigger.
 
-The levels are the same as the Kibana alerts. When one is crossed, the task starts the GitHub workflow `model-training.yml` on the branch `retrain_ref` (default `main`), with inputs `reason` and `publish=true`. The workflow retrains, runs the model gate and publishes a new bundle only if the gate passes. The task sends a "Retraining started" e-mail (`VIGIL_ALERT_EMAIL_TO`) and the ELK record `matching_retrain_triggered` (dashboard panel "Retraining decisions").
+The levels are the same as the Kibana alerts. When one is crossed, the task starts the GitHub workflow `model-training.yml` on the branch `retrain_ref` (default `main`), with inputs `reason`, `publish=true`, `package` (param `retrain_package`, default `matching-same-device`) and `semver` (param `retrain_semver`, default `auto`). The workflow retrains, runs the model gate and publishes a new bundle only if the gate passes. The task sends a "Retraining started" e-mail (`VIGIL_ALERT_EMAIL_TO`) and the ELK record `matching_retrain_triggered` (dashboard panel "Retraining decisions").
 
 At most one retraining is started per 7 days: if a manual (`workflow_dispatch`) run of `model-training.yml` started in the last 7 days, by the DAGs or by hand, the task records `outcome: cooldown` and starts nothing. These two tasks have no retry, because a retry could start the workflow twice.
 
 Setup, once: create a fine-grained GitHub token (GitHub → Settings → Developer settings → Fine-grained tokens) for this repository only, with the permission "Actions: read and write". Put it in `.env` as `VIGIL_GITHUB_TOKEN` and recreate the containers (`docker compose up -d`). Without the token everything runs as before, and a needed retrain fails its task, so the failure e-mail goes out.
 
-Test or demo (on `vigil_md_dev`, without a real drop): trigger `vigil_md_matching_check` with conf `{"dataset": "vigil_md_dev", "retrain_precision": 0.99, "retrain_ref": "<your branch>"}`. Until the workflow with the `reason` and `publish` inputs is on `main`, GitHub refuses a start on `main` (HTTP 422), so set `retrain_ref` to the branch that has it.
+Test or demo (on `vigil_md_dev`, without a real drop): trigger `vigil_md_matching_check` with conf `{"dataset": "vigil_md_dev", "retrain_precision": 0.99, "retrain_ref": "<your branch>", "retrain_package": "matching-same-device-test", "retrain_semver": "0.0.1"}`. The test package keeps a test from becoming a real release; `0.0.1` because `auto` needs an existing version (later tests: `auto`). Until the workflow with the `reason` and `publish` inputs is on `main`, GitHub refuses a start on `main` (HTTP 422), so set `retrain_ref` to the branch that has it.
 
 ## 9. Where to look
 

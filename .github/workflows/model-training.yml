@@ -237,7 +237,9 @@ jobs:
         id: publish
         if: success() && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
         run: |
-          python scripts/s11_package_final.py --exp none --semver "$SEMVER" --package "$PACKAGE" --lineage ci --hand data/hand_features.csv | tee "$RUNNER_TEMP/publish.log"
+          # without pipefail the step would take tee's exit code and pass when s11 fails (2026-11-24)
+          set -o pipefail
+          python scripts/s11_package_final.py --exp none --semver "$SEMVER" --package "$PACKAGE" --lineage ci --hand data/hand_features.csv 2>&1 | tee "$RUNNER_TEMP/publish.log"
           gcloud artifacts versions list --project vigil-md-1792696816 --location us-central1 --repository vigil-md-models --package "$PACKAGE" --sort-by=~createTime --limit 5 | tee -a "$GITHUB_STEP_SUMMARY"
 
       # The result e-mail (Model Deployment guidelines 5.5): published / champion kept / no change /

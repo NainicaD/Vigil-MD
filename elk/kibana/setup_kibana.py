@@ -166,7 +166,7 @@ def panels() -> list[dict]:
              {"p": col("precision", "average", "precision"), "r": col("recall", "average", "recall"),
               "c": col("candidate_recall", "average", "candidate recall")}),
         lens("vm-retrain", "Retraining decisions (started / held back by the 7-day limit)", LOGS,
-             "message:matching_retrain_triggered", {"c": col(None, "count", "decisions")},
+             "message:matching_retrain_triggered and outcome:*", {"c": col(None, "count", "decisions")},
              breakdown="outcome.keyword", series="bar_stacked"),
         lens("vm-task-events", "Failed tasks and retries", LOGS,
              "message:matching_task_failed or message:matching_task_retry",

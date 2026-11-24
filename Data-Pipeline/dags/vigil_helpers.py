@@ -188,26 +188,30 @@ def start_workflow(token: str, repo: str, workflow: str, body: dict) -> None:
 
 
 def build_retrain_message(reason: str, dag_id: str, run_id: str, ref: str, repo: str,
-                          workflow: str) -> tuple[str, str]:
+                          workflow: str, package: str = "matching-same-device") -> tuple[str, str]:
     """The e-mail subject and HTML body when retraining is started. Pure function."""
     from html import escape  # pylint: disable=import-outside-toplevel
     runs = f"https://github.com/{repo}/actions/workflows/{workflow}"
     subject = f"[Vigil-MD] Retraining started: {reason}"
     html = (f"<p>The matching model is being retrained: <b>{escape(reason)}</b>.</p>"
             f"<p>Found by <b>{dag_id}</b>, run <code>{run_id}</code>. The workflow trains from "
-            f"<code>{ref}</code> and publishes a new model only if it passes the model gate; "
+            f"<code>{escape(ref)}</code> and publishes a new model to <code>{escape(package)}</code> "
+            f"only if it passes the model gate; "
             f"a second e-mail reports the result.</p>"
             f'<p><a href="{runs}">Workflow runs on GitHub</a> · <a href="{airflow_url(dag_id)}">Airflow</a></p>')
     return subject, html
 
 
-def retrain_if_needed(reason: str | None, context: dict, ref: str, metrics: dict) -> str:
+def retrain_if_needed(reason: str | None, context: dict, ref: str, metrics: dict,
+                      package: str | None = None, semver: str | None = None) -> str:
     """Start model-training.yml when `reason` is set, at most once per cooldown. Returns the outcome:
     "not_needed", "cooldown" or "started". Each outcome but "not_needed" leaves an ELK record
     matching_retrain_triggered and is logged. Raises (the task fails, so the failure e-mail goes out)
     when retraining is needed but the token is missing or GitHub refuses."""
     from vigil_checks import (  # pylint: disable=import-outside-toplevel
-        RETRAIN_COOLDOWN_DAYS, RETRAIN_REPO, RETRAIN_WORKFLOW, dispatch_body, recent_run)
+        RETRAIN_COOLDOWN_DAYS, RETRAIN_PACKAGE, RETRAIN_REPO, RETRAIN_SEMVER, RETRAIN_WORKFLOW,
+        dispatch_body, recent_run)
+    package, semver = package or RETRAIN_PACKAGE, semver or RETRAIN_SEMVER
     dag_id, run_id = context["ti"].dag_id, context["run_id"]
     if reason is None:
         log.info("no retraining needed: %s", metrics)
@@ -219,17 +223,18 @@ def retrain_if_needed(reason: str | None, context: dict, ref: str, metrics: dict
     now = datetime.now(timezone.utc)
     last = recent_run(dispatched_runs(token, RETRAIN_REPO, RETRAIN_WORKFLOW,
                                       now - timedelta(days=RETRAIN_COOLDOWN_DAYS)), now)
-    fields = {"reason": reason, "dag_id": dag_id, "run_id": run_id, "ref": ref, **metrics}
+    fields = {"reason": reason, "dag_id": dag_id, "run_id": run_id, "ref": ref, "package": package,
+              **metrics}
     if last:
         log.warning("retraining needed (%s) but a run started %s (%s): once per %d days, not started",
                     reason, last["created_at"], last.get("html_url"), RETRAIN_COOLDOWN_DAYS)
         send_to_elk("matching_retrain_triggered", {**fields, "outcome": "cooldown",
                                                    "last_run_url": last.get("html_url")})
         return "cooldown"
-    start_workflow(token, RETRAIN_REPO, RETRAIN_WORKFLOW, dispatch_body(ref, reason))
-    log.warning("retraining started (%s): %s on %s", reason, RETRAIN_WORKFLOW, ref)
+    start_workflow(token, RETRAIN_REPO, RETRAIN_WORKFLOW, dispatch_body(ref, reason, package, semver))
+    log.warning("retraining started (%s): %s on %s, publishing to %s", reason, RETRAIN_WORKFLOW, ref, package)
     send_to_elk("matching_retrain_triggered", {**fields, "outcome": "started"})
-    send_email(*build_retrain_message(reason, dag_id, run_id, ref, RETRAIN_REPO, RETRAIN_WORKFLOW))
+    send_email(*build_retrain_message(reason, dag_id, run_id, ref, RETRAIN_REPO, RETRAIN_WORKFLOW, package))
     return "started"
 
 
