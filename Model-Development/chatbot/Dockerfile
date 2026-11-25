@@ -57,6 +57,7 @@ RUN pip install --no-cache-dir -r requirements-serve.txt
 COPY Model-Development/chatbot/answer answer
 COPY Model-Development/chatbot/api api
 COPY Model-Development/chatbot/device_search device_search
+COPY Model-Development/chatbot/export export
 COPY Model-Development/chatbot/query_layer query_layer
 COPY Model-Development/chatbot/query_router query_router
 COPY --from=model /model models/baseline

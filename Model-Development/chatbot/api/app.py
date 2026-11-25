@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 
 from answer import pipeline
 from answer import templates
+from api import export
 from query_layer import backend as ql_backend
 from query_layer import config
 from query_layer import summary
@@ -180,6 +181,8 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
         out = chatbot().answer(body.question, entity=entity)
         out.pop("question", None)            # the client sent it; nothing personal echoed back
         return public(out)
+
+    app.include_router(export.make_router(chatbot, RateLimiter))   # recall finder + exports
 
     dist = web_dist or os.environ.get("VIGIL_WEB_DIST")
     if dist and Path(dist).is_dir():

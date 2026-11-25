@@ -388,7 +388,10 @@ device_summary(backend, **index.query_key(r.matches[0]), budget=budget)
 **Entries:** every device, product code and manufacturer in `entity_catalog`, with the query
 layer's `entity_type` and `entity_id`. Devices also carry their model numbers and UDIs.
 [`aliases.json`](device_search/aliases.json) maps names users type to names in the data
-(Philips → Respironics).
+(Philips → Respironics). Since index version 3 the file also holds every recall (`recalls`
+table, one row per recall product, from `recall` joined to `enforcement`) for the recall finder;
+see [Recall finder and exports](#recall-finder-and-exports-apiexportpy-export). The dev index grew
+from 1.5 to 2.0 MB (273 recalls); the PROD growth is measured at the final check.
 
 **Matching:** words in names and model numbers, with typos, 4-letter prefixes and plurals allowed;
 a device's company name counts slightly less, so "medtronic" ranks manufacturers first and
@@ -509,6 +512,82 @@ VIGIL_BQ_DATASET=vigil_md_dev uvicorn api.app:app --port 8000
 curl 'localhost:8000/api/search?q=dreamstation'
 open http://localhost:8000/api/docs
 ```
+
+## Recall finder and exports ([`api/export.py`](api/export.py), [`export/`](export/))
+
+A visitor filters recalls (all of them, or one device, product code or manufacturer) and downloads
+exactly what they see as a PDF or an Excel file; the search results list downloads too.
+`api/export.py` holds the routes (one `include_router` line in `app.py`); `export/` does the
+work: `filters.py` (parse and check), `data.py` (rows), `document.py` (what a file holds),
+`pdf.py` and `xlsx.py` (the two formats).
+
+| Endpoint | Returns | BigQuery |
+|---|---|---|
+| `GET /api/recalls?<filters>&page=1` | recall finder: 50 rows per page, `total`, `pages`, the filters, `data_as_of` | none (search index) |
+| `GET /api/export/recalls?format=pdf\|xlsx&<filters>` | the recall finder's file | none |
+| `GET /api/export/entity/<kind>/<id>?format=json\|pdf\|xlsx&<filters>` | a device page with filters: JSON for the page, or its file (same data function, so the same numbers) | the page's few MB (cost cap 0.5 GB) |
+| `GET /api/export/search?q=<2-200 chars>&format=pdf\|xlsx` | the search results list (up to 500 hits, same order as `/api/search`) | none |
+
+**Filters** (repeat a key for several values; unknown values get 422, never an empty file):
+
+| Key | Values | Pages |
+|---|---|---|
+| `category` | `software`, `design`, `manufacturing`, `component`, `labeling`, `other` | both |
+| `class` | `I`, `II`, `III` (about half the recalls have no class: they never match a class filter) | both |
+| `status` | `open` (any `Open, …` status), `completed`, `terminated` | both |
+| `year_from`, `year_to` | 1990 to the current year (recall date; report year for counts) | both |
+| `text` | 2–100 characters, in product, firm or reason (a bound parameter, never SQL text) | both |
+| `manufacturer`, `product_code` | a manufacturer id from the search box; a 3-letter code | recall finder |
+| `event` | `Death`, `Injury`, `Malfunction` (report counts) | device page |
+
+- **Data:** the recall finder and the search list read the search index; a device page reads
+  `device_summary()` plus the recalls query with a higher limit (the same partition). Problems are
+  not filtered (they have no year or event type), and the files say so.
+- **Data freshness (flagged for review):** the index is built at deploy, so recall finder and
+  search files are as fresh as the last deploy; device files read the daily tables. Every file
+  prints its "data as of" date (index build time, or the oldest table date).
+- **Limits:** a PDF holds at most 1,000 recalls (reasons cut at about 300 characters, at a word,
+  with "…"; the full text is in Excel), an Excel file at most 100,000 rows. Over a limit: 413 with
+  the count and "narrow the filters", never a silently cut file. Files: 5 a minute per visitor
+  (`VIGIL_EXPORT_RATE_LIMIT_PER_MINUTE`); the filtered device JSON uses the page limit (30).
+- **Each file holds:** the title, when it was made, "data as of", the filters, the row count, what
+  the counts mean (the page's `counts_note`), the sources (openFDA, AccessGUDID) and the site's
+  "not medical advice" line (PDF header; Excel sheet "About"). Recalls: number, date, class,
+  status, firm, product, category, root cause, reason (Excel adds action, product code,
+  manufacturer and, on device pages, `matched_by`). Device pages add "Summary", "Reports by year"
+  and "Problems". Search list: "Results" (title, kind, company, product codes, reports, deaths,
+  injuries).
+- **Safety:** Excel never has a formula cell (text written as text, so FDA text starting with `=`,
+  `+`, `-` or `@` stays text); PDF text is escaped (`<b>` and `&` print as written); file names come
+  from fixed parts only (`vigil-md-recalls-2026-11-25.xlsx`), never the visitor's text, and the
+  visitor's text filters are never logged.
+- **Characters:** the PDF uses Helvetica, and Noto Sans SC ([`export/fonts/`](export/fonts/), SIL
+  Open Font License 1.1, see `OFL.txt`) only for characters Helvetica has no glyph for (Chinese,
+  Greek, Cyrillic, ...); a PDF embeds only the characters it uses.
+
+**Recall categories** ([`device_search/recall_categories.json`](device_search/recall_categories.json))
+group the FDA `root_cause` phrase: Software, Design, Manufacturing and process, Component or
+supplier, Labeling and packaging, Other or unknown. The list comes from the data (25 phrases in
+`vigil_md_dev`, 2026-11-25). A phrase missing from the file is stored as "Other or unknown" and
+named in a warning by the index build (a deploy never breaks on a new FDA phrase); with a built
+index on the machine, `tests/test_export.py` fails on it.
+
+**Measured on a laptop (2026-11-25), synthetic rows of real size:**
+
+| File | Rows | Time | Size |
+|---|---|---|---|
+| PDF | 1,000 recalls | 3.9 s | 0.26 MB |
+| Excel | 59,705 recalls (all of PROD today) | about 8 s | 2.7 MB |
+| Excel | 100,000 rows (the limit) | 13.3 s | 5.2 MB |
+
+- **Excel library:** XlsxWriter, not openpyxl: openpyxl's write-only mode took 14.8–16 s for
+  59,705 rows and 23–26 s for 100,000 (over the 15 s target). openpyxl stays a test dependency
+  (the tests open the files).
+- **Excel memory:** sheets go through temporary files: 100,000 rows peaked at about 7 MB of Python
+  memory instead of about 450 MB fully in memory, for 13.3 s instead of 10.7 s.
+- **Versions:** reportlab 5.1.0 and XlsxWriter 3.3.1, the newest releases at least two weeks old
+  on 2026-11-25. reportlab brings Pillow; with the font, the image grows by about 37 MB (installed
+  sizes; measure with `docker images` after the build).
 
 ## Container ([`Dockerfile`](Dockerfile))
 

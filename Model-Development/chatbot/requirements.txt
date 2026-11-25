@@ -20,3 +20,11 @@ matplotlib==3.10.7
 fastapi==0.162.2
 uvicorn==0.54.0
 httpx==0.28.1
+
+# Exports of search results (export/): PDF and Excel files. Versions released at least two weeks
+# before 2026-11-25 (reportlab 5.1.1/5.1.2 and XlsxWriter 3.3.2-3.3.4 were days old). XlsxWriter,
+# not openpyxl, builds the Excel files: 100,000 rows in 9.3 s instead of 23-26 s (README).
+reportlab==5.1.0
+XlsxWriter==3.3.1
+# Tests only: they open the Excel files to check them (not in the image)
+openpyxl==3.1.5

@@ -198,7 +198,7 @@ REPO = CHATBOT.parents[1]
 
 def test_the_image_copies_every_package_the_api_imports():
     dockerfile = (CHATBOT / "Dockerfile").read_text()
-    for package in ("answer", "api", "device_search", "query_layer", "query_router"):
+    for package in ("answer", "api", "device_search", "export", "query_layer", "query_router"):
         assert f"COPY Model-Development/chatbot/{package} {package}" in dockerfile, package
     # the router: retrained by default, or the published one with its checksums checked
     assert "ARG MODEL=train" in dockerfile and "FROM model-${MODEL} AS model" in dockerfile
