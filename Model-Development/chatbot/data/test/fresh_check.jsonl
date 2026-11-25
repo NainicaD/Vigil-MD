@@ -1,0 +1,42 @@
+{"text": "my interstim started shocking my leg out of nowhere, do i turn it off or go to the er", "labels": ["out_of_scope"], "kind": "advice", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}
+{"text": "grandmas home dialysis machine keeps alarming at 3am, can we just silence it till morning", "labels": ["out_of_scope"], "kind": "advice", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}
+{"text": "going in for cataract surgery, is the Vivity lens safer than a regular monofocal one?", "labels": ["out_of_scope"], "kind": "advice", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}
+{"text": "found out im pregnant and still have a Liletta in. will that hurt the baby", "labels": ["out_of_scope"], "kind": "advice", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}
+{"text": "my 6 year old has a VP shunt and has been throwing up all day is the shunt failing??", "labels": ["out_of_scope"], "kind": "advice", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}
+{"text": "I look after my uncle and we use a Hoyer lift. reports say the slings tear, should I stop using it until we get a new one?", "labels": ["out_of_scope"], "kind": "advice", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}
+{"text": "should i be scared tho", "labels": ["out_of_scope"], "kind": "advice", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}
+{"text": "my wife's ICD went off twice while she was gardening. is she ok or do we need to go in", "labels": ["out_of_scope"], "kind": "advice", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}
+{"text": "how do i reset my wifi router", "labels": ["out_of_scope"], "kind": "unrelated", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "unrelated"}
+{"text": "recommend me a good anime to watch this weekend", "labels": ["out_of_scope"], "kind": "unrelated", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "unrelated"}
+{"text": "translate thank you into japanese", "labels": ["out_of_scope"], "kind": "unrelated", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "unrelated"}
+{"text": "Owlet", "labels": [], "kind": "bare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "Biotronik", "labels": [], "kind": "bare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "DQA", "labels": [], "kind": "bare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "spinal cord stimulator", "labels": [], "kind": "bare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "lap band", "labels": [], "kind": "bare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "fresinius", "labels": [], "kind": "bare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "senza vs proclaim", "labels": [], "kind": "bare_compare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "Tecnis or PanOptix?", "labels": [], "kind": "bare_compare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "LIFEPAK vs HeartSine", "labels": [], "kind": "bare_compare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "Invacare or Drive Medical", "labels": [], "kind": "bare_compare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "lap band vs orbera balloon, which one has more people dying in the reports", "labels": ["counts"], "kind": "compare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "comparing Ethicon Physiomesh and Bard Ventralex - what recalls has each one had and why", "labels": ["recalls"], "kind": "compare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "list the top complaints for the Mobi-C cervical disc next to the Prestige LP", "labels": ["problems"], "kind": "compare", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "show me injury reports side by side for the NxStage System One and the Fresenius 2008T", "labels": ["narratives"], "kind": "compare", "unsure": true, "audience": "neutral", "style": "fresh"}
+{"text": "how many malfunction reports does the twiist insulin pump have", "labels": ["counts"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "are nevro senza reports trending up the last few yrs or nah", "labels": ["counts"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "anybody get seriously hurt from a Shockwave balloon", "labels": ["counts"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "axonics implant - what are ppl complaining about", "labels": ["problems"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "patient side effects listed in reports for the Uphold vaginal mesh", "labels": ["problems"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "was there a recall on the B. Braun Infusomat Space", "labels": ["recalls"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "What did the FDA tell people to do about the Monoject syringe recall?", "labels": ["recalls"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "LivaNova heater-cooler recall reason", "labels": ["recalls"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "summarise what happened in reports on the Penumbra Indigo catheter", "labels": ["narratives"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "can u show me what ppl wrote about the Wright Profemur hip breaking", "labels": ["narratives"], "kind": "factual", "unsure": true, "audience": "neutral", "style": "fresh"}
+{"text": "who actually manufactures the Stelo glucose sensor", "labels": ["identity"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "what product code do vagus nerve stimulators fall under", "labels": ["identity"], "kind": "factual", "unsure": false, "audience": "neutral", "style": "fresh"}
+{"text": "how many of them were deaths", "labels": ["counts"], "kind": "follow_up", "unsure": false, "audience": "neutral", "style": "fresh", "follow_up": true}
+{"text": "did that one ever get pulled off the shelves", "labels": ["recalls"], "kind": "follow_up", "unsure": false, "audience": "neutral", "style": "fresh", "follow_up": true}
+{"text": "is that the same company that makes the other one", "labels": ["identity"], "kind": "follow_up", "unsure": true, "audience": "neutral", "style": "fresh", "follow_up": true}
+{"text": "how many reports are there for the iFuse implant and should i get it for my back pain", "labels": ["counts", "out_of_scope"], "kind": "mixed", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}
+{"text": "what goes wrong with the Allurion balloon and should i do that instead of ozempic", "labels": ["out_of_scope", "problems"], "kind": "mixed", "unsure": false, "audience": "neutral", "style": "fresh", "oos_kind": "advice"}

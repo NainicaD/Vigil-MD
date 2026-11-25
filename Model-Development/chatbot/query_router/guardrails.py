@@ -22,7 +22,11 @@ handwritten_test_v2.jsonl, written by teammates after this freeze and scored onc
 pattern makes it stale too. Revision 4 (5d1584bb53b3, 2026-11-11) adds "lump"/"lumps" to the
 symptom words, from one handwritten_test_v2 miss ("I have Biocell implants and recently found a
 lump near one") that the champion caught only by its model score: that one test row is no
-longer an unbiased check of the rules.
+longer an unbiased check of the rules. Revision 5 (2026-11-24) adds "ranking" ("safer",
+"safest", "riskiest", "least risky" on their own, e.g. "safer knee implant - zimmer or stryker?",
+"rank these from safest to most dangerous") and "bare_judgement" (a judgement word alone: "safe?",
+"is it dangerous?"; not "ok", a chat acknowledgement), from three handwritten_test_v2 misses of
+the router candidates (item C, 2026-11-24): those rows are no longer an unbiased check either.
 
 Fixed replies (never model-written), chosen in route():
   help             "what can you do", "help", "who are you": what the bot answers, no query.
@@ -182,6 +186,15 @@ ADVICE_PATTERNS += (
                          r"|\b(?:keep|keeping|using|wearing|replace|remove) mine\b"
                          r"|\bi feel (?:shaky|sick|faint|weak|dizzy|off|unwell|bad|funny)\b"
                          r"|\bmy \w+ (?:is|are|seems?) (?:reading|giving) (?:wrong|off|high|low|weird)\b"),
+)
+ADVICE_PATTERNS += (
+    # revision 5: asking which is safer or safest, without "than" or "which is": "safer knee
+    # implant - zimmer or stryker?", "rank these from safest to most dangerous"
+    ("ranking",          r"\b(?:safer|safest|riskiest|least risky)\b"),
+    # a judgement word alone, e.g. a short follow-up: "safe?", "is it dangerous?" ("ok" is not here:
+    # it is how users acknowledge an answer)
+    ("bare_judgement",   r"^\s*(?:(?:is|are) (?:it|this|that|they|mine) )?(?:still )?(?:safe|unsafe|"
+                         r"dangerous|risky|reliable)\s*[?.!]*\s*$"),
 )
 _COMPILED = tuple((name, re.compile(pat)) for name, pat in ADVICE_PATTERNS)
 

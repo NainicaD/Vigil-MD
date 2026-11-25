@@ -29,6 +29,8 @@ TEMPLATES: dict[str, list[tuple[str, str]]] = {
         ("procurement", "compare the number of {event} reports for {device} and {device2}"),
         ("procurement", "which has more reports, {device} or {device2}"),
         ("procurement", "how many {event} reports has {company} had for its {generic}s"),
+        ("researcher", "{event} report counts for {device} versus {device2}"),
+        ("neutral", "does {device} or {device2} have more {event} reports"),
     ],
     "problems": [
         ("neutral", "what problems are reported for {device}"),
@@ -43,6 +45,9 @@ TEMPLATES: dict[str, list[tuple[str, str]]] = {
         ("researcher", "distribution of patient problem codes for {code} reports"),
         ("procurement", "what are the main reported problems with {company} {generic}s"),
         ("procurement", "known failure issues for {device}"),
+        ("neutral", "how do the reported problems with {device} differ from {device2}"),
+        ("clinician", "compare the failure modes of {device} and {device2}"),
+        ("procurement", "which has more device problems reported, {device} or {device2}"),
     ],
     "recalls": [
         ("neutral", "was {device} ever recalled"),
@@ -57,6 +62,9 @@ TEMPLATES: dict[str, list[tuple[str, str]]] = {
         ("researcher", "root causes of recalls for {code} since {year}"),
         ("procurement", "how many recalls has {company} had since {year}"),
         ("procurement", "are there any open recalls for {device}"),
+        ("neutral", "has {device} or {device2} been recalled more often"),
+        ("procurement", "compare recalls for {device} and {device2}"),
+        ("researcher", "recall history of {company} versus {company2}"),
     ],
     "narratives": [
         ("neutral", "describe the injury reports for {device}"),
@@ -70,6 +78,8 @@ TEMPLATES: dict[str, list[tuple[str, str]]] = {
         ("researcher", "sample narratives from {code} death reports in {year}"),
         ("researcher", "event description text for {device} MDRs"),
         ("procurement", "what do the injury reports for {company} {generic}s say"),
+        ("neutral", "show me reports for both {device} and {device2}"),
+        ("researcher", "example {event} narratives for {device} and {device2}"),
     ],
     "identity": [
         ("neutral", "who makes {device}"),
@@ -81,6 +91,7 @@ TEMPLATES: dict[str, list[tuple[str, str]]] = {
         ("researcher", "what device type is product code {code}"),
         ("researcher", "map UDI {udi} to its device record"),
         ("procurement", "which companies make {generic}s"),
+        ("neutral", "who makes {device} and who makes {device2}"),
     ],
     "out_of_scope": [
         # medical advice
@@ -140,6 +151,22 @@ TEMPLATES: dict[str, list[tuple[str, str]]] = {
         ("patient", "my child's {generic} fell out, what do we do"),
         ("clinician", "what should our hospital do about the {device} recall"),
         ("procurement", "are {generic}s from {company} good enough for our patients"),
+        # medical advice in the short "X or Y" form: the advice counterpart of the bare comparisons
+        # (BARE), so "safer"/"better" + two names is learned as advice while "X vs Y" alone is not.
+        # Written from the category after the item C candidates missed one such question (2026-11-24).
+        ("patient", "which is safer, {device} or {device2}"),
+        ("patient", "safer {generic}: {company} or {company2}?"),
+        ("patient", "better pick, {device} or {device2}?"),
+        ("patient", "{device} or {device2}, which one would you get"),
+        ("patient", "least risky {generic} - {device} or {device2}"),
+        ("clinician", "{device} vs {device2}, which is safer for my patients"),
+        ("procurement", "safest {generic} for our ward, {company} or {company2}"),
+        # very short advice, e.g. a follow-up after a device answer
+        ("patient", "is it safe"),
+        ("patient", "{device} safe?"),
+        ("patient", "still safe to use?"),
+        ("patient", "so is mine dangerous"),
+        ("patient", "should i be worried"),
         # unrelated (kept in UNRELATED below so evaluation can separate them from advice)
         ("neutral", "what is the weather today"),
         ("neutral", "write me a poem about the ocean"),
@@ -163,6 +190,33 @@ TEMPLATES: dict[str, list[tuple[str, str]]] = {
 # advice recall (the safety number) separately from unrelated recall.
 UNRELATED = {t for _, t in TEMPLATES["out_of_scope"][TEMPLATES["out_of_scope"].index(
     ("neutral", "what is the weather today")):]}
+
+# Bare questions: a device, company, product code or device type on its own, or two of them side
+# by side, as users type them in reply to "Which device?" or to start a search. They have NO label
+# (labels []): the chatbot looks the name up or asks what the user wants to know. Without them the
+# only "{device} or {device2}" examples were advice ("which is the safer bet, ...") and counts, and
+# the MiniLM candidate refused bare comparisons (everyday set 0/3, 2026-11-22). Written from the
+# categories, not copied from a test set. generate.py puts BARE_SHARE of the questions here.
+BARE: list[tuple[str, str]] = [
+    ("neutral", "{device}"),
+    ("neutral", "the {device}"),
+    ("neutral", "{device}?"),
+    ("neutral", "{company}"),
+    ("neutral", "{company} devices"),
+    ("neutral", "{code}"),
+    ("neutral", "product code {code}"),
+    ("neutral", "{generic}"),
+    ("neutral", "{company} {generic}"),
+    ("neutral", "{device} by {company}"),
+    ("neutral", "{device} vs {device2}"),
+    ("neutral", "{device} or {device2}"),
+    ("neutral", "{device} versus {device2}"),
+    ("neutral", "{device} vs. {device2}?"),
+    ("neutral", "{device} compared with {device2}"),
+    ("neutral", "{device} and {device2}"),
+    ("neutral", "{company} or {company2}"),
+    ("neutral", "{company} vs {company2}"),
+]
 
 # Ways two questions are joined into one multi-label question.
 JOINERS = (" and ", ", also ", ". ", "? and ", " - also ")

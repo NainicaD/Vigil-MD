@@ -11,10 +11,13 @@ MLflow, and listed. The test sets are not read here: gate.py scores the candidat
   nb   complement naive Bayes, C = smoothing alpha
   minilm         frozen MiniLM sentence embeddings + logistic regression (item C, embed.py)
   minilm_tfidf   the same, with the TF-IDF features added
+  distilbert     DistilBERT fine-tuned end to end (item C, finetune.py); grid over
+                 learning rate and epochs instead of C
 
 Usage (from Model-Development/chatbot/; local, about a minute):
   python -m query_router.compare
   python -m query_router.compare --types minilm,minilm_tfidf   # needs requirements-tf.txt
+  python -m query_router.compare --types distilbert             # the same; about 5 min per setting
 """
 import argparse
 import json
@@ -35,7 +38,9 @@ TRUSTED = {"svm": ["sklearn.calibration._CalibratedClassifier",
                    "sklearn.calibration._SigmoidCalibration"]}
 GRIDS = {"lr": (0.5, 1.0, 2.0, 4.0), "svm": (0.1, 0.5, 1.0, 2.0, 4.0), "nb": (0.1, 0.3, 1.0, 3.0, 10.0),
          # Unit-length embeddings: weaker features per dimension, so larger C values.
-         "minilm": (1.0, 4.0, 16.0, 64.0), "minilm_tfidf": (1.0, 4.0, 16.0)}
+         "minilm": (1.0, 4.0, 16.0, 64.0), "minilm_tfidf": (1.0, 4.0, 16.0),
+         # The usual fine-tuning range for BERT-sized models; a setting is a dict, not a C.
+         "distilbert": ({"lr": 3e-5, "epochs": 3}, {"lr": 5e-5, "epochs": 3}, {"lr": 5e-5, "epochs": 5})}
 DEFAULT_TYPES = ("lr", "svm", "nb")
 MODELS_DIR = pathlib.Path("models")
 
@@ -48,10 +53,11 @@ def best_per_type(train_rows: list[dict], val_rows: list[dict], grids: dict | No
     out = {}
     for kind, grid in grids.items():
         for c in grid:
-            params = {"model": kind, "C": c}
+            params = {"model": kind, **c} if isinstance(c, dict) else {"model": kind, "C": c}
             pipe, scores, thresholds = train.fit_and_score(params, train_rows, val_rows)
             if mlflow:
-                with mlflow.start_run(run_name=f"{kind}_C{c}", nested=True):
+                name = "_".join(f"{k}{v}" for k, v in c.items()) if isinstance(c, dict) else f"C{c}"
+                with mlflow.start_run(run_name=f"{kind}_{name}", nested=True):
                     mlflow.log_params(params)
                     mlflow.log_metrics(train.flat_metrics(scores, "val"))
             value = tune.objective_value(scores)
@@ -64,6 +70,8 @@ def save_candidate(kind: str, params: dict, pipe, scores: dict, thresholds: dict
                    n_train: int, n_val: int, mlflow=None) -> dict:
     """Saves one candidate like train.py does (meta.json + model.joblib), registered when an
     MLflow run is active. Returns its meta."""
+    if kind in train.FINETUNED_TYPES:
+        return _save_finetuned_candidate(kind, params, pipe, scores, thresholds, n_train, n_val, mlflow)
     embedding = kind in train.EMBEDDING_TYPES
     meta = {"model": kind if embedding else f"tfidf_{kind}", "labels": list(labels.LABELS),
             "params": params, "rules_fingerprint": guardrails.rules_fingerprint(),
@@ -113,6 +121,29 @@ def _save_embedding_candidate(pipe, meta: dict, out_dir: pathlib.Path, scores: d
             mlflow.log_artifacts(str(out_dir), "files")
 
 
+def _save_finetuned_candidate(kind: str, params: dict, pipe, scores: dict, thresholds: dict,
+                              n_train: int, n_val: int, mlflow=None) -> dict:
+    """model.joblib (the settings) + finetuned/ (the network and tokenizer). Logged to MLflow as
+    files, not registered, like the MiniLM candidates: a candidate is registered only once it
+    passes the gate."""
+    from query_router.finetune import DEFAULT_MODEL  # pylint: disable=import-outside-toplevel
+    meta = {"model": kind, "labels": list(labels.LABELS), "params": params,
+            "rules_fingerprint": guardrails.rules_fingerprint(), "thresholds": thresholds,
+            "val_metrics": scores, "n_train": n_train, "n_val": n_val,
+            "finetuned": DEFAULT_MODEL}
+    out_dir = MODELS_DIR / kind
+    train.save(pipe, meta, out_dir)
+    pipe.named_steps["clf"].save_weights(out_dir)
+    if mlflow:
+        with mlflow.start_run(run_name=f"{kind}-best", nested=True) as run:
+            mlflow.log_params({**params, "selected_on": "val", "base_model": DEFAULT_MODEL})
+            mlflow.log_metrics(train.flat_metrics(scores, "val"))
+            meta["mlflow_run_id"] = run.info.run_id
+            train.save(pipe, meta, out_dir)
+            mlflow.log_artifact(str(out_dir / "meta.json"), "files")
+    return meta
+
+
 def main(argv: list[str] | None = None) -> int:
     """Prints the validation results per model type."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -148,7 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"{'type':5} {'C/alpha':>8} {'macro-F1':>9} {'exact':>7} {'false ref.':>11} "
           f"{'advice rec.':>12} {'version':>8}")
     for kind, s in summary.items():
-        print(f"{kind:5} {s['params']['C']:>8} {s['macro_f1']:>9} {s['exact_match']:>7} "
+        setting = s["params"].get("C", ",".join(f"{k}={v}" for k, v in s["params"].items() if k != "model"))
+        print(f"{kind:5} {setting!s:>8} {s['macro_f1']:>9} {s['exact_match']:>7} "
               f"{s['false_refusal_rate']:>11} {s['advice_recall']:>12} {str(s['model_version']):>8}")
     pathlib.Path("reports/compare").mkdir(parents=True, exist_ok=True)
     name = "comparison.json" if args.types == ",".join(DEFAULT_TYPES) else \

@@ -48,6 +48,8 @@ class QueryRouter:
             for step in _steps(pipe):
                 if isinstance(step, SentenceEmbedder):
                     step.use_saved_encoder(model_dir)
+        if meta.get("finetuned"):            # a DistilBERT candidate (finetune.py): local weights
+            pipe.named_steps["clf"].use_saved_weights(model_dir)
         return cls(pipe, meta["thresholds"], policy)
 
     def scores(self, questions: list[str]) -> list[dict[str, float]]:

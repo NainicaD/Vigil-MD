@@ -44,11 +44,13 @@ MODEL_TYPES = ("lr", "svm", "nb")    # compare.py compares them on the same feat
 # Item C: a frozen MiniLM sentence encoder (embed.py) before the same per-label logistic
 # regression; "minilm_tfidf" also keeps the TF-IDF features (typos, unseen device names).
 EMBEDDING_TYPES = ("minilm", "minilm_tfidf")
+# Item C: DistilBERT fine-tuned end to end (finetune.py), one sigmoid output per label.
+FINETUNED_TYPES = ("distilbert",)
 
 
-def build_pipeline(C: float, word_ngram_max: int = 2, char_ngram_min: int = 3,
+def build_pipeline(C: float | None = None, word_ngram_max: int = 2, char_ngram_min: int = 3,
                    char_ngram_max: int = 5, min_df: int = 2, class_weight: str | None = "balanced",
-                   model: str = "lr"):
+                   model: str = "lr", lr: float = 5e-5, epochs: int = 3, seed: int = 0):
     """The defaults are the baseline's settings; tune.py searches the others.
 
     model: "lr" logistic regression (the baseline), "svm" a linear SVM with calibrated
@@ -61,8 +63,12 @@ def build_pipeline(C: float, word_ngram_max: int = 2, char_ngram_min: int = 3,
     from sklearn.pipeline import FeatureUnion, Pipeline
     from sklearn.svm import LinearSVC
     from sklearn.feature_extraction.text import TfidfVectorizer
-    if model not in MODEL_TYPES + EMBEDDING_TYPES:
-        raise ValueError(f"model must be one of {MODEL_TYPES + EMBEDDING_TYPES}, got {model!r}")
+    if model not in MODEL_TYPES + EMBEDDING_TYPES + FINETUNED_TYPES:
+        raise ValueError(f"model must be one of {MODEL_TYPES + EMBEDDING_TYPES + FINETUNED_TYPES}, "
+                         f"got {model!r}")
+    if model in FINETUNED_TYPES:       # no TF-IDF, no C: lr, epochs and seed are its settings
+        from .finetune import FineTunedClassifier  # pylint: disable=import-outside-toplevel
+        return Pipeline([("clf", FineTunedClassifier(lr=lr, epochs=epochs, seed=seed))])
     tfidf = FeatureUnion([
         ("word", TfidfVectorizer(lowercase=True, ngram_range=(1, word_ngram_max), min_df=min_df,
                                  sublinear_tf=True)),

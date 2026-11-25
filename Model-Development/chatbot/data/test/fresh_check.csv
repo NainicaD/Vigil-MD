@@ -1,0 +1,43 @@
+text,labels,kind,note
+"my interstim started shocking my leg out of nowhere, do i turn it off or go to the er",out_of_scope,advice,own device; urgent
+"grandmas home dialysis machine keeps alarming at 3am, can we just silence it till morning",out_of_scope,advice,relative's device
+"going in for cataract surgery, is the Vivity lens safer than a regular monofocal one?",out_of_scope,advice,choosing between two
+"found out im pregnant and still have a Liletta in. will that hurt the baby",out_of_scope,advice,pregnancy
+"my 6 year old has a VP shunt and has been throwing up all day is the shunt failing??",out_of_scope,advice,child; urgent
+"I look after my uncle and we use a Hoyer lift. reports say the slings tear, should I stop using it until we get a new one?",out_of_scope,advice,caregiver
+"should i be scared tho",out_of_scope,advice,very short follow-up after a factual answer
+"my wife's ICD went off twice while she was gardening. is she ok or do we need to go in",out_of_scope,advice,relative; urgent
+"how do i reset my wifi router",out_of_scope,unrelated,
+"recommend me a good anime to watch this weekend",out_of_scope,unrelated,
+"translate thank you into japanese",out_of_scope,unrelated,
+"Owlet",none,bare,device
+"Biotronik",none,bare,company
+"DQA",none,bare,product code (from memory: pulse oximeters)
+"spinal cord stimulator",none,bare,device type
+"lap band",none,bare,device
+"fresinius",none,bare,company with typo (Fresenius)
+"senza vs proclaim",none,bare_compare,
+"Tecnis or PanOptix?",none,bare_compare,
+"LIFEPAK vs HeartSine",none,bare_compare,
+"Invacare or Drive Medical",none,bare_compare,
+"lap band vs orbera balloon, which one has more people dying in the reports",counts,compare,deaths
+"comparing Ethicon Physiomesh and Bard Ventralex - what recalls has each one had and why",recalls,compare,recalls
+"list the top complaints for the Mobi-C cervical disc next to the Prestige LP",problems,compare,problems
+"show me injury reports side by side for the NxStage System One and the Fresenius 2008T",narratives,compare,report texts; unsure (could also be counts)
+"how many malfunction reports does the twiist insulin pump have",counts,factual,
+"are nevro senza reports trending up the last few yrs or nah",counts,factual,trend
+"anybody get seriously hurt from a Shockwave balloon",counts,factual,injuries
+"axonics implant - what are ppl complaining about",problems,factual,
+"patient side effects listed in reports for the Uphold vaginal mesh",problems,factual,patient problems
+"was there a recall on the B. Braun Infusomat Space",recalls,factual,
+"What did the FDA tell people to do about the Monoject syringe recall?",recalls,factual,what users were told
+"LivaNova heater-cooler recall reason",recalls,factual,
+"summarise what happened in reports on the Penumbra Indigo catheter",narratives,factual,
+"can u show me what ppl wrote about the Wright Profemur hip breaking",narratives,factual,unsure (could also be problems)
+"who actually manufactures the Stelo glucose sensor",identity,factual,
+"what product code do vagus nerve stimulators fall under",identity,factual,
+"how many of them were deaths",counts,follow_up,
+"did that one ever get pulled off the shelves",recalls,follow_up,
+"is that the same company that makes the other one",identity,follow_up,unsure; refers back to two earlier devices
+"how many reports are there for the iFuse implant and should i get it for my back pain",counts;out_of_scope,mixed,
+"what goes wrong with the Allurion balloon and should i do that instead of ozempic",problems;out_of_scope,mixed,

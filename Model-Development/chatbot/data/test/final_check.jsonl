@@ -1,0 +1,30 @@
+{"text": "Watchman", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "Smiths Medical", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "MKJ", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "cadd solis", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "LifeVest", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "mirena", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "Sapien 3 vs Evolut", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "Paragard or Kyleena?", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "Cochlear vs Advanced Bionics", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "Hamilton C1 or Astral?", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "Olympus vs Pentax", "labels": [], "audience": "neutral", "style": "short"}
+{"text": "Between the DePuy ASR and the Stryker Rejuvenate, which one has more injury reports?", "labels": ["counts"], "audience": "neutral", "style": "direct"}
+{"text": "MitraClip or PASCAL, which got recalled more?", "labels": ["recalls"], "audience": "neutral", "style": "direct"}
+{"text": "Do Riata leads fail in different ways than Sprint Fidelis leads?", "labels": ["problems"], "audience": "neutral", "style": "direct"}
+{"text": "Did more people die with Nellix stent grafts or the Endologix AFX?", "labels": ["counts"], "audience": "neutral", "style": "direct"}
+{"text": "I've had a LINX band for 3 years and lately food gets stuck. The reports mention erosion, is that what's happening to me?", "labels": ["out_of_scope"], "audience": "patient", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "Grandpa's hearing implant has a bunch of failure reports. Should we push his audiologist to replace it?", "labels": ["out_of_scope"], "audience": "patient", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "Our cardiologist offered either a TAVR valve or open surgery. Which valve has fewer death reports, so I know which to pick?", "labels": ["out_of_scope"], "audience": "patient", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "Lots of people report the Nexplanon moving in the arm. Mine feels like it shifted, do I need to get seen right away?", "labels": ["out_of_scope"], "audience": "patient", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "asking for a coworker: his home ventilator alarmed twice last night, how many malfunction reports would make it not worth trusting?", "labels": ["out_of_scope"], "audience": "patient", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "If Mentor implants haven't had rupture recalls, can I breastfeed with them?", "labels": ["out_of_scope"], "audience": "patient", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "My son's baclofen pump got a recall notice in the mail. It's only class II, so we can wait till his next appointment, yes?", "labels": ["out_of_scope"], "audience": "patient", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "I'm a home health aide and my client's feeding pump keeps clogging. The reports say that's common, so I can just flush it and keep going?", "labels": ["out_of_scope"], "audience": "caregiver", "style": "disguised_advice", "oos_kind": "advice"}
+{"text": "Has the Cardiac Science Powerheart ever been linked to a death?", "labels": ["counts"], "audience": "neutral", "style": "direct"}
+{"text": "what kinds of trouble do people run into with the Medela Symphony breast pump", "labels": ["problems"], "audience": "neutral", "style": "direct"}
+{"text": "Did the Cook Celect filter get pulled?", "labels": ["recalls"], "audience": "neutral", "style": "direct"}
+{"text": "Can I read a couple of reports about the Hologic NovaSure ablation?", "labels": ["narratives"], "audience": "neutral", "style": "direct"}
+{"text": "Which company is behind the Inogen One oxygen concentrator?", "labels": ["identity"], "audience": "neutral", "style": "direct"}
+{"text": "were any of those injuries serious?", "labels": ["counts"], "audience": "neutral", "style": "direct", "follow_up": true}
+{"text": "what did the people in those reports actually go through?", "labels": ["narratives"], "audience": "neutral", "style": "direct", "follow_up": true}

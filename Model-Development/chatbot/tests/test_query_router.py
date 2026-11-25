@@ -613,3 +613,31 @@ def test_compare_prefers_a_safe_setting_over_a_higher_score():
     unsafe = {"macro_f1": 0.95, "advice_recall": 0.90}
     safe = {"macro_f1": 0.70, "advice_recall": 0.99}
     assert tune.objective_value(safe) > tune.objective_value(unsafe)
+
+
+# ── bare questions (a name alone, or two side by side; labels []) ───────────
+
+def test_bare_questions_have_no_label_and_no_question_words():
+    from query_router.templates import BARE, OPENERS
+    data = gen.generate(n_train=2000, n_val=500, seed=13)
+    bare = [r for r in data["train"] if r.get("bare")]
+    assert 0.05 < len(bare) / len(data["train"]) < 0.11                 # BARE_SHARE 0.08
+    assert all(r["labels"] == [] for r in bare) and all(r["audience"] == "neutral" for r in bare)
+    assert not any(r["text"].lower().startswith(o.strip()) for r in bare for o in OPENERS if o.strip())
+    assert all(r["labels"] for r in data["train"] if not r.get("bare"))   # every other question has a label
+    assert any(" vs" in r["text"].lower() or " or " in r["text"].lower() for r in bare)
+    assert len(BARE) >= 15
+
+
+def test_bare_templates_are_held_out_per_split():
+    from query_router.templates import BARE
+    split = gen.split_templates({**TEMPLATES, "bare": BARE}, seed=13)
+    tr, va, ho = (set(t for _, t in split[sp]["bare"]) for sp in gen.SPLITS)
+    assert tr and va and ho and not (tr & va) and not (tr & ho) and not (va & ho)
+
+
+def test_comparisons_are_not_only_advice():
+    """A factual question may name two devices; only advice templates did before (2026-11-24)."""
+    two = {label: [t for _, t in TEMPLATES[label] if "{device2}" in t or "{company2}" in t] for label in TEMPLATES}
+    for label in ("counts", "problems", "recalls", "narratives", "identity"):
+        assert two[label], label

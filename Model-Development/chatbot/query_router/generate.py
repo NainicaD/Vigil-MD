@@ -24,7 +24,7 @@ import random
 from pathlib import Path
 
 from .labels import LABELS
-from .templates import CLOSERS, CONTEXTS, JOINERS, OPENERS, TEMPLATES, UNRELATED
+from .templates import BARE, CLOSERS, CONTEXTS, JOINERS, OPENERS, TEMPLATES, UNRELATED
 
 SLOTS_FILE = Path(__file__).with_name("slots.json")
 OUT_DIR = Path("data/generated")
@@ -33,6 +33,7 @@ SPLIT_SHARES = {"val": 0.2, "heldout": 0.2}        # the rest is train
 SPLIT_SLOTS = ("device", "company", "code")
 MULTI_LABEL_SHARE = 0.25     # share of questions that combine two labels
 CONTEXT_SHARE = 0.2          # share of questions, of every label, with a context sentence first
+BARE_SHARE = 0.08            # share of bare questions (a name alone, or two side by side): labels []
 
 
 def load_slots(path: Path = SLOTS_FILE) -> dict[str, list[str]]:
@@ -93,7 +94,8 @@ def random_udi(rng: random.Random) -> str:
 
 def fill(template: str, slots: dict, rng: random.Random) -> str:
     device, device2 = rng.sample(slots["device"], 2)
-    return template.format(device=device, device2=device2, company=rng.choice(slots["company"]),
+    company, company2 = rng.sample(slots["company"], 2)
+    return template.format(device=device, device2=device2, company=company, company2=company2,
                            generic=rng.choice(slots["generic"]), code=rng.choice(slots["code"]),
                            event=rng.choice(slots["event"]), year=rng.choice(slots["year"]),
                            udi=random_udi(rng))
@@ -107,6 +109,20 @@ def add_noise(text: str, rng: random.Random) -> str:
         text = text.upper()
     elif r < 0.55:
         text = text[:1].upper() + text[1:]
+    return add_noise_typo(text, rng)
+
+
+def bare_noise(text: str, rng: random.Random) -> str:
+    """Casing, a trailing "?" and the occasional typo; no openers or contexts, which would make a
+    bare name a question."""
+    r = rng.random()
+    text = text.lower() if r < 0.3 else text.upper() if r < 0.4 else text
+    if rng.random() < 0.15 and not text.endswith("?"):
+        text += "?"
+    return add_noise_typo(text, rng)
+
+
+def add_noise_typo(text: str, rng: random.Random) -> str:
     if rng.random() < 0.15:                      # swap two adjacent letters in one word
         words = text.split(" ")
         idx = [i for i, w in enumerate(words) if len(w) > 4 and w.isalpha()]
@@ -121,6 +137,10 @@ def add_noise(text: str, rng: random.Random) -> str:
 
 def make_example(slots: dict, rng: random.Random, templates: dict = TEMPLATES,
                  contexts=CONTEXTS) -> dict:
+    if templates.get("bare") and rng.random() < BARE_SHARE:
+        _, template = rng.choice(templates["bare"])
+        return {"text": bare_noise(fill(template, slots, rng), rng), "labels": [], "audience": "neutral",
+                "bare": True}
     n_labels = 2 if rng.random() < MULTI_LABEL_SHARE else 1
     picked = rng.sample(list(LABELS), n_labels)
     parts, audiences, oos_kind = [], [], None
@@ -143,7 +163,7 @@ def make_example(slots: dict, rng: random.Random, templates: dict = TEMPLATES,
 def generate(n_train: int, n_val: int, n_heldout: int = 0, seed: int = 13,
              slots: dict | None = None) -> dict[str, list[dict]]:
     pools = split_pools(slots or load_slots(), seed)
-    tmpl = split_templates(TEMPLATES, seed)
+    tmpl = split_templates({**TEMPLATES, "bare": BARE}, seed)
     ctx = split_contexts(CONTEXTS, seed)
     out = {}
     for split, n in (("train", n_train), ("val", n_val), ("heldout", n_heldout)):
