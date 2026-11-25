@@ -1,6 +1,9 @@
 import { useEffect } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { filterParams } from "../api/export";
 import { isEntityKind, type EntityKind, type EntityResponse } from "../api/types";
+import { DownloadButtons } from "../components/export/DownloadButtons";
+import { FilterBar } from "../components/export/FilterBar";
 import { DataSources } from "../components/device/DataSources";
 import { ProblemsList } from "../components/device/ProblemsList";
 import { RecallsList } from "../components/device/RecallsList";
@@ -21,10 +24,14 @@ export function DevicePage() {
 }
 
 function EntityView({ kind, entityId }: { kind: EntityKind; entityId: string }) {
-  const { state, retry } = useEntity(kind, entityId);
+  const [params] = useSearchParams();
+  const filters = filterParams(params, "entity");
+  const { state, retry } = useEntity(kind, entityId, filters.toString());
   const { setPageEntity } = useChat();
+  // While new filters load, the page keeps showing the current data (marked as updating).
+  const data = state.status === "done" ? state.data : state.status === "loading" ? state.previous : undefined;
 
-  const title = state.status === "done" ? state.data.entity.title || entityId : null;
+  const title = data ? data.entity.title || entityId : null;
 
   // On a device page the assistant sends this entity, so the bot skips its own search
   // (handover §3). Cleared when leaving the page.
@@ -46,7 +53,7 @@ function EntityView({ kind, entityId }: { kind: EntityKind; entityId: string }) 
       </p>
       {state.status === "loading" && (
         <p className="hint" role="status">
-          Loading…
+          {data ? "Updating…" : "Loading…"}
         </p>
       )}
       {state.status === "not_found" && <PageNotFound inline />}
@@ -58,12 +65,24 @@ function EntityView({ kind, entityId }: { kind: EntityKind; entityId: string }) 
           </button>
         </div>
       )}
-      {state.status === "done" && <EntityContent data={state.data} entityId={entityId} />}
+      {data && (
+        <EntityContent data={data} entityId={entityId} filters={filters} updating={state.status === "loading"} />
+      )}
     </div>
   );
 }
 
-function EntityContent({ data, entityId }: { data: EntityResponse; entityId: string }) {
+function EntityContent({
+  data,
+  entityId,
+  filters,
+  updating,
+}: {
+  data: EntityResponse;
+  entityId: string;
+  filters: URLSearchParams;
+  updating: boolean;
+}) {
   const e = data.entity;
   const codes = e.product_codes ?? [];
   const kindLabel = KIND_LABEL[e.type] ?? e.type;
@@ -83,10 +102,21 @@ function EntityContent({ data, entityId }: { data: EntityResponse; entityId: str
         <AskButton />
       </header>
 
+      {e.found && (
+        <section aria-label="Filter and download">
+          <FilterBar scope="entity" />
+          <DownloadButtons
+            target={{ kind: "entity", entityKind: e.type, entityId }}
+            filters={filters}
+            count={data.recalls?.total ?? 0}
+          />
+        </section>
+      )}
+
       {!e.found ? (
         <p className="notice">{NO_DATA_MESSAGE}</p>
       ) : (
-        <div className="cards">
+        <div className={updating ? "cards updating" : "cards"}>
           <ReportCounts counts={data.counts} note={data.counts_note} />
           <YearChart byYear={data.counts?.by_year ?? {}} />
           <ProblemsList problems={data.problems ?? { device: [], patient: [], no_harm_reports: null }} />

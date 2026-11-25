@@ -5,4 +5,5 @@ export const paths = {
   search: (query?: string) => (query ? `/?q=${encodeURIComponent(query)}` : "/"),
   device: (kind: EntityKind, entityId: string) =>
     `/device/${encodeURIComponent(kind)}/${encodeURIComponent(entityId)}`,
+  recalls: () => "/recalls",
 };

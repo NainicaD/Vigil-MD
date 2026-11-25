@@ -13,6 +13,7 @@
 import type { Api, CallOptions } from "../api/client";
 import { NotFoundError, ServiceUnavailableError } from "../api/errors";
 import type { AnswerEntity, AnswerResponse, EntityResponse, SearchResponse } from "../api/types";
+import { mockFile, mockFilteredEntity, mockRecallPage } from "./mockRecalls";
 
 const searchFile = import.meta.glob<SearchResponse>("./search.json", { eager: true, import: "default" });
 const entityFiles = import.meta.glob<EntityResponse>("./entities/*.json", { eager: true, import: "default" });
@@ -127,6 +128,24 @@ export function createMockApi(delays: MockDelays = { search: 200, entity: 300, a
       const found = ANSWERS.get(name) ?? ANSWERS.get("unclear");
       if (!found) throw new ServiceUnavailableError("server");
       return copy(found);
+    },
+
+    // Recall finder and exports (mockRecalls.ts): example rows and a placeholder file.
+    async recalls(filters, page, { signal } = {}) {
+      await sleep(delays.search, signal);
+      return mockRecallPage(filters, page);
+    },
+
+    async entityFiltered(kind, entityId, filters, { signal } = {}) {
+      await sleep(delays.entity, signal);
+      const found = ENTITIES.get(`${kind}|${entityId}`);
+      if (!found) throw new NotFoundError();
+      return mockFilteredEntity(copy(found), filters);
+    },
+
+    async download(path, { signal } = {}) {
+      await sleep(delays.entity, signal);
+      return mockFile(path);
     },
   };
 }

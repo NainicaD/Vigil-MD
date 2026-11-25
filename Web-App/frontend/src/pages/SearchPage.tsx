@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { SearchResults } from "../components/SearchResults";
+import { DownloadButtons } from "../components/export/DownloadButtons";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { MIN_QUERY_LENGTH, useSearch } from "../hooks/useSearch";
 
@@ -50,6 +51,9 @@ export function SearchPage() {
         {state.status === "error" && <p className="notice">{state.message}</p>}
       </div>
       {state.status === "done" && <SearchResults hits={state.hits} />}
+      {state.status === "done" && state.hits.length > 0 && (
+        <DownloadButtons target={{ kind: "search", q: query.trim() }} noun="results" />
+      )}
     </div>
   );
 }
