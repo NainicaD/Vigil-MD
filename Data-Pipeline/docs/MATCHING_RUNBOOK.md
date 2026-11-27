@@ -8,8 +8,8 @@ The pipeline links MAUDE reports that have no usable UDI to GUDID devices. The c
 | DAG | When | What it does |
 |---|---|---|
 | `vigil_md_load` | after each daily acquisition | loads the FDA data, then starts `vigil_md_matching` (task `trigger_matching`) |
-| `vigil_md_matching` | started by `vigil_md_load`, or by hand | `candidates` → `score` → `load_links` → `build_summaries` on `vigil_md_prod` (summaries include model links only once switched on, section 7b); `check_drift` after `score` (section 8b) |
-| `vigil_md_matching_check` | every Monday 07:00 UTC | the UDI agreement check: precision and recall on MAUDE rows whose device is known from their UDI; then `decide_retrain` (section 8b) |
+| `vigil_md_matching` | started by `vigil_md_load`, or by hand | `sync_bundle` (section 3) → `candidates` → `score` → `load_links` → `build_summaries` on `vigil_md_prod` (summaries include model links only once switched on, section 7b); `check_drift` after `score` (section 8b) |
+| `vigil_md_matching_check` | every Monday 07:00 UTC | `sync_bundle`, then the UDI agreement check: precision and recall on MAUDE rows whose device is known from their UDI; then `decide_retrain` (section 8b) |
 
 A daily run scores only the MAUDE rows that changed since the last load. The first run on prod scores every row (the backfill, step 7).
 
@@ -39,18 +39,26 @@ In `.env`, set these values (see the comments in `.env.example`):
 
 ## 3. The model bundle
 
-Download the released bundle one time. The DAGs read it from this folder:
+Nothing to download by hand. The first task of both matching DAGs, `sync_bundle`, asks Artifact Registry (repository `vigil-md-models`, package `matching-same-device`) for the newest published version and uses it:
 
-```bash
-mkdir -p Model-Development/matching/models/matching-same-device-v1.1.0
-gcloud artifacts generic download --package matching-same-device --version v1.1.0 \
-  --repository vigil-md-models --location us-central1 --project vigil-md-1792696816 \
-  --destination Model-Development/matching/models/matching-same-device-v1.1.0
-```
+- On disk already (`Model-Development/matching/models/matching-same-device-<version>`): it checks each file against `manifest.json` (sha256) and uses it.
+- Not on disk: it downloads the files into a temporary folder, checks them, and only then renames the folder. A half-finished download is never used.
+- Artifact Registry cannot be reached (no network): it uses the newest intact bundle already on disk, with a warning in the task log. With none on disk, the task fails.
+- A file whose sha256 differs from `manifest.json`: the task fails. That bundle is never used.
 
-The folder must hold `meta.json`, `model.json`, `tfidf.pkl`, `manifest.json` and `README.txt`. Git ignores this folder. `tfidf.pkl` is a pickle file: use only bundles from this registry.
+Only bundles that passed the model gate are published, so the newest version is an approved one. The run that downloads a new version sends the e-mail "[Vigil-MD] Matching model vX.Y.Z now in use" (`VIGIL_ALERT_EMAIL_TO`). Git ignores the `models/` folder. `tfidf.pkl` is a pickle file: use only bundles from this registry.
 
-The DAGs apply the IE gate `e6_e3b_c1_m1` on top of v1.1.0 (param `ie_gate`). This gate removes a known error: links to another size of the same product family when the report has no model number (`Model-Development/matching/docs/EXPERIMENTS.md`, row M1). When a bundle that names this gate is released, download it, change `MATCHING_BUNDLE` in `Data-Pipeline/dags/vigil_checks.py`, and remove `MATCHING_IE_GATE`.
+The containers reach Artifact Registry with the mounted gcloud login (`gcloud auth application-default login`, step 2). Your account needs Artifact Registry Reader on `vigil-md-models`. The Airflow image has no gcloud CLI; `sync_bundle` calls the REST API.
+
+A new version means:
+- The next `vigil_md_matching` run scores every row again (the model version changed, section 8). On prod: about 70 minutes, under 8 GB of BigQuery.
+- The drift check skips `score_psi` until the baseline is replaced for the new version (section 8, "Drift").
+
+**Rollback, or a fixed version.** Set the DAG param `bundle` to a folder, relative to `Data-Pipeline/`, for example `../Model-Development/matching/models/matching-same-device-v1.1.0`. Then that folder is used and nothing is downloaded. Empty (the default) = the newest published version.
+
+**Test.** Trigger a matching DAG on dev with conf `{"dataset": "vigil_md_dev", "bundle_package": "matching-same-device-test"}`. It takes the newest version of the test package (section 8b publishes there), so a test never changes the bundle prod uses.
+
+The DAGs apply the IE gate `e6_e3b_c1_m1` on top of the bundle (param `ie_gate`). This gate removes a known error: links to another size of the same product family when the report has no model number (`Model-Development/matching/docs/EXPERIMENTS.md`, row M1). When a bundle that names this gate in its `meta.json` is released, remove `MATCHING_IE_GATE` in `Data-Pipeline/dags/vigil_checks.py`.
 
 ## 4. Start the containers
 
@@ -171,6 +179,8 @@ Test or demo (on `vigil_md_dev`, without a real drop): trigger `vigil_md_matchin
 | No records in Kibana | `VIGIL_LOGSTASH_HOST` is not set, or ELK is stopped | step 2, step 4 |
 | `score` is killed (exit 137) | not enough memory | `workers=1`, or more WSL memory (step 1) |
 | "checkpoints of other input" | the run folder has parts from another candidate file, batch, bundle or gate | delete `Data-Pipeline/logs/matching/<run_id>/parts` |
+| `sync_bundle` failed: "could not be reached ... and no intact ... bundle is on disk" | no network or no login on a laptop without a bundle | `gcloud auth application-default login` (step 2), check the network, run again |
+| `sync_bundle` failed: "damaged, not used" | a file differs from `manifest.json` | delete that folder in `Model-Development/matching/models/` and run again; if it fails again, tell the model owner |
 | UDI precision warning | precision 0.90 to 0.95 in the weekly check | prod was 0.941 on 2026-11-24 (one link per device, gate M1): UDI vs model-number disagreements (mostly Dexcom) and missed candidates. Watch the trend |
 | UDI precision alert | precision below 0.90 in the weekly check | something changed: compare with the last check report; see EXPERIMENTS.md M1 and the gate param `ie_gate`. `decide_retrain` starts retraining (section 8b) |
 | `decide_retrain` or `check_drift` failed: "VIGIL_GITHUB_TOKEN is not set" | a retrain was needed, no token | add the token (section 8b), or start `model-training` by hand in GitHub Actions |
@@ -181,6 +191,7 @@ Test or demo (on `vigil_md_dev`, without a real drop): trigger `vigil_md_matchin
 
 - The UDI check is optimistic: rows with a UDI are easier than the rows the model is for.
 - The M1 gate is an override until the next bundle release.
+- `sync_bundle` takes the newest version of the package. A published version that should not be used must be removed from Artifact Registry, or pinned around with the param `bundle`.
 - A changed GUDID record does not cause old MAUDE rows to be scored again. A MAUDE row that gets an exact UDI link keeps its old model link. Run `full=true` from time to time (for example after a GUDID release).
   Future fix: in `sql/scoring/01_candidates.sql`, move the `since` filter from the pool to the end, and select the pool rows that changed plus the pool rows with a candidate in a GUDID group with a changed record (`gudid.last_updated_at > @since`). Score all candidates of these rows again, so the delete-and-insert in `load_model_links.py` stays correct. Give the load step the changed MAUDE rows that left the pool, and delete their model links.
 - Metricbeat reads the Docker socket, which gives full control of Docker. Use this setup on a local machine only.

@@ -6,6 +6,7 @@ feature), so these rows test it. Read the numbers as a trend: rows with a UDI ar
 pool. Nothing is loaded into a link table.
 
 Tasks:
+  0. sync_bundle       — as in vigil_md_matching: the newest published bundle, or the param bundle.
   1. candidates        — s13 --mode udi_check: a fixed sample (sample_per_10k) of UDI-linked rows
                          → vigil_md_model.match_candidates_check_<dataset> (never the pool's table)
                          and a parquet file, with true_group_key and sibling keys.
@@ -38,12 +39,12 @@ from airflow.task.trigger_rule import TriggerRule
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))   # dags/ (shared modules)
 from vigil_checks import (  # noqa: E402
-    CHECK_WORK_DIR, EXIT_NOTHING_TO_DO, MATCHING_BUNDLE, MATCHING_DATASET, MATCHING_IE_GATE,
+    CHECK_WORK_DIR, EXIT_NOTHING_TO_DO, MATCHING_DATASET, MATCHING_IE_GATE,
     READ_ONLY_POOL, RETRAIN_PACKAGE, RETRAIN_PRECISION, RETRAIN_REF, RETRAIN_SEMVER, WAREHOUSE_POOL,
     candidates_args, evaluate_args, matching_files, retrain_reason, score_args)
 from vigil_helpers import (  # noqa: E402
-    alert_on_failure, mark_run_failed, matching_task_failed, matching_task_retry, retrain_if_needed,
-    run_script, send_to_elk)
+    BUNDLE_PACKAGE, alert_on_failure, bundle_folder, choose_bundle, mark_run_failed,
+    matching_task_failed, matching_task_retry, retrain_if_needed, run_script, send_to_elk)
 
 PROJECT = "vigil-md-1792696816"
 ELK_CALLBACKS = {"on_failure_callback": matching_task_failed,
@@ -60,7 +61,7 @@ default_args = {
 def _params(context) -> dict:
     p = context["params"]
     return {"dataset": p["dataset"], "sample_per_10k": int(p["sample_per_10k"]),
-            "bundle": p["bundle"], "ie_gate": p["ie_gate"] or None,
+            "bundle": bundle_folder(context), "ie_gate": p["ie_gate"] or None,
             "files": matching_files(context["run_id"], CHECK_WORK_DIR)}
 
 
@@ -126,8 +127,12 @@ with DAG(
                                 description="vigil_md_prod, or vigil_md_dev (test extract)"),
         "sample_per_10k": Param(100, type="integer", minimum=1, maximum=10000,
                                 description="UDI-linked MAUDE rows sampled per 10,000 (100 = 1%)"),
-        "bundle":         Param(MATCHING_BUNDLE, type="string",
-                                description="released bundle folder, relative to Data-Pipeline/"),
+        "bundle":         Param("", type="string",
+                                description="empty = the newest published version (task sync_bundle); "
+                                            "a folder relative to Data-Pipeline/ = that one (rollback)"),
+        "bundle_package": Param(BUNDLE_PACKAGE, type="string",
+                                description="sync_bundle uses the newest version of this package; "
+                                            "a test: matching-same-device-test"),
         "ie_gate":        Param(MATCHING_IE_GATE, type="string",
                                 description="IE gate applied on top of the bundle; empty = the bundle's own"),
         "retrain_precision": Param(RETRAIN_PRECISION, type="number", minimum=0, maximum=1,
@@ -142,6 +147,7 @@ with DAG(
     tags=["vigil-md", "matching", "model", "monitoring"],
 ) as dag:
 
+    sync = PythonOperator(task_id="sync_bundle", python_callable=choose_bundle, **ELK_CALLBACKS)
     candidates = PythonOperator(task_id="candidates", python_callable=build_candidates,
                                 pool=WAREHOUSE_POOL, **ELK_CALLBACKS)
     score = PythonOperator(task_id="score", python_callable=score_pairs, pool=READ_ONLY_POOL,
@@ -157,6 +163,6 @@ with DAG(
     mark_failed = PythonOperator(task_id="mark_run_failed", python_callable=mark_run_failed,
                                  trigger_rule=TriggerRule.ONE_FAILED)
 
-    candidates >> score >> check >> send >> retrain
-    [candidates, score, check, send, retrain] >> alert
-    [candidates, score, check, send, retrain] >> mark_failed
+    sync >> candidates >> score >> check >> send >> retrain
+    [sync, candidates, score, check, send, retrain] >> alert
+    [sync, candidates, score, check, send, retrain] >> mark_failed
