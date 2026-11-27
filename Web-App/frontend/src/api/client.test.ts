@@ -108,6 +108,25 @@ describe("failures (handover §5)", () => {
     expect((error as ServiceUnavailableError).reason).toBe("timeout");
   });
 
+  it("a download waits 60 s, not the 30 s of other requests", async () => {
+    vi.useFakeTimers();
+    const fetchFn = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")));
+        }),
+    );
+    const api = createHttpApi({ ...cfg, downloadTimeoutMs: 60_000 }, fetchFn as unknown as typeof fetch);
+    let settled = false;
+    const pending = api.download("/export/recalls?format=xlsx").catch((e) => e).finally(() => (settled = true));
+    await vi.advanceTimersByTimeAsync(59_999);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    const error = await pending;
+    expect(error).toBeInstanceOf(ServiceUnavailableError);
+    expect((error as ServiceUnavailableError).reason).toBe("timeout");
+  });
+
   it("cancelled by the app -> AbortError, not the service message", async () => {
     const fetchFn = vi.fn(
       (_url: string, init?: RequestInit) =>

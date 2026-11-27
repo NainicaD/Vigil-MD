@@ -669,3 +669,46 @@ h2 {
 .safe-text li + li {
   margin-top: 0.25rem;
 }
+
+/* Each result's count per FDA source (MAUDE, Recalls, Enforcement). */
+.hit-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.source-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.sources-legend {
+  margin-top: 8px;
+}
+
+/* Above the search results: records per FDA source. */
+.source-summary {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.source-summary-title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+.source-summary-list {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 6px;
+}
+.source-summary-row {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+.source-summary-row dd {
+  margin: 0;
+}

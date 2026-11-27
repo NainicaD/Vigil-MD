@@ -24,7 +24,7 @@ describe("DownloadButtons", () => {
     await userEvent.click(screen.getByRole("button", { name: "Download Excel" }));
     await waitFor(() => expect(download).toHaveBeenCalledWith("/export/recalls?format=xlsx&category=software&class=I"));
     await waitFor(() => expect(click).toHaveBeenCalled());
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:test");
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled(); // later (api/export.test.ts), so the save can finish
   });
 
   it("is off while the file is being made, with 'Preparing file…'", async () => {

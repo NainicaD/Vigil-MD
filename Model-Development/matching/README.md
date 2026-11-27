@@ -160,6 +160,7 @@ Generic repositories reject tags (HTTP 501), so the `mlflow` and `git` identifie
 | `v1.0.0` | `mlflow-v1` | `git-6afe449` | First release: experiment `final_v1`. The config the experiments recommend (`reports/Vigil_MD_Label_Feature_Experiments.pdf`): label_set_v2, feature set fs2 and xgb_no_match_kind, with the IE gate `e6_e3b` applied before the cutoff. Hand sheet 0.959 (3 FP). |
 | `v1.1.0` | `mlflow-v2` (`@challenger`) | `git-6270fda` | **Use this one.** The same model, with IE gate `e6_e3b_c1`: a `contains` hit in the middle of the GUDID identifier with disagreeing product codes is INSUFFICIENT_EVIDENCE (`docs/EXPERIMENTS.md` C1). Hand sheet 1.000 (0 FP), recall 1.000; the rule was written after seeing those FPs, on the only hand set there is, so this is optimistic. |
 | `v1.1.1` | `gh-run-43509528612` | `git-4892a91` | Published by CI from `model-dev-integration`. The same `model.json`, `tfidf.pkl`, cutoff and IE gate as v1.1.0: proof that training reproduces. Published before `ci/publish.py` skipped identical models; it is a copy, not a new model. |
+| `v1.1.2` | `gh-run-43524322643` | `git-0b3fcd9` | Published by CI on 2026-11-13, also before the identical-model check. The same `model.json` and `tfidf.pkl` as v1.1.0 (same file hashes): a copy, not a new model. |
 
 `meta.json` names the bundle's IE gate (`ie_gate`), and `predict.load` applies that version, so v1.0.0 keeps its decisions with newer code. A version has these files:
 - `model.json`: XGBoost
@@ -182,7 +183,7 @@ bundle.decide(pd.DataFrame([feats]))                 # score + MATCH / NON_MATCH
 
 How a release is built:
 
-**By CI (the normal way).** A push to `main` (a merged pull request) that touches `Model-Development/matching/` runs the chain above on the real data, then `ci/gate.py`, then `s11 --semver auto --lineage ci`. If the gate fails, the job fails and nothing is published: the champion stays. Otherwise CI publishes the next PATCH version, unless the model is identical to the newest one. Setup and roles: `docs/CI_CD.md`. **Actions → model-training → Run workflow** starts a manual run, which trains and runs the gate but does not publish.
+**By CI (the normal way).** A push to `main` (a merged pull request) that touches `Model-Development/matching/` runs the chain above on the real data, then `ci/gate.py`, then `s11 --semver auto --lineage ci`. If the gate fails, the job fails and nothing is published: the champion stays. Otherwise CI publishes the next PATCH version, unless the model is identical to the newest one. Setup and roles: `docs/CI_CD.md`. **Actions → model-training → Run workflow** starts a manual run, which trains and runs the gate but does not publish, unless it is started with `publish=true` on `main`: only the data monitor's retraining trigger does that (below).
 
 **By hand.**
 1. Run the training chain above with `VIGIL_EXP=<exp>`, up to and including `ci/gate.py`.
@@ -192,6 +193,56 @@ How a release is built:
 5. When the release must become the gate's reference: `python ci/gate.py --scores-dir <its scores> --write-champion --source "<release>"`, then commit `ci/champion_metrics.json`.
 
 Teammates need `roles/artifactregistry.reader` on the repository. The bundle's `README.txt` lists the limits: this is a test model, not a validated one.
+
+## Data monitor and retraining trigger
+
+Does new MAUDE input still look like what the matcher learned from? [`scripts/m01_data_drift.py`](scripts/m01_data_drift.py)
+compares two windows with the rows of the 12 report months before the label snapshot
+(`labels/label_set_v2.manifest.json`, `snapshot_date`; [`vigil_model/data_drift.py`](vigil_model/data_drift.py)):
+
+1. the MAUDE rows **first loaded after the snapshot** (new data);
+2. the **baseline's own rows as they are now** ("revisit"). openFDA re-exports rewrite old reports
+   in place: the 2026-11-17 export left 1,401,548 PROD rows without a UDI-DI (of 1,454,498 rows it
+   updated; the share of MAUDE rows with one fell from 61.9% to 55.6%). Window 1 cannot see that.
+   PROD now keeps the last-known UDI-DI and the rows were restored on 2026-11-21
+   (`Data-Pipeline/docs/issue.md` #18; 62.1% have one again).
+
+Drift in either window is drift.
+
+```bash
+python scripts/m01_data_drift.py baseline --project $PROJECT --estimate-only   # free; 0.30 GB on 2026-11-19
+python scripts/m01_data_drift.py baseline --project $PROJECT                    # once per label set
+python scripts/m01_data_drift.py check --project $PROJECT --estimate-only      # free; 0.14 + 0.30 GB on 2026-11-21
+python scripts/m01_data_drift.py check --simulate udi_drop                      # demo, no query
+```
+
+- **Signals:** UDI rate, exact UDI link rate to GUDID (of the rows with a UDI: a decay signal that
+  needs no hand labels), missing model / catalog / manufacturer / product code, and the
+  product-code and manufacturer mix (PSI over the baseline's top 50 plus "other"). Limits in
+  [`monitor/thresholds.json`](monitor/thresholds.json): a rate moving 0.05 or a PSI of 0.25 is drift.
+- **No decision below 5,000 new rows.** New reports arrive in small, irregular batches: between the
+  full load (2026-10-26) and 2026-11-19 only 230 new rows reached PROD, nearly all in the newest
+  report months (2026-07 to 09). The current window reads the last 8 report months (partition
+  pruning); a late report for an older month is left out.
+- **Exit codes:** 0 ok or warn, 2 no decision, 3 drift, 4 the baseline is for another label
+  snapshot (rebuild it), 5 over `--max-gb`.
+- **Weekly job and trigger** ([`.github/workflows/matching-monitoring.yml`](../../.github/workflows/matching-monitoring.yml)):
+  Mondays 08:00 UTC and by hand (with a `simulate` choice for demos). On drift it starts
+  `model-training` with `refresh_data=true` (features rebuilt from current PROD, the same
+  reviewed label set) and `publish=true`: a model that passes the gate is published, one that
+  fails it is not and the champion stays. The run is marked failed, so GitHub e-mails the alert.
+  It uses the matching CI account (`GCP_SERVICE_ACCOUNT`), which already reads `vigil_md_prod`.
+- **Baseline** ([`monitor/data_baseline.json`](monitor/data_baseline.json), rebuilt 2026-11-22 after
+  the UDI-DI restore, 0.31 GB billed): 3,418,835 rows of report months 2025-11 to 2026-10; UDI
+  rate 60.4%, UDI link rate 70.2%. The first build (2026-11-20) had the blanked UDI-DIs (UDI rate
+  54.9%); after the restore its revisit check would have reported drift (+5.5 points) and
+  started a retraining nobody needed. Rebuild the baseline whenever PROD is corrected in place.
+  **First real check** (0.14 GB): no decision, 228 new rows. With the revisit (2026-11-21,
+  0.44 GB billed, against the first build): new rows no decision, revisit ok. Those 228 rows differ a lot
+  from the baseline (UDI rate 37%, manufacturer missing 15% vs 0.1%): one small batch can look
+  extreme, which is why nothing is decided below `min_rows`.
+- **Not automatic on purpose:** a new label set (`s01_build_label_set.py`, a committed manifest).
+  A drift that fresh features cannot fix, e.g. UDI links dropping for good, needs that reviewed step.
 
 ## Before any query, every time
 

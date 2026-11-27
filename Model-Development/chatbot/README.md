@@ -499,11 +499,26 @@ FastAPI around the device search, the query layer and the chatbot.
 - **Rate limit:** questions and device pages, 30 a minute per visitor
   (`VIGIL_RATE_LIMIT_PER_MINUTE`); search is not limited. Behind Cloud Run, uvicorn trusts the
   proxy's `X-Forwarded-For` (`--forwarded-allow-ips`), so the limit applies per visitor.
-- **Questions are not logged.**
+- **Questions are not logged.** Each answer writes one monitoring event with numbers and labels
+  only; see [Monitoring events](#monitoring-events-apieventspy).
 - **Website:** `VIGIL_WEB_DIST=<dist/>` serves the front end from `/`; any non-API path returns
   `index.html`, so device links work when opened directly; unknown `/api/...` paths stay JSON 404s,
   and nothing outside `dist/` is read. `VIGIL_CORS_ORIGINS=http://localhost:5173` allows the
   front end's dev server.
+- **Startup:** the server loads the chatbot (router, search index, BigQuery client) and runs one
+  search and one routing before it accepts requests, and logs the step times
+  (`"event": "startup"`). Before, this happened on the first request: in the Cloud Run logs
+  (10–19 Nov) the first search or answer after a container start took 15–37 s, and two answers
+  timed out at 60 s. Cloud Run's default startup check waits for it. `VIGIL_WARM_UP=0` skips it.
+  It does not remove the wait when the service starts from zero (min-instances 0); only
+  `--min-instances 1` does that (about $10–20 a month; planned for launch).
+- **Caches:** BigQuery results are kept until a table they read changes (its last-modified
+  time, checked at most every 5 minutes), so a repeated device page or answer costs nothing
+  and needs no BigQuery round trip (`VIGIL_RESULT_CACHE`, default 2,000 results; 0 turns it
+  off). The cache key is the SQL and its parameters, never the question. Search results
+  (2,000) and word similarities (200,000 pairs) are cached in memory too: on the PROD index,
+  10 new searches took 3.2 s before and 2.3 s after on a laptop, a repeated search about 1 ms.
+  Each container has its own caches; they start empty after a deploy or a cold start.
 - **Typical latency** on `vigil_md_dev`: a device page 1.6–2.8 s, a counts or recall answer
   1.3–1.8 s, a narratives answer about 4 s.
 
@@ -512,6 +527,86 @@ VIGIL_BQ_DATASET=vigil_md_dev uvicorn api.app:app --port 8000
 curl 'localhost:8000/api/search?q=dreamstation'
 open http://localhost:8000/api/docs
 ```
+
+### Monitoring events ([`api/events.py`](api/events.py))
+
+Every `POST /api/answer` that reaches the chatbot writes one JSON line on stdout
+(`"message": "router_decision"`). Cloud Run sends it to Cloud Logging, which stores the fields
+as `jsonPayload`, so no deploy setting changes. Requests rejected before the chatbot (422, 429)
+write none. These events are the input for model monitoring: label mix, `out_of_scope` share,
+top score and unknown-word share compared with the router's test-set baseline.
+
+| Field | Meaning |
+|---|---|
+| `request_id`, `ts`, `schema_version` | one id per answer, UTC time, event format (1) |
+| `model_version`, `rules_fingerprint`, `template_fingerprint`, `dataset` | which router, rules and templates answered |
+| `status`, `reply_kind`, `labels`, `rule_hits` | the decision; `rule_hits` are pattern names; `status` is `exception` if the chatbot raised |
+| `scores`, `top_score`, `unclear` | router score per label |
+| `unknown_word_share` | share of the question's words not in the router's word vocabulary (drift signal) |
+| `question_chars`, `question_words` | size of the question |
+| `entity_given`, `entity_types_found`, `n_entities` | device page or not; entity *types* found |
+| `budget_gb_spent`, `latency_ms` | BigQuery GB used, time in the chatbot |
+
+- **Never in an event:** the question text, the search phrase, entity ids, the answer text, the
+  visitor's address or headers. Tests check this with a question that contains a name.
+- **Monitoring cannot break an answer:** an error while writing the event is logged and the
+  answer is returned as usual.
+- **In BigQuery:** the log sink `vigil-md-monitoring-events` (created 2026-11-19) copies the
+  `router_decision` and `startup` events of the `vigil-md` service into the dataset
+  `vigil_md_monitoring` (partitioned by day, rows deleted after 400 days). The sink's account can
+  write to this dataset only. Undo: `gcloud logging sinks delete vigil-md-monitoring-events` and
+  `bq rm -r -d vigil-md-1792696816:vigil_md_monitoring`.
+- **Still to do:** the daily drift job. Storing question text (with notice to users, redaction and
+  30-day expiry) is a separate, later step that needs a privacy review.
+- **Search terms** (`GET /api/search?q=`) are in the URL, so Cloud Run's request log has them.
+  They are device and company names, but keep this in mind for the privacy review.
+
+### Drift check ([`monitoring/`](monitoring/))
+
+Compares a window of monitoring events with a baseline of the same router. No BigQuery, no cost.
+
+```bash
+python -m monitoring.baseline --model-dir models/published   # baseline from the test set (bootstrap)
+python -m monitoring.baseline --from-events reference.jsonl  # baseline from normal traffic (production)
+python -m monitoring.drift --events events.jsonl --out report.json
+```
+
+- **Checks** ([`stats.py`](monitoring/stats.py)): PSI (Population Stability Index) of `top_score`,
+  `unknown_word_share` and `question_words`; absolute change of each label's share, the refusal
+  share and the unclear share. Limits in [`thresholds.json`](monitoring/thresholds.json): PSI 0.1
+  warns, 0.25 is drift; a label share moving 0.15 (refusals or unclear 0.10) is drift.
+- **Result and exit code:** `ok` or `warn` → 0; `insufficient_data` → 2 (fewer than 200 events,
+  or none from the baseline's router); `drift` → 3, retraining should be considered.
+- **Only the baseline's router is compared** (same rules fingerprint): after a new router is
+  published, rebuild the baseline.
+- **Two baselines:** [`baseline.json`](monitoring/baseline.json) is built from the hand-written
+  test set (242 questions, router `5d1584bb53b3`). That set is about 40% medical-advice questions
+  by design, so real traffic will differ on the refusal share. Replace it with a reference window
+  of real traffic (for example the first 2–4 weeks after launch) once there is traffic; the
+  thresholds were set before any live traffic and should be reviewed then too.
+- **Checked with the real router:** the test-set questions as events give `ok`; 240 off-topic
+  and non-English questions give `drift` on 8 checks (e.g. unknown-word PSI 5.3).
+- **From BigQuery** ([`bq_events.py`](monitoring/bq_events.py)): `--from-bigquery --days 7`
+  reads the window from `vigil_md_monitoring.run_googleapis_com_stdout` (dry run first, capped
+  at `--max-gb`, default 0.1 GB; a window is a few MB). Before the first event, the table does
+  not exist: the result is `insufficient_data` (exit 2) with a note. `--summary` writes a short
+  Markdown report.
+- **Daily job** ([`.github/workflows/router-monitoring.yml`](../../.github/workflows/router-monitoring.yml)):
+  07:30 UTC and by hand (Actions → router-monitoring → Run workflow). Drift fails the run, so
+  GitHub e-mails the alert; no decision is a warning; the report is kept for 90 days. It uses its
+  own service account `vigil-md-monitor@vigil-md-1792696816.iam.gserviceaccount.com` (created
+  2026-11-19: `roles/bigquery.jobUser` on the project, READER on `vigil_md_monitoring` only,
+  keyless login for this repository's Actions), named in the repository variable
+  `GCP_MONITOR_SA`; until that variable is set it says so and passes. Scheduled workflows run
+  from `main` only. Undo: `gcloud iam service-accounts delete <account>` and remove its
+  `roles/bigquery.jobUser` binding.
+- **Retraining trigger:** on drift the daily job opens one GitHub issue "Router drift detected"
+  (label `router-drift`) with the report and a checklist, or comments on the one already open.
+  It does not retrain by itself: the router is trained on generated questions, so a retrain
+  without new examples gives the same model. The checklist: new templates or slot values for
+  the drifted kinds of questions and a fresh hand-written test set, then a pull request (CI
+  retrains and gates), then the merge (publish and deploy), then a new baseline. The workflow
+  uses GitHub's own token for this run, limited to `issues: write`.
 
 ## Recall finder and exports ([`api/export.py`](api/export.py), [`export/`](export/))
 
@@ -526,7 +621,8 @@ work: `filters.py` (parse and check), `data.py` (rows), `document.py` (what a fi
 | `GET /api/recalls?<filters>&page=1` | recall finder: 50 rows per page, `total`, `pages`, the filters, `data_as_of` | none (search index) |
 | `GET /api/export/recalls?format=pdf\|xlsx&<filters>` | the recall finder's file | none |
 | `GET /api/export/entity/<kind>/<id>?format=json\|pdf\|xlsx&<filters>` | a device page with filters: JSON for the page, or its file (same data function, so the same numbers) | the page's few MB (cost cap 0.5 GB) |
-| `GET /api/export/search?q=<2-200 chars>&format=pdf\|xlsx` | the search results list (up to 500 hits, same order as `/api/search`) | none |
+| `GET /api/export/search?q=<2-200 chars>&format=pdf\|xlsx` | the search results list (up to 500 hits, same order as `/api/search`), with each result's MAUDE, recall and enforcement counts | none |
+| `GET /api/export/records?q=<2-200 chars>&format=pdf\|xlsx` | "all records" of the 10 results the home screen shows, one sheet per FDA source: the newest 50 recalls of each result, their enforcement records, the newest 50 MAUDE reports of each device result (device, company, date received, report key) | about 20-80 MB on PROD (dry runs 2026-11-27); capped at 0.2 GB, refused above (413) |
 
 **Filters** (repeat a key for several values; unknown values get 422, never an empty file):
 
@@ -535,7 +631,7 @@ work: `filters.py` (parse and check), `data.py` (rows), `document.py` (what a fi
 | `category` | `software`, `design`, `manufacturing`, `component`, `labeling`, `other` | both |
 | `class` | `I`, `II`, `III` (about half the recalls have no class: they never match a class filter) | both |
 | `status` | `open` (any `Open, …` status), `completed`, `terminated` | both |
-| `year_from`, `year_to` | 1990 to the current year (recall date; report year for counts) | both |
+| `year_from`, `year_to` | 1990 to the current year (recall date; report year for counts). 13,575 of 59,705 PROD recalls (2026-11-27) have no date: they never match a year filter | both |
 | `text` | 2–100 characters, in product, firm or reason (a bound parameter, never SQL text) | both |
 | `manufacturer`, `product_code` | a manufacturer id from the search box; a 3-letter code | recall finder |
 | `event` | `Death`, `Injury`, `Malfunction` (report counts) | device page |
@@ -550,6 +646,28 @@ work: `filters.py` (parse and check), `data.py` (rows), `document.py` (what a fi
   with "…"; the full text is in Excel), an Excel file at most 100,000 rows. Over a limit: 413 with
   the count and "narrow the filters", never a silently cut file. Files: 5 a minute per visitor
   (`VIGIL_EXPORT_RATE_LIMIT_PER_MINUTE`); the filtered device JSON uses the page limit (30).
+- **Sources on search results:** every hit of `/api/search` carries `recalls` (recalls linked to
+  it, the same links as its page: `entity_recalls`) and `enforcement` (of those, with an FDA
+  enforcement report) next to the MAUDE `reports`; the site labels each count with its source.
+  Both come from the search index (index version 4), so search stays free.
+- **Search summary by source:** `/api/search` also returns `summary`: `results`, `maude` (one
+  `{kind, results, reports}` per kind of hit present: within a kind no two hits share a report,
+  but a company's or product code's reports include its devices', so kinds are never added
+  together), `recalls` and `enforcement` (the
+  distinct recalls linked to any hit and how many have an enforcement report, from the index's
+  `recall_links`: a device and its company often share a recall, and it counts once). `null`
+  for recalls/enforcement on an index without the links.
+- **Device page summary by source:** `/api/entity` and the filtered device JSON also return
+  `source_summary`: `maude_reports` and `recalls` as the page counts them (with filters: what
+  matches), `enforcement` (how many of those recalls have an FDA enforcement report, from the
+  index; no BigQuery) and `filtered`.
+- **"All records" file** (`/api/export/records`): deliberately small, at most 10 × 50 rows a
+  sheet. Recalls: one `entity_recalls` query for all 10 results; enforcement: the index's
+  `enforcement` table (no `scope_text`, which alone would read 0.365 GB); MAUDE: one
+  `entity_reports` query for the device results, report key and date received only, so the
+  21.5M-row `maude` table is not read. Companies and product codes get no MAUDE rows (they cover
+  many devices). Dry run first, at most 0.2 GB, then 413 "open a result's page"; 2 files a minute
+  per visitor (`VIGIL_RECORDS_RATE_LIMIT_PER_MINUTE`), on top of the 5-file limit.
 - **Each file holds:** the title, when it was made, "data as of", the filters, the row count, what
   the counts mean (the page's `counts_note`), the sources (openFDA, AccessGUDID) and the site's
   "not medical advice" line (PDF header; Excel sheet "About"). Recalls: number, date, class,
@@ -567,8 +685,12 @@ work: `filters.py` (parse and check), `data.py` (rows), `document.py` (what a fi
 
 **Recall categories** ([`device_search/recall_categories.json`](device_search/recall_categories.json))
 group the FDA `root_cause` phrase: Software, Design, Manufacturing and process, Component or
-supplier, Labeling and packaging, Other or unknown. The list comes from the data (25 phrases in
-`vigil_md_dev`, 2026-11-25). A phrase missing from the file is stored as "Other or unknown" and
+supplier, Labeling and packaging, Other or unknown. The list comes from the data: 25 phrases in
+`vigil_md_dev` (2026-11-25) and 18 more in `vigil_md_prod` (2026-11-27, 6,046 recalls; all 43 are
+mapped). The regulatory phrases (No Marketing Application, Radiation Control for Health and Safety
+Act, PMA) are "Other or unknown" on purpose. PROD on 2026-11-27: Other or unknown 18,792,
+Manufacturing and process 11,447, Component or supplier 9,652, Labeling and packaging 7,807,
+Design 7,678, Software 4,329. A phrase missing from the file is stored as "Other or unknown" and
 named in a warning by the index build (a deploy never breaks on a new FDA phrase); with a built
 index on the machine, `tests/test_export.py` fails on it.
 
@@ -579,6 +701,14 @@ index on the machine, `tests/test_export.py` fails on it.
 | PDF | 1,000 recalls | 3.9 s | 0.26 MB |
 | Excel | 59,705 recalls (all of PROD today) | about 8 s | 2.7 MB |
 | Excel | 100,000 rows (the limit) | 13.3 s | 5.2 MB |
+
+**Measured on PROD data (2026-11-27, MacBook Air M3, the real index):** Excel with all 59,705
+recalls 3.9 s and **15.9 MB** (real reasons and product texts are longer than the synthetic ones);
+PDF with the 1,000 newest recalls 1.1 s, 0.45 MB; the search list for "pump" (500 hits) as PDF
+and Excel 0.2 s; peak memory 231 MB. The PROD index is 828 MB with the recalls table (712 MB on
+2026-11-09 without it). Not yet measured on Cloud Run (1 vCPU): expect slower. A Cloud Run
+response is limited to 32 MiB, so an Excel file near the 100,000-row limit (about 27 MB at this
+row size) is close to it; the browser waits 60 s for a download, as Cloud Run does.
 
 - **Excel library:** XlsxWriter, not openpyxl: openpyxl's write-only mode took 14.8–16 s for
   59,705 rows and 23–26 s for 100,000 (over the 15 s target). openpyxl stays a test dependency

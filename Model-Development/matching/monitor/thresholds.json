@@ -1,0 +1,10 @@
+{
+  "_comment": "Limits for the matching data monitor (scripts/m01_data_drift.py). Rates are absolute changes against the baseline window; PSI (product codes, manufacturers: the baseline's top 50 plus 'other') 0.1 warns and 0.25 is drift. A window with fewer than min_rows new rows gives no decision. Set 2026-11-19 before any check ran; review after the first real decisions.",
+  "min_rows": 5000,
+  "rate_warn": 0.03,
+  "rate_drift": 0.05,
+  "udi_link_rate_drift": 0.05,
+  "psi_warn": 0.1,
+  "psi_drift": 0.25,
+  "top_k": 50
+}

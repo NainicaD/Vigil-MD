@@ -4,3 +4,7 @@ models/
 data/search/
 reports/
 mlruns/
+# drift check output (python -m monitoring.drift --out / --summary)
+/report.json
+/summary.md
+/issue.md

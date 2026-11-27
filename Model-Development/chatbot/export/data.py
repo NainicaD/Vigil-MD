@@ -4,6 +4,11 @@
   device page     device_summary(), the same data as /api/entity, plus the recalls query with
                   a higher limit (the same partition, so the same few MB as opening the page)
   search list     DeviceIndex.search(), the same as /api/search, with a higher limit
+  all records     the results the home screen shows (RESULTS_SHOWN): the newest PER_RESULT
+                  recalls of each (entity_recalls, one query), their enforcement records (search
+                  index) and, for device results, the newest PER_RESULT MAUDE reports (date
+                  received and report key from entity_reports, one query; the maude table is
+                  not read). Deliberately small: at most RESULTS_SHOWN × PER_RESULT rows a sheet.
 
 The screen and the file use the same function here, so their numbers are the same. No export
 reads report narratives.
@@ -13,6 +18,7 @@ from __future__ import annotations
 from device_search.build_index import OTHER, RECALL_COLUMNS, load_categories
 from query_layer import backend as ql_backend
 from query_layer import queries, summary
+from query_layer.config import MAX_GB_PER_QUESTION
 
 from .filters import Filters
 
@@ -21,6 +27,9 @@ PDF_MAX = 1_000                # recalls in a PDF (spec decision 2)
 XLSX_MAX = 100_000             # rows in an Excel file (spec decision 2)
 SEARCH_MAX = 500               # search list hits in a file
 SHOWN_ON_PAGE = 50             # recalls listed on a filtered device page (all are in the files)
+RESULTS_SHOWN = 10             # results on the home screen (/api/search's default limit)
+PER_RESULT = 50                # newest recalls / MAUDE reports per result in the "all records" file
+RECORDS_MAX_GB = min(0.2, MAX_GB_PER_QUESTION)   # BigQuery cap per "all records" file (dry run first)
 
 
 class TooManyRows(Exception):
@@ -193,3 +202,94 @@ def entity_view(backend, kind: str, entity_id: str, f: Filters, budget: ql_backe
 def search_hits(index, q: str, limit: int = SEARCH_MAX) -> list:
     """The same hits, in the same order, as /api/search for the same text."""
     return index.search(q, limit=limit)
+
+
+# ── all records of the home screen's results (recalls, enforcement, MAUDE) ────
+
+def enforcement_for(con, recall_numbers: list[str]) -> list[dict]:
+    """The index's enforcement records for these recall numbers, newest first."""
+    from device_search.build_index import ENFORCEMENT_COLUMNS
+    if not recall_numbers:
+        return []
+    cols = list(ENFORCEMENT_COLUMNS)
+    out = []
+    for i in range(0, len(recall_numbers), 500):                # SQLite parameter limit
+        chunk = recall_numbers[i:i + 500]
+        out += [dict(zip(cols, r)) for r in con.execute(
+            f"SELECT {','.join(cols)} FROM enforcement "
+            f"WHERE recall_number IN ({','.join('?' * len(chunk))})", chunk)]
+    return sorted(out, key=lambda r: (str(r.get("record_date") or ""), r["recall_number"]),
+                  reverse=True)
+
+
+def records_view(bot, q: str, budget: ql_backend.Budget) -> dict:
+    """The records behind the results the home screen shows for `q`, by FDA source.
+
+    Returns {"hits", "recalls", "enforcement", "maude", "data_as_of"}; each recall, enforcement
+    and MAUDE row carries `result` (the result's title) so a reader knows which result it is for.
+    Raises the query layer's QueryBudgetExceeded above `budget`."""
+    hits = search_hits(bot.index, q, limit=RESULTS_SHOWN)
+    if not hits:
+        return {"hits": [], "recalls": [], "enforcement": [], "maude": [], "data_as_of": None}
+    by_key = {(h.kind, h.entity_id): h for h in hits}
+    devices = [h.entity_id for h in hits if h.kind == "device"]
+    qs = [queries.recalls_many(bot.backend.table, list(by_key), PER_RESULT)]
+    if devices:
+        qs.append(queries.device_reports_many(bot.backend.table, devices, PER_RESULT))
+    results, _records = bot.backend.run(qs, budget)
+    recall_rows = results[0]
+    report_rows = results[1] if devices else []
+
+    recalls, numbers = [], {}
+    for h in hits:                                         # in the order shown on the screen
+        for r in recall_rows:
+            if (r.get("entity_type"), r.get("entity_id")) == (h.kind, h.entity_id):
+                row = {k: v for k, v in r.items() if k not in ("entity_type", "entity_id",
+                                                                "total_recalls")}
+                recalls.append({"result": h.title, **row})
+                numbers.setdefault(r["recall_number"], []).append(h.title)
+    recalls = with_category(recalls)
+    enforcement = [{"result": "; ".join(dict.fromkeys(numbers[e["recall_number"]])), **e}
+                   for e in enforcement_for(bot.index.con, list(numbers))]
+    maude = []
+    for h in hits:
+        if h.kind != "device":
+            continue
+        for r in report_rows:
+            if r.get("entity_id") == h.entity_id:
+                maude.append({"result": h.title, "device": h.title, "company": h.subtitle or None,
+                              "record_date": r.get("record_date"),
+                              "mdr_report_key": r.get("mdr_report_key")})
+    return {"hits": hits, "recalls": recalls, "enforcement": enforcement, "maude": maude,
+            "data_as_of": bot.backend.data_as_of(["entity_recalls", "entity_reports"])}
+
+
+# ── a device page's summary by source ─────────────────────────────────────────
+
+def _has_table(con, name: str) -> bool:
+    return con.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                       (name,)).fetchone() is not None
+
+
+def page_source_summary(page: dict, index, kind: str, entity_id: str,
+                        recall_numbers: list[str] | None = None, filtered: bool = False) -> dict:
+    """What a device, company or product code page holds per FDA source: its MAUDE reports and
+    recalls as the page counts them, and how many of those recalls have an FDA enforcement
+    report (the search index's enforcement table, no BigQuery). recall_numbers: all of the
+    page's recalls when known (a filtered page); otherwise the entry's recall links in the
+    index are used. enforcement is None on an index without those tables."""
+    con = index.con
+    enforcement = None
+    if _has_table(con, "enforcement"):
+        if recall_numbers is not None:
+            enforcement = len(enforcement_for(con, sorted(set(recall_numbers))))
+        elif _has_table(con, "recall_links"):
+            from device_search.build_index import entry_id
+            enforcement = con.execute(
+                "SELECT COUNT(DISTINCT e.recall_number) FROM recall_links AS l "
+                "JOIN enforcement AS e ON e.recall_number = l.recall_number WHERE l.entry_id = ?",
+                (entry_id(kind, entity_id),)).fetchone()[0]
+    return {"maude_reports": (page.get("counts") or {}).get("total_reports", 0),
+            "recalls": (page.get("recalls") or {}).get("total", 0),
+            "enforcement": enforcement, "filtered": filtered}
+

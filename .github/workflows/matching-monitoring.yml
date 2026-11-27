@@ -1,0 +1,126 @@
+# Weekly data monitor for the MAUDE -> GUDID matcher (Model-Development/matching/,
+# scripts/m01_data_drift.py) and its retraining trigger.
+#
+# Compares two windows with the 12 report months before the label snapshot
+# (monitor/data_baseline.json): the MAUDE rows first loaded after the snapshot, and the baseline's
+# own rows as they are now (in-place changes by openFDA re-exports, e.g. blanked UDI-DIs). Signals:
+# UDI rate, exact UDI links to GUDID, missing fields, product-code and manufacturer mix (limits in
+# monitor/thresholds.json). Drift in either window is drift.
+#
+#   ok / warn     the run passes; the job summary shows the checks that warn
+#   no decision   fewer than min_rows new rows since the snapshot (new reports arrive in small,
+#                 irregular batches): the run passes with a warning
+#   drift         retraining trigger: starts model-training with refresh_data=true (features
+#                 rebuilt from current PROD, the same reviewed label set) and publish=true, so a
+#                 model that passes the gate is published; one that fails it is not (the champion
+#                 stays). The run is marked failed, so GitHub e-mails the alert.
+#   stale         the label set was rebuilt: rebuild the baseline (exit 4), the run fails
+#
+# A drift that a feature refresh cannot fix (e.g. UDI links dropping for good) needs a new label
+# set: that stays a reviewed step (scripts/s01_build_label_set.py, a committed manifest).
+#
+# Scheduled workflows run from main only. GCP: the matching CI account (GCP_SERVICE_ACCOUNT),
+# which already reads vigil_md_prod. Cost: about 0.45 GB per run (two queries, each dry-run
+# first and capped at 1 GB).
+name: matching-monitoring
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"            # Mondays 08:00 UTC
+  workflow_dispatch:
+    inputs:
+      simulate:
+        description: "Demo: check a synthetic window instead of BigQuery (none = real data)"
+        type: choice
+        options: [none, udi_drop, new_devices]
+        default: none
+
+concurrency:
+  group: matching-monitoring
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: Model-Development/matching
+
+jobs:
+  data-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write          # short-lived GCP token, no stored key
+      actions: write           # the retraining trigger: start model-training
+    env:
+      PROJECT: ${{ vars.GCP_PROJECT_ID }}
+      SIMULATE: ${{ inputs.simulate || 'none' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: Model-Development/matching/requirements*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Authenticate to GCP (Workload Identity Federation)
+        if: env.SIMULATE == 'none' && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Data drift check
+        id: drift
+        run: |
+          if [ "$SIMULATE" != "none" ]; then
+            args="--simulate $SIMULATE"
+          elif [ -z "$PROJECT" ]; then
+            echo "::warning::Not checked: GCP variables are not set." ; echo "code=0" >> "$GITHUB_OUTPUT"; exit 0
+          else
+            args="--project $PROJECT --max-gb 1"
+          fi
+          set +e
+          python scripts/m01_data_drift.py check $args --out report.json --summary summary.md
+          code=$?
+          set -e
+          [ -f summary.md ] && cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "No drift." ;;
+            2) echo "::warning::Matching monitor: no decision yet (too few new rows)." ;;
+            3) echo "::error::Matching monitor: DRIFT. Retraining is started." ;;
+            4) echo "::error::The label set was rebuilt: rebuild monitor/data_baseline.json."; exit 1 ;;
+            *) echo "::error::Matching monitor failed (exit $code)."; exit 1 ;;
+          esac
+
+      # The retraining trigger. A simulated drift only shows what would run (no training, no cost).
+      - name: Start retraining (model-training, fresh features, publish if the gate passes)
+        if: steps.drift.outputs.code == '3'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$SIMULATE" != "none" ]; then
+            echo "Simulated drift: would run: gh workflow run model-training.yml --ref main -f refresh_data=true -f publish=true" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            gh workflow run model-training.yml --ref main -f refresh_data=true -f publish=true
+            echo "Retraining started: Actions -> model-training (refresh_data=true, publish=true)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit 1     # mark the run failed so GitHub e-mails the drift alert
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: matching-drift-report
+          path: |
+            Model-Development/matching/report.json
+            Model-Development/matching/summary.md
+          retention-days: 90
+          if-no-files-found: ignore

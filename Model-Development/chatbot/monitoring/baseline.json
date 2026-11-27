@@ -1,0 +1,50 @@
+{
+  "built_at": "2026-11-19T18:04:28+00:00",
+  "rules_fingerprint": "5d1584bb53b3",
+  "model_version": "5d1584bb53b3-eeb32c6",
+  "data": "data/test/handwritten_test_v2.jsonl",
+  "profile": {
+    "n": 242,
+    "label_share": {
+      "counts": 0.144628,
+      "problems": 0.27686,
+      "recalls": 0.161157,
+      "narratives": 0.190083,
+      "identity": 0.061983,
+      "out_of_scope": 0.409091
+    },
+    "refusal_share": 0.384298,
+    "unclear_share": 0.057851,
+    "hist": {
+      "top_score": [
+        0.004132,
+        0.033058,
+        0.041322,
+        0.020661,
+        0.061983,
+        0.119835,
+        0.144628,
+        0.14876,
+        0.42562
+      ],
+      "unknown_word_share": [
+        0.107438,
+        0.132231,
+        0.227273,
+        0.227273,
+        0.169421,
+        0.115702,
+        0.020661
+      ],
+      "question_words": [
+        0.061983,
+        0.115702,
+        0.239669,
+        0.285124,
+        0.181818,
+        0.103306,
+        0.012397
+      ]
+    }
+  }
+}

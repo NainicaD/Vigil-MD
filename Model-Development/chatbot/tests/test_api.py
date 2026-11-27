@@ -1,4 +1,6 @@
 """Tests for api/app.py: the website's HTTP API, with the chatbot's fakes (no network, no cost)."""
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,13 +22,18 @@ class FakeSearchIndex(test_answer.FakeIndex):
         del text
         return [test_answer.hit()][:limit]
 
+    def source_summary(self, hits):
+        return {"results": len(hits), "maude": [], "recalls": None, "enforcement": None}
 
-def client(labels=("counts",), rows=None, fake=None, rate_limit=30, resolution=None):
+
+def client(labels=("counts",), rows=None, fake=None, rate_limit=30, resolution=None,
+           event_sink=lambda event: None):
     bot, fake_bq, _ = test_answer.make_bot(list(labels), resolution=resolution, rows=rows,
                                            client=fake)
     bot.index = FakeSearchIndex(
         resolution or search.Resolution("resolved", [test_answer.hit()], "dreamstation"))
-    return TestClient(api.create_app(bot=bot, dataset="vigil_md_test", rate_limit=rate_limit)), fake_bq
+    return TestClient(api.create_app(bot=bot, dataset="vigil_md_test", rate_limit=rate_limit,
+                                     event_sink=event_sink)), fake_bq
 
 
 def test_health_reports_fingerprints_and_runs_no_query():
@@ -55,6 +62,7 @@ def test_search_returns_the_contract_fields_only():
     assert r.status_code == 200
     hit = r.json()["hits"][0]
     assert set(hit) == set(api.HIT_FIELDS) and hit["entity_id"] == DEV
+    assert set(r.json()) == {"query", "hits", "summary"}
     assert not bq.calls                       # local index, no BigQuery
 
 
@@ -230,3 +238,74 @@ def test_serving_versions_match_training_versions():
     train, serve = pins(CHATBOT / "requirements.txt"), pins(CHATBOT / "requirements-serve.txt")
     for lib in ("scikit-learn", "google-cloud-bigquery", "fastapi", "uvicorn"):
         assert serve[lib] == train[lib], lib
+
+
+# ── monitoring events (api/events.py) ────────────────────────────────────────
+
+SECRET_QUESTION = "My name is Jane Roe, my DreamStation shocked me, how many deaths has it had?"
+
+
+def test_each_answer_writes_one_event_without_the_question_text():
+    events = []
+    c, _ = client(labels=("counts",), event_sink=events.append)
+    r = c.post("/api/answer", json={"question": SECRET_QUESTION})
+    assert r.status_code == 200
+    (event,) = events
+    assert event["event"] == "router_decision" and event["schema_version"] == 1
+    assert event["status"] == "answered" and event["dataset"] == "vigil_md_test"
+    assert event["labels"] == ["counts"] and event["entity_types_found"] == ["device"]
+    assert event["question_chars"] == len(SECRET_QUESTION)
+    assert event["question_words"] == len(SECRET_QUESTION.split())
+    assert event["entity_given"] is False and event["latency_ms"] >= 0
+    text = json.dumps(event)
+    for part in ("Jane", "Roe", "shocked", "DreamStation", "dreamstation", DEV):
+        assert part not in text, part           # no question words, search phrase or entity id
+
+
+def test_the_response_is_unchanged_by_monitoring():
+    c, _ = client(labels=("counts",))
+    body = c.post("/api/answer", json={"question": SECRET_QUESTION}).json()
+    assert "router_signals" not in body and "question" not in body
+
+
+def test_refusals_and_device_page_questions_are_events_too():
+    events = []
+    c, _ = client(labels=(), event_sink=events.append)
+    c.post("/api/answer", json={"question": "Should I stop using my DreamStation?"})
+    c.post("/api/answer", json={"question": "Was it recalled?",
+                                "entity": {"entity_type": "device", "entity_id": DEV}})
+    assert events[0]["status"] == "refused" and events[0]["reply_kind"] == "medical_refusal"
+    assert events[0]["rule_hits"]                      # pattern names only
+    assert events[1]["entity_given"] is True
+
+
+def test_rejected_requests_write_no_event():
+    events = []
+    c, _ = client(event_sink=events.append, rate_limit=1)
+    c.post("/api/answer", json={"question": ""})                  # 422
+    c.post("/api/answer", json={"question": "What can you do?"})  # 200
+    c.post("/api/answer", json={"question": "What can you do?"})  # 429
+    assert [e["status"] for e in events] == ["help"]
+
+
+def test_a_broken_event_sink_does_not_break_the_answer():
+    def broken(event):
+        raise OSError("stdout closed")
+    c, _ = client(event_sink=broken)
+    r = c.post("/api/answer", json={"question": "How many deaths has the DreamStation had?"})
+    assert r.status_code == 200 and r.json()["status"] == "answered"
+
+
+def test_an_exception_in_the_chatbot_is_an_event_and_still_an_error():
+    events = []
+    bot = test_answer.make_bot(["counts"])[0]
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("bug")
+    bot.answer = boom
+    app = api.create_app(bot=bot, dataset="vigil_md_test", event_sink=events.append)
+    r = TestClient(app, raise_server_exceptions=False).post(
+        "/api/answer", json={"question": "How many deaths?"})
+    assert r.status_code == 500
+    (event,) = events
+    assert event["status"] == "exception" and event["labels"] == [] and event["scores"] == {}

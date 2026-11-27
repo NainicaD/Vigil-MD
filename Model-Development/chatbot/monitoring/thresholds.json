@@ -1,0 +1,10 @@
+{
+  "_comment": "Drift limits for monitoring.drift (router). PSI: below 0.1 no change, 0.1-0.25 moderate (warn), 0.25 and above a real shift (drift). Share limits are absolute changes against the baseline. A window with fewer than min_events events gives no decision (exit 2). Set 2026-11-19 before any live traffic was seen; review them after the first weeks of real traffic.",
+  "min_events": 200,
+  "psi_warn": 0.1,
+  "psi_drift": 0.25,
+  "share_warn": 0.1,
+  "share_drift": 0.15,
+  "refusal_share_drift": 0.1,
+  "unclear_share_drift": 0.1
+}

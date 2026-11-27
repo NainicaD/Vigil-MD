@@ -48,9 +48,25 @@ class QueryRouter:
         probs = self.pipe.predict_proba(questions)
         return [{lbl: round(float(p), 4) for lbl, p in zip(LABELS, row)} for row in probs]
 
+    def unknown_word_share(self, question: str) -> float | None:
+        """Share of the question's words that are not in the word vocabulary the router was
+        trained with (0.0 = all known). A rising share in live traffic means users ask in words
+        the model never saw (drift). None if the question has no words or the model has no
+        word features."""
+        try:
+            words = self.pipe.named_steps["features"].get_params()["word"]
+            vocab, analyze = words.vocabulary_, words.build_analyzer()
+        except (AttributeError, KeyError, TypeError):
+            return None
+        tokens = [t for t in analyze(question) if " " not in t]     # unigrams, not bigrams
+        if not tokens:
+            return None
+        return round(sum(t not in vocab for t in tokens) / len(tokens), 4)
+
     def classify(self, question: str) -> dict:
         s = self.scores([question])[0]
         labels = [lbl for lbl in LABELS if s[lbl] >= self.thresholds[lbl]]
         decision = route(labels, question, self.policy)
         return {**decision, "scores": s,
-                "unclear": not decision["labels"] and decision["reply_kind"] is None}
+                "unclear": not decision["labels"] and decision["reply_kind"] is None,
+                "unknown_word_share": self.unknown_word_share(question)}

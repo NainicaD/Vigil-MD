@@ -42,6 +42,8 @@ export const TEXT_MAX = 100;
 /** Rows a file may hold (the API answers 413 above them). */
 export const PDF_MAX = 1_000;
 export const XLSX_MAX = 100_000;
+/** The "all records" file: newest records per result (the API's PER_RESULT). */
+export const RECORDS_PER_RESULT = 50;
 
 const COMMON_KEYS = ["category", "class", "status", "year_from", "year_to", "text"];
 export const FILTER_KEYS: Record<FilterScope, string[]> = {
@@ -91,15 +93,18 @@ export interface FilteredEntity extends EntityResponse {
 export type ExportTarget =
   | { kind: "recalls" }
   | { kind: "entity"; entityKind: EntityKind; entityId: string }
-  | { kind: "search"; q: string };
+  | { kind: "search"; q: string }
+  /** All records (recalls, enforcement, MAUDE) of the results the home screen shows. */
+  | { kind: "records"; q: string };
 
 /** The API path of a file (without the /api base). */
 export function exportPath(target: ExportTarget, format: ExportFormat, filters?: URLSearchParams): string {
   const params = new URLSearchParams({ format });
-  if (target.kind === "search") params.set("q", target.q);
+  if (target.kind === "search" || target.kind === "records") params.set("q", target.q);
   for (const [k, v] of filters ?? []) params.append(k, v);
   if (target.kind === "recalls") return `/export/recalls?${params}`;
   if (target.kind === "search") return `/export/search?${params}`;
+  if (target.kind === "records") return `/export/records?${params}`;
   return `/export/entity/${encodeURIComponent(target.entityKind)}/${encodeURIComponent(target.entityId)}?${params}`;
 }
 
@@ -111,6 +116,10 @@ export function fileName(target: ExportTarget, format: ExportFormat, today = new
   const date = today.toISOString().slice(0, 10);
   return `vigil-md-${slug}-${date}.${format}`;
 }
+
+/** How long the file's object URL stays valid after the click. Revoking it at once can cancel
+ * the download in some browsers (Safari, Firefox): the save starts after click() returns. */
+export const REVOKE_AFTER_MS = 60_000;
 
 /** Saves a file the browser received: a temporary object URL and a link with `download`. */
 export function saveBlob(blob: Blob, name: string): void {
@@ -124,7 +133,7 @@ export function saveBlob(blob: Blob, name: string): void {
     a.click();
     a.remove();
   } finally {
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), REVOKE_AFTER_MS);
   }
 }
 

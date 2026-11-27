@@ -6,6 +6,8 @@
                                                        a device page with filters: JSON for the
                                                        page, or its file (same data function)
   GET /api/export/search?q=<text>&format=pdf|xlsx      the search results list's file
+  GET /api/export/records?q=<text>&format=pdf|xlsx     all records of the results shown on the
+                                                       home screen: recalls, enforcement, MAUDE
 
 The recall finder and the search list read the local search index (no BigQuery); a device page
 reads the summary tables (the same few MB as /api/entity, with its cost cap). Filters are
@@ -31,6 +33,8 @@ from query_layer import config
 
 EXPORT_RATE_LIMIT = int(os.environ.get("VIGIL_EXPORT_RATE_LIMIT_PER_MINUTE", "5"))
 PAGE_RATE_LIMIT = int(os.environ.get("VIGIL_RATE_LIMIT_PER_MINUTE", "30"))   # as /api/entity
+# "All records" files read BigQuery (about 20-80 MB each on PROD): stricter than other files.
+RECORDS_RATE_LIMIT = int(os.environ.get("VIGIL_RECORDS_RATE_LIMIT_PER_MINUTE", "2"))
 MAX_QUERY_CHARS = 200
 FORMATS = {"pdf": (pdf, data.PDF_MAX), "xlsx": (xlsx, data.XLSX_MAX)}
 FILE_SLUG = {"device": "device", "manufacturer": "manufacturer", "product_code": "product-code"}
@@ -78,6 +82,7 @@ def make_router(get_bot: Callable[[], pipeline.Chatbot], rate_limiter) -> APIRou
     router = APIRouter()
     file_limiter = rate_limiter(EXPORT_RATE_LIMIT)
     page_limiter = rate_limiter(PAGE_RATE_LIMIT)
+    records_limiter = rate_limiter(RECORDS_RATE_LIMIT)
 
     def limit_files(request: Request) -> None:
         if not file_limiter.allow(_client(request)):
@@ -90,6 +95,24 @@ def make_router(get_bot: Callable[[], pipeline.Chatbot], rate_limiter) -> APIRou
             raise HTTPException(status_code=429, detail={
                 "status": "rate_limited", "text": "Too many requests in a minute. Please wait "
                                                   "a moment and try again."})
+
+    def limit_records(request: Request) -> None:
+        if not records_limiter.allow(_client(request)):
+            raise HTTPException(status_code=429, detail={
+                "status": "rate_limited", "text": "Too many record downloads in a minute. Please "
+                                                  "wait a moment and try again."})
+
+    def records_or_error(bot, q: str) -> dict:
+        try:
+            return data.records_view(bot, q, ql_backend.Budget(max_gb=data.RECORDS_MAX_GB))
+        except ql_backend.QueryBudgetExceeded:
+            raise HTTPException(status_code=413, detail={
+                "status": "budget", "text": "These results have too many records for one file. "
+                                            "Open a result's page and download it there."}) from None
+        except pipeline.DATA_ERRORS:
+            logging.exception("records failed")             # no search text in the log
+            raise HTTPException(status_code=503, detail={"status": "error",
+                                                         "text": templates.SERVICE_DOWN}) from None
 
     def index():
         return get_bot().index
@@ -143,6 +166,9 @@ def make_router(get_bot: Callable[[], pipeline.Chatbot], rate_limiter) -> APIRou
         if fmt == "json":
             page = {k: v for k, v in view.items() if k != "all_recalls"}
             page["filters"] = filters.describe(f)
+            page["source_summary"] = data.page_source_summary(
+                view, bot.index, kind, entity_id, [r["recall_number"] for r in view["all_recalls"]],
+                filtered=not f.empty)
             page["sources"] = [{"query": s.get("query"), "tables": list(s.get("tables") or [])}
                                for s in page.get("sources", [])]       # no SQL leaves the API
             return page
@@ -159,5 +185,15 @@ def make_router(get_bot: Callable[[], pipeline.Chatbot], rate_limiter) -> APIRou
         doc = document.search_document(hits, q, idx.meta.get("built_at"),
                                        dt.datetime.now(dt.timezone.utc))
         return _file(doc, fmt, "search")
+
+    @router.get("/api/export/records")
+    def export_records(request: Request, q: str = Query(min_length=2, max_length=MAX_QUERY_CHARS),
+                       format: str = Query(...)):  # pylint: disable=redefined-builtin
+        fmt = _format(format)
+        limit_files(request)
+        limit_records(request)
+        view = records_or_error(get_bot(), q)
+        doc = document.records_document(view, q, data.PER_RESULT, dt.datetime.now(dt.timezone.utc))
+        return _file(doc, fmt, "records")
 
     return router

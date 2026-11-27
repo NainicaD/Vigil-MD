@@ -15,7 +15,8 @@ SOURCES = ("Source: FDA data from openFDA (MAUDE adverse-event reports, device r
            "enforcement reports) and AccessGUDID (device identifiers).")
 COUNTS_MEANING = ("Report counts are numbers of reports, not failure rates: a report does not "
                   "prove that the device caused the event.")
-CLASS_NOTE = "Recall class is empty where the FDA enforcement report gives none."
+CLASS_NOTE = ("Recall class is empty where the FDA enforcement report gives none. Recall date is "
+              "empty where the recall record has none; those recalls never match a year filter.")
 PDF_CUT_NOTE = ("In the PDF, long product names and reasons are cut at about 300 characters "
                 "(marked …); the Excel file has them in full.")
 INDEX_FRESHNESS = ("Taken from the site's search index, built when the site was last deployed "
@@ -78,6 +79,10 @@ RECALL_COLUMNS = [
 ]
 MATCHED_BY = Column("matched_by", "Matched by", width=14)          # device pages only
 
+SOURCE_NOTE = ("Sources: MAUDE = FDA adverse-event reports (openFDA device/event); Recalls = FDA "
+               "device recalls (openFDA device/recall); Enforcement = FDA enforcement reports "
+               "(openFDA device/enforcement), which give a recall its class.")
+
 SEARCH_COLUMNS = [
     Column("title", "Title", width=40, pdf_mm=78),
     Column("kind", "Kind", width=14, pdf_mm=24),
@@ -86,6 +91,43 @@ SEARCH_COLUMNS = [
     Column("reports", "Reports", "int", 10, 22),
     Column("deaths", "Deaths", "int", 10, 22),
     Column("injuries", "Injuries", "int", 10, 22),
+    Column("recalls", "Recalls", "int", 10, 20),
+    Column("enforcement", "Enforcement", "int", 12, 22),
+]
+SEARCH_COLUMN_SOURCES = "Reports, deaths and injuries: MAUDE. Recalls: FDA recalls. Enforcement: FDA enforcement reports."
+
+RESULT_COLUMN = Column("result", "Result", width=30, pdf_mm=34)
+RECORD_RECALL_COLUMNS = [
+    RESULT_COLUMN,
+    Column("recall_number", "Recall number", width=14, pdf_mm=22),
+    Column("record_date", "Date", "date", 11, 18),
+    Column("recall_class", "Class", width=9, pdf_mm=13),
+    Column("recall_status", "Status", width=16, pdf_mm=20),
+    Column("firm", "Firm", width=28, pdf_mm=30),
+    Column("product", "Product", width=40, pdf_mm=44, cut=300),
+    Column("category", "Category", width=22, pdf_mm=22),
+    Column("reason_text", "Reason", width=60, pdf_mm=70, cut=300),
+    Column("root_cause", "Root cause", width=26),
+    Column("action", "Action", width=50),
+    Column("matched_by", "Matched by", width=14),
+]
+ENFORCEMENT_COLUMNS = [
+    RESULT_COLUMN,
+    Column("recall_number", "Recall number", width=14, pdf_mm=22),
+    Column("event_id", "Event id", width=10, pdf_mm=16),
+    Column("record_date", "Report date", "date", 11, 18),
+    Column("recall_class", "Class", width=9, pdf_mm=13),
+    Column("status", "Status", width=12, pdf_mm=18),
+    Column("firm", "Firm", width=28, pdf_mm=30),
+    Column("product", "Product", width=40, pdf_mm=46, cut=300),
+    Column("distribution_pattern", "Distribution", width=30, pdf_mm=30, cut=200),
+    Column("reason_text", "Reason", width=60, pdf_mm=46, cut=300),
+]
+MAUDE_COLUMNS = [
+    Column("device", "Device", width=34, pdf_mm=90),
+    Column("company", "Company", width=34, pdf_mm=90),
+    Column("record_date", "Date received", "date", 13, 30),
+    Column("mdr_report_key", "MDR report key", width=16, pdf_mm=40),
 ]
 
 
@@ -110,13 +152,11 @@ def recalls_document(rows: list[dict], filters: list[tuple[str, str]], built_at:
 
 
 def search_document(hits: list, q: str, built_at: str | None, made_at: dt.datetime) -> Document:
-    rows = [{"title": h.title, "kind": KIND_LABEL.get(h.kind, h.kind), "subtitle": h.subtitle,
-             "product_codes": ", ".join(h.product_codes), "reports": h.reports,
-             "deaths": h.deaths, "injuries": h.injuries} for h in hits]
+    rows = _result_rows(hits)
     return Document(
         title="Vigil MD: search results", made_at=made_at, data_as_of=as_of(built_at),
         filters=[("Search text", q)], row_count=len(rows), row_label="search results",
-        notes=[INDEX_FRESHNESS, COUNTS_MEANING, SOURCES, NOT_ADVICE],
+        notes=[INDEX_FRESHNESS, SEARCH_COLUMN_SOURCES, COUNTS_MEANING, SOURCES, NOT_ADVICE],
         tables=[Table("Results", "Search results, in the order shown on the site",
                       SEARCH_COLUMNS, rows)])
 
@@ -166,3 +206,38 @@ def entity_document(view: dict, filters: list[tuple[str, str]], made_at: dt.date
                    Column("reports", "Reports", "int", 10, 30)], problem_rows),
             Table("Recalls", "Recalls, newest first", recall_cols, view["all_recalls"]),
         ])
+
+
+def _result_rows(hits: list) -> list[dict]:
+    return [{"title": h.title, "kind": KIND_LABEL.get(h.kind, h.kind), "subtitle": h.subtitle,
+             "product_codes": ", ".join(h.product_codes), "reports": h.reports,
+             "deaths": h.deaths, "injuries": h.injuries,
+             "recalls": getattr(h, "recalls", 0), "enforcement": getattr(h, "enforcement", 0)}
+            for h in hits]
+
+
+def records_document(view: dict, q: str, per_result: int, made_at: dt.datetime) -> Document:
+    """The "all records" file of the home screen's results (data.records_view() output)."""
+    n = len(view["recalls"]) + len(view["enforcement"]) + len(view["maude"])
+    return Document(
+        title="Vigil MD: records of the search results", made_at=made_at,
+        data_as_of=oldest(view.get("data_as_of")), filters=[("Search text", q)],
+        row_count=n, row_label="records",
+        notes=[f"For the {len(view['hits'])} results shown on the home screen: the newest "
+               f"{per_result} recalls of each, their enforcement records, and the newest "
+               f"{per_result} MAUDE reports of each device result (report counts for all "
+               "results are on the Results sheet). Open a result's page on the site for more.",
+               "MAUDE reports are listed for device results only: a company or product code "
+               "covers many devices.",
+               SOURCE_NOTE, COUNTS_MEANING, CLASS_NOTE, PDF_CUT_NOTE, SOURCES, NOT_ADVICE],
+        tables=[
+            Table("Results", "Results, in the order shown on the site", SEARCH_COLUMNS,
+                  _result_rows(view["hits"])),
+            Table("Recalls", f"Recalls (FDA device recalls), newest {per_result} per result",
+                  RECORD_RECALL_COLUMNS, view["recalls"]),
+            Table("Enforcement", "Enforcement records (FDA enforcement reports) of those recalls",
+                  ENFORCEMENT_COLUMNS, view["enforcement"]),
+            Table("MAUDE reports", f"MAUDE reports (FDA adverse-event reports), newest "
+                  f"{per_result} per device result", MAUDE_COLUMNS, view["maude"]),
+        ])
+

@@ -37,18 +37,22 @@ export function entityPath(kind: EntityKind, entityId: string): string {
 
 type Fetch = typeof fetch;
 
-export function createHttpApi(cfg: Pick<AppConfig, "apiBaseUrl" | "requestTimeoutMs">, fetchFn: Fetch = fetch): Api {
+export function createHttpApi(
+  cfg: Pick<AppConfig, "apiBaseUrl" | "requestTimeoutMs"> & Partial<Pick<AppConfig, "downloadTimeoutMs">>,
+  fetchFn: Fetch = fetch,
+): Api {
   async function request<T>(
     path: string,
     init: RequestInit & CallOptions,
     read: (res: Response) => Promise<unknown> = (res) => res.json(),
+    timeoutMs: number = cfg.requestTimeoutMs,
   ): Promise<T> {
     const timeout = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       timeout.abort();
-    }, cfg.requestTimeoutMs);
+    }, timeoutMs);
 
     // Cancel when either the caller or the timeout says so.
     const caller = init.signal;
@@ -117,7 +121,9 @@ export function createHttpApi(cfg: Pick<AppConfig, "apiBaseUrl" | "requestTimeou
       return request<FilteredEntity>(`/export${entityPath(kind, entityId)}?format=json&${filters}`, { method: "GET", signal });
     },
     download(path, { signal } = {}) {
-      return request<Blob>(path, { method: "GET", signal }, (res) => res.blob());
+      // A large Excel file can take longer than other requests: wait as long as Cloud Run does.
+      const timeoutMs = cfg.downloadTimeoutMs ?? cfg.requestTimeoutMs;
+      return request<Blob>(path, { method: "GET", signal }, (res) => res.blob(), timeoutMs);
     },
   };
 }

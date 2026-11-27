@@ -226,7 +226,9 @@ def test_gate_blocks_publishing(wf):
     assert gate < publish, names
     assert "--report-only" not in steps[gate]["run"]        # a worse model fails the job
     assert "if" not in steps[gate]                          # the gate always runs after training
-    assert steps[publish]["if"] == "success() && github.event_name == 'push'"
+    assert steps[publish]["if"] == ("success() && (github.event_name == 'push' || "
+                                    "(github.event_name == 'workflow_dispatch' && inputs.publish "
+                                    "&& github.ref == 'refs/heads/main'))")
     assert "--lineage ci" in steps[publish]["run"] and "--semver auto" in steps[publish]["run"]
     assert "--print-only" not in steps[publish]["run"]
 

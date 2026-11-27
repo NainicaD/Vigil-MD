@@ -50,6 +50,21 @@ SPECIAL = [
     recall(903, root_cause=None, record_date=dt.date(2010, 5, 5), reason_text="@cmd unknown"),
 ]
 FIXTURE_RECALLS = [recall(n) for n in range(120)] + SPECIAL
+# enforcement records (enforcement_sql() rows) for the first 3 recalls; the DreamStation device
+# is linked to recalls 0-3 (recall_links_sql() rows), so it has 4 recalls and 3 enforcement.
+FIXTURE_ENFORCEMENT = [
+    {"recall_number": f"Z-{n:04d}-2024", "event_id": str(80000 + n), "recall_class": "Class II",
+     "record_date": dt.date(2024, 2, 1 + n), "status": "Terminated",
+     "distribution_pattern": "US nationwide", "firm": "Acme Medical",
+     "product": f"Infusion pump model {n}", "reason_text": f"Battery may fail early (lot {n})."}
+    for n in range(3)]
+FIXTURE_LINKS = [{"entity_type": "device", "entity_id": DEV, "recall_number": f"Z-{n:04d}-2024"}
+                 for n in range(4)]
+# the DreamStation's company shares recalls 0-1 with the device and has one more (4)
+FIXTURE_COMPANY = next(c for c in test_device_search.CATALOG if c["entity_type"] == "manufacturer"
+                       and c["entity_id"] == test_device_search.CATALOG[0]["company_norm"])
+FIXTURE_COMPANY_LINKS = [{"entity_type": "manufacturer", "entity_id": FIXTURE_COMPANY["entity_id"],
+                          "recall_number": f"Z-{n:04d}-2024"} for n in (0, 1, 4)]
 
 
 @pytest.fixture(scope="module")
@@ -59,8 +74,11 @@ def index_path(tmp_path_factory):
                                 test_device_search.ALIASES)
     recalls, unmapped = bi.recall_rows(FIXTURE_RECALLS, bi.load_categories())
     assert not unmapped                 # every fixture root_cause has a category
+    enforcement = bi.enforcement_rows(FIXTURE_ENFORCEMENT)
+    rows = bi.with_source_counts(rows, bi.source_counts(
+        FIXTURE_LINKS + FIXTURE_COMPANY_LINKS, {e["recall_number"] for e in enforcement}))
     bi.write_index(path, rows, udis, {"dataset": "test", "built_at": "2026-11-24T06:00:00+00:00"},
-                   recalls)
+                   recalls, enforcement, bi.link_rows(FIXTURE_LINKS + FIXTURE_COMPANY_LINKS))
     return path
 
 
@@ -142,7 +160,7 @@ def test_the_recalls_table_and_its_indexes_are_created(index_path):
     assert con.execute("SELECT COUNT(*) FROM recalls").fetchone()[0] == len(FIXTURE_RECALLS)
     assert con.execute("SELECT COUNT(*) FROM recalls WHERE category IS NULL OR category = ''"
                        ).fetchone()[0] == 0
-    assert bi.INDEX_VERSION == 3
+    assert bi.INDEX_VERSION == 4
 
 
 def test_category_comes_from_the_mapping_file():
@@ -424,3 +442,184 @@ def test_the_device_page_json_with_filters(index_path):
     assert "all_recalls" not in body and all("sql" not in s for s in body["sources"])
     assert ["Event type", "Death"] in body["filters"]
     assert c.get(f"/api/export/entity/gadget/{DEV}?format=json").status_code == 404
+
+
+# ── sources on search results and the "all records" file ─────────────────────
+
+def test_enforcement_sql_leaves_out_scope_text_and_links_come_from_entity_recalls():
+    sql = bi.enforcement_sql("vigil_md_prod")
+    assert "source_record_id AS recall_number" in sql and "scope_text" not in sql
+    assert "`vigil-md-1792696816.vigil_md_prod.enforcement`" in sql
+    assert "`vigil-md-1792696816.vigil_md_prod.entity_recalls`" in bi.recall_links_sql("vigil_md_prod")
+
+
+def test_source_counts_count_distinct_recalls_and_their_enforcement_records():
+    links = FIXTURE_LINKS + [FIXTURE_LINKS[0]] + [
+        {"entity_type": "product_code", "entity_id": "FRN", "recall_number": "Z-0002-2024"}]
+    counts = bi.source_counts(links, {"Z-0000-2024", "Z-0002-2024"})
+    assert counts[bi.entry_id("device", DEV)] == (4, 2)      # the repeated link counts once
+    assert counts[bi.entry_id("product_code", "FRN")] == (1, 1)
+    rows = bi.with_source_counts([{"id": "x|none"}], counts)
+    assert rows[0]["recalls"] == 0 and rows[0]["enforcement"] == 0
+
+
+def test_search_results_carry_their_count_per_source(index_path):
+    c, _ = client(index_path)
+    hits = c.get("/api/search?q=dreamstation").json()["hits"]
+    dev = next(h for h in hits if h["entity_id"] == DEV)
+    assert (dev["reports"], dev["recalls"], dev["enforcement"]) == (dev["reports"], 4, 3)
+    assert all({"recalls", "enforcement"} <= set(h) for h in hits)
+
+
+def test_an_index_without_the_counts_still_opens(tmp_path):
+    """A version 3 index (no recalls/enforcement columns) gives 0, not an error."""
+    path = tmp_path / "v3.sqlite"
+    rows, udis = bi.entity_rows(test_device_search.CATALOG, test_device_search.DEVICE_DETAILS,
+                                test_device_search.ALIASES)
+    bi.write_index(path, rows, udis, {"dataset": "test"})
+    con = sqlite3.connect(path)
+    con.executescript("ALTER TABLE entities DROP COLUMN recalls; "
+                      "ALTER TABLE entities DROP COLUMN enforcement;")
+    con.close()
+    hit = DeviceIndex.open(path).search("dreamstation", limit=1)[0]
+    assert (hit.recalls, hit.enforcement) == (0, 0)
+
+
+def test_the_multi_entity_queries_are_read_only_and_prune_by_entity():
+    from query_layer import queries
+    from tests.test_query_layer import T
+    rq = queries.recalls_many(T, [("device", DEV), ("product_code", "FRN")], 50)
+    mq = queries.device_reports_many(T, [DEV], 50)
+    for q in (rq, mq):
+        queries.assert_read_only(q.sql)
+        assert "bucket IN UNNEST(@buckets)" in q.sql and "entity_id IN UNNEST(@ids)" in q.sql
+        assert "<= @per_" in q.sql
+    assert rq.params["keys"][1] == ["device|" + DEV, "product_code|FRN"]
+    assert "maude`" not in mq.sql and "entity_reports" in mq.sql       # never the large table
+    with pytest.raises(ValueError):
+        queries.recalls_many(T, [], 50)
+
+
+def _records_client(index_path, estimates=None):
+    """The fixture app with fake BigQuery rows for the DreamStation results."""
+    idx = DeviceIndex.open(index_path)
+    hits = idx.search("dreamstation", limit=data.RESULTS_SHOWN)
+    recall_rows = [{"entity_type": "device", "entity_id": DEV, "recall_number": f"Z-{n:04d}-2024",
+                    "recall_class": "Class II", "record_date": dt.date(2024, 1, 1 + n),
+                    "recall_status": "Terminated", "product": "DreamStation", "firm": "Respironics",
+                    "reason_text": "=foam may degrade", "root_cause": "Device Design",
+                    "action": "Replace.", "matched_by": "device_name", "total_recalls": 4}
+                   for n in range(4)]
+    report_rows = [{"entity_id": h.entity_id, "mdr_report_key": f"{9000 + i}",
+                    "record_date": dt.date(2025, 5, 1 + i), "total_reports": 2}
+                   for h in hits if h.kind == "device" for i in range(2)]
+    fake = test_answer.FakeClient(rows={"recalls": recall_rows, "narrative_candidates": report_rows},
+                                  estimates=estimates or {})
+    c, fake = client(index_path, fake=fake)
+    return c, fake, hits
+
+
+def test_the_records_file_has_one_sheet_per_source(index_path):
+    c, fake, hits = _records_client(index_path)
+    r = c.get("/api/export/records?format=xlsx&q=dreamstation")
+    assert r.status_code == 200
+    assert r.headers["content-disposition"].startswith('attachment; filename="vigil-md-records-')
+    wb = load_workbook(io.BytesIO(r.content))
+    assert wb.sheetnames == ["About", "Results", "Recalls", "Enforcement", "MAUDE reports"]
+    results = list(wb["Results"].iter_rows(min_row=2, values_only=True))
+    assert [x[0] for x in results] == [h.title for h in hits]             # the screen's order
+    recalls = list(wb["Recalls"].iter_rows(min_row=2, values_only=True))
+    assert len(recalls) == 4 and {x[0] for x in recalls} == {"DreamStation"}
+    assert recalls[0][8] == "=foam may degrade"                            # text, not a formula
+    enforcement = list(wb["Enforcement"].iter_rows(min_row=2, values_only=True))
+    assert sorted(x[1] for x in enforcement) == ["Z-0000-2024", "Z-0001-2024", "Z-0002-2024"]
+    maude = list(wb["MAUDE reports"].iter_rows(min_row=1, values_only=True))
+    assert maude[0] == ("Device", "Company", "Date received", "MDR report key")
+    n_devices = sum(h.kind == "device" for h in hits)
+    assert len(maude) - 1 == 2 * n_devices
+    about = " ".join(str(v) for row in wb["About"].iter_rows(values_only=True) for v in row if v)
+    assert "MAUDE = FDA adverse-event reports" in about and "newest 50" in about
+    # one query per source table: the 10 MB minimum is billed once each, maude is not read
+    assert sorted(n for n, _ in fake.real_runs()) == ["narrative_candidates", "recalls"]
+
+
+def test_the_records_pdf_builds(index_path):
+    c, _, _ = _records_client(index_path)
+    r = c.get("/api/export/records?format=pdf&q=dreamstation")
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+
+
+def test_records_over_the_bigquery_cap_are_413(index_path):
+    c, _, _ = _records_client(index_path, estimates={"recalls": 0.25e9})
+    r = c.get("/api/export/records?format=xlsx&q=dreamstation")
+    assert r.status_code == 413 and r.json()["status"] == "budget"
+
+
+def test_records_files_are_limited_to_2_a_minute(index_path):
+    c, _, _ = _records_client(index_path)
+    codes = [c.get("/api/export/records?format=xlsx&q=dreamstation").status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
+    assert "record downloads" in c.get("/api/export/records?format=xlsx&q=dreamstation").json()["text"]
+
+
+def test_records_with_no_results_is_an_empty_file_without_bigquery(index_path):
+    c, fake, _ = _records_client(index_path)
+    r = c.get("/api/export/records?format=xlsx&q=zzzzqqqq")
+    assert r.status_code == 200 and not fake.real_runs()
+    assert c.get("/api/export/records?format=csv&q=dreamstation").status_code == 422
+    assert c.get("/api/export/records?format=xlsx&q=d").status_code == 422
+
+
+def test_the_search_summary_counts_each_record_once(index_path):
+    c, _ = client(index_path)
+    body = c.get("/api/search?q=respironics").json()
+    hits, summary = body["hits"], body["summary"]
+    kinds = sorted(h["kind"] for h in hits)
+    assert kinds == ["device", "device", "manufacturer"]       # the company and its 2 devices
+    by_kind = {m["kind"]: m for m in summary["maude"]}
+    assert set(by_kind) == {"device", "manufacturer"}            # one total per kind, not added
+    assert by_kind["device"]["results"] == 2
+    assert by_kind["device"]["reports"] == sum(h["reports"] for h in hits if h["kind"] == "device")
+    assert by_kind["manufacturer"]["reports"] == next(h["reports"] for h in hits
+                                                       if h["kind"] == "manufacturer")
+    # device: recalls 0-3; company: 0, 1, 4 -> 5 distinct, not 4 + 3 = 7
+    assert summary["recalls"] == 5 and sum(h["recalls"] for h in hits) == 7
+    assert summary["enforcement"] == 3                          # 0, 1, 2 have enforcement
+
+
+def test_the_summary_without_links_says_unknown_not_zero(tmp_path):
+    path = tmp_path / "nolinks.sqlite"
+    rows, udis = bi.entity_rows(test_device_search.CATALOG, test_device_search.DEVICE_DETAILS,
+                                test_device_search.ALIASES)
+    bi.write_index(path, rows, udis, {"dataset": "test"})
+    con = sqlite3.connect(path)
+    con.execute("DROP TABLE recall_links")
+    con.commit()
+    con.close()
+    idx = DeviceIndex.open(path)
+    summary = idx.source_summary(idx.search("dreamstation"))
+    assert summary["recalls"] is None and summary["enforcement"] is None
+    assert idx.source_summary([])["maude"] == []
+
+
+def test_the_device_page_has_a_summary_by_source(index_path):
+    c, _ = client(index_path)
+    page = c.get(f"/api/entity/device/{DEV}").json()
+    s = page["source_summary"]
+    assert s["maude_reports"] == page["counts"]["total_reports"]
+    assert s["recalls"] == page["recalls"]["total"] and s["filtered"] is False
+    assert isinstance(s["enforcement"], int)
+    filtered = c.get(f"/api/export/entity/device/{DEV}?format=json&event=Death&year_from=2024").json()
+    fs = filtered["source_summary"]
+    assert fs["filtered"] is True and fs["maude_reports"] == filtered["counts"]["total_reports"] == 1
+    assert fs["recalls"] == filtered["recalls"]["total"] == 0 and fs["enforcement"] == 0
+
+
+def test_page_source_summary_counts_enforcement_of_the_given_recalls(index):
+    page = {"counts": {"total_reports": 12}, "recalls": {"total": 3}}
+    s = data.page_source_summary(page, index, "device", DEV,
+                                 ["Z-0000-2024", "Z-0001-2024", "Z-0099-2024", "Z-0000-2024"])
+    assert s == {"maude_reports": 12, "recalls": 3, "enforcement": 2, "filtered": False}
+    linked = data.page_source_summary(page, index, "device", DEV)        # from recall_links
+    assert linked["enforcement"] == 3                                   # recalls 0-2 of 0-3
+

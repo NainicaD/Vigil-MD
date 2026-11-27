@@ -358,6 +358,16 @@ def test_classify_answers_help_without_queries(model_dir):
     assert out["reply_kind"] == "help" and out["run_queries"] == [] and out["unclear"] is False
 
 
+def test_unknown_word_share_counts_words_outside_the_vocabulary(model_dir):
+    clf = QueryRouter.load(model_dir)
+    assert clf.unknown_word_share("zxqv blorptastic frumious") == 1.0
+    known = clf.unknown_word_share("How many deaths were reported?")
+    assert known is not None and known < 0.5
+    assert clf.unknown_word_share("???") is None                    # no words
+    assert clf.classify("Was it recalled?")["unknown_word_share"] is not None
+    assert QueryRouter(object(), {}).unknown_word_share("any question") is None   # no word features
+
+
 def test_classify_routes_factual_questions(model_dir):
     clf = QueryRouter.load(model_dir)
     out = clf.classify("How many death reports does the t:slim X2 have since 2020?")

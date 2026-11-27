@@ -1,9 +1,12 @@
 {
-  "_note": "FDA recall root_cause phrase -> recall category (device_search/build_index.py CATEGORIES). Every phrase in the data must be listed: build_index.py stores an unlisted one as 'Other or unknown' and prints a warning. Phrases from the vigil_md_dev index (2026-11-25); add vigil_md_prod's at the final prod check.",
+  "_note": "FDA recall root_cause phrase -> recall category (device_search/build_index.py CATEGORIES). Every phrase in the data must be listed: build_index.py stores an unlisted one as 'Other or unknown' and prints a warning. Phrases from the vigil_md_dev index (2026-11-25) and the vigil_md_prod index (2026-11-27: 18 more, 6,046 recalls). Regulatory phrases (No Marketing Application, Radiation Control for Health and Safety Act, PMA) are 'Other or unknown' on purpose.",
 
   "Software design": "Software",
   "Software Manufacturing/Software Deployment": "Software",
   "Software design (manufacturing process)": "Software",
+  "Software Design Change": "Software",
+  "Software change control": "Software",
+  "Software in the Use Environment": "Software",
 
   "Device Design": "Design",
 
@@ -13,12 +16,18 @@
   "Environmental control": "Manufacturing and process",
   "Equipment maintenance": "Manufacturing and process",
   "Employee error": "Manufacturing and process",
+  "Storage": "Manufacturing and process",
+  "Reprocessing Controls": "Manufacturing and process",
+  "Manufacturing material removal": "Manufacturing and process",
+  "Finished device change control": "Manufacturing and process",
 
   "Nonconforming Material/Component": "Component or supplier",
   "Component change control": "Component or supplier",
   "Mixed-up of materials/components": "Component or supplier",
   "Material/Component Contamination": "Component or supplier",
   "Release of Material/Component prior to receiving test results": "Component or supplier",
+  "Component design/selection": "Component or supplier",
+  "Vendor change control": "Component or supplier",
 
   "Error in labeling": "Labeling and packaging",
   "Labeling Change Control": "Labeling and packaging",
@@ -27,8 +36,17 @@
   "Packaging": "Labeling and packaging",
   "Package design/selection": "Labeling and packaging",
   "Packaging process control": "Labeling and packaging",
+  "Labeling False and Misleading": "Labeling and packaging",
+  "Packaging change control": "Labeling and packaging",
+  "Incorrect or no expiration date": "Labeling and packaging",
 
   "Other": "Other or unknown",
   "Under Investigation by firm": "Other or unknown",
-  "Unknown/Undetermined by firm": "Other or unknown"
+  "Unknown/Undetermined by firm": "Other or unknown",
+  "Pending": "Other or unknown",
+  "Use error": "Other or unknown",
+  "Counterfeit": "Other or unknown",
+  "No Marketing Application": "Other or unknown",
+  "Radiation Control for Health and Safety Act": "Other or unknown",
+  "PMA": "Other or unknown"
 }

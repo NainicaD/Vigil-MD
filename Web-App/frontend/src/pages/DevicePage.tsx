@@ -4,6 +4,7 @@ import { filterParams } from "../api/export";
 import { isEntityKind, type EntityKind, type EntityResponse } from "../api/types";
 import { DownloadButtons } from "../components/export/DownloadButtons";
 import { FilterBar } from "../components/export/FilterBar";
+import { PageSourceSummaryBox } from "../components/SourceSummary";
 import { DataSources } from "../components/device/DataSources";
 import { ProblemsList } from "../components/device/ProblemsList";
 import { RecallsList } from "../components/device/RecallsList";
@@ -101,6 +102,8 @@ function EntityContent({
         )}
         <AskButton />
       </header>
+
+      {e.found && data.source_summary && <PageSourceSummaryBox summary={data.source_summary} kind={e.type} />}
 
       {e.found && (
         <section aria-label="Filter and download">

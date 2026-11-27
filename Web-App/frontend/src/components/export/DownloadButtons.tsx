@@ -15,12 +15,17 @@ export function DownloadButtons({
   filters,
   count,
   noun = "recalls",
+  title,
+  description,
 }: {
   target: ExportTarget;
   filters?: URLSearchParams;
   /** Rows the file will hold, when known (recall finder, device page). */
   count?: number;
   noun?: string;
+  /** A heading above the buttons, e.g. what the file holds. */
+  title?: string;
+  description?: string;
 }) {
   const [busy, setBusy] = useState<ExportFormat | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -42,7 +47,9 @@ export function DownloadButtons({
   }
 
   return (
-    <div className="downloads">
+    <div className="downloads" role={title ? "group" : undefined} aria-label={title}>
+      {title && <p className="download-title">{title}</p>}
+      {description && <p className="hint">{description}</p>}
       {count !== undefined && (
         <p className="download-count">
           {formatNumber(count)} {count === 1 ? noun.replace(/s$/, "") : noun} match

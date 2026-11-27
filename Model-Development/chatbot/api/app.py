@@ -7,7 +7,13 @@
 
 Contract: the front-end handover (draft API, section 2). Responses never carry SQL or query
 parameters: "sources" are trimmed to the query name and tables. Errors are JSON with a status
-(budget, error, bad request), never a traceback. Questions are not logged.
+(budget, error, bad request), never a traceback. Questions are not logged: each answer writes
+one monitoring event with numbers and labels only (api/events.py).
+
+Startup: the server loads the chatbot (router, search index, BigQuery client) and runs one
+search and one routing before it accepts requests, so no visitor waits for that; Cloud Run's
+default startup check waits for it. VIGIL_WARM_UP=0 skips it. BigQuery results are cached
+until their tables change (VIGIL_RESULT_CACHE entries, default 2000; 0 turns it off).
 
 When VIGIL_WEB_DIST names the front end's build folder (dist/), the site is served from "/"
 too, so one container serves both. VIGIL_CORS_ORIGINS (comma-separated) allows a dev server
@@ -19,6 +25,7 @@ Run (from Model-Development/chatbot/):
 from __future__ import annotations
 
 import collections
+import contextlib
 import json
 import logging
 import os
@@ -31,8 +38,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from answer import pipeline
+from api import events
 from answer import templates
 from api import export
+from export import data as export_data
 from query_layer import backend as ql_backend
 from query_layer import config
 from query_layer import summary
@@ -41,9 +50,28 @@ from query_router import guardrails
 MAX_QUESTION_CHARS = 1000
 MAX_QUERY_CHARS = 200
 HIT_FIELDS = ("id", "kind", "entity_id", "title", "subtitle", "reports", "deaths", "injuries",
-              "product_codes")
+              "product_codes", "recalls", "enforcement")
 # Per client: questions and device pages read BigQuery, so they are limited; search is local.
 RATE_LIMIT = int(os.environ.get("VIGIL_RATE_LIMIT_PER_MINUTE", "30"))
+RESULT_CACHE = int(os.environ.get("VIGIL_RESULT_CACHE", "2000"))
+WARM_UP = os.environ.get("VIGIL_WARM_UP", "1") != "0"
+
+
+def warm_up(open_bot, sink=events.stdout_sink) -> dict:
+    """Loads the chatbot and touches each part once; returns (and logs) the step times in s.
+    No BigQuery query runs (a search and a routing are local)."""
+    times, t = {}, time.perf_counter()
+    bot = open_bot()
+    times["open"] = time.perf_counter() - t
+    t = time.perf_counter()
+    bot.index.search("dreamstation")
+    times["search"] = time.perf_counter() - t
+    t = time.perf_counter()
+    bot.router.classify("How many deaths has the DreamStation had?")
+    times["route"] = time.perf_counter() - t
+    times = {k: round(v, 2) for k, v in times.items()}
+    sink({"event": "startup", "seconds": times})
+    return times
 
 
 def public(obj):
@@ -97,25 +125,34 @@ class RateLimiter:
 
 
 def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
-               web_dist: str | None = None, rate_limit: int = RATE_LIMIT) -> FastAPI:
-    """Builds the app. Tests pass a Chatbot with fakes; the server opens the real one."""
+               web_dist: str | None = None, rate_limit: int = RATE_LIMIT,
+               event_sink=events.stdout_sink) -> FastAPI:
+    """Builds the app. Tests pass a Chatbot with fakes (and a list's append as event_sink);
+    the server opens the real one."""
     dataset = dataset or config.DATASET
     state = {"bot": bot}
     limiter = RateLimiter(rate_limit)
     model_version = published_version()
+
+    def chatbot() -> pipeline.Chatbot:
+        if state["bot"] is None:
+            state["bot"] = pipeline.Chatbot.open(dataset, cache_size=RESULT_CACHE)
+        return state["bot"]
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app):
+        if state["bot"] is None and WARM_UP:   # the server; tests pass their own bot
+            warm_up(chatbot, event_sink)
+        yield
+
     app = FastAPI(title="Vigil MD API", docs_url="/api/docs", redoc_url=None,
-                  openapi_url="/api/openapi.json")
+                  openapi_url="/api/openapi.json", lifespan=lifespan)
 
     origins = [o.strip() for o in os.environ.get("VIGIL_CORS_ORIGINS", "").split(",") if o.strip()]
     if origins:
         from fastapi.middleware.cors import CORSMiddleware  # pylint: disable=import-outside-toplevel
         app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=["GET", "POST"],
                            allow_headers=["Content-Type"])
-
-    def chatbot() -> pipeline.Chatbot:
-        if state["bot"] is None:
-            state["bot"] = pipeline.Chatbot.open(dataset)
-        return state["bot"]
 
     def limited(request: Request) -> None:
         # Behind Cloud Run's proxy this is the visitor's address only because uvicorn trusts
@@ -146,8 +183,19 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
     @app.get("/api/search")
     def search(q: str = Query(min_length=2, max_length=MAX_QUERY_CHARS),
                limit: int = Query(10, ge=1, le=25)):
-        hits = chatbot().index.search(q, limit=limit)
-        return {"query": q, "hits": [{k: getattr(h, k) for k in HIT_FIELDS} for h in hits]}
+        index = chatbot().index
+        hits = index.search(q, limit=limit)
+        return {"query": q, "hits": [{k: getattr(h, k) for k in HIT_FIELDS} for h in hits],
+                "summary": index.source_summary(hits)}      # per FDA source, each record once
+
+    def source_summary(bot_, page, kind, entity_id):
+        """The page's count per FDA source; None if the index cannot say (a test fake)."""
+        if not hasattr(getattr(bot_.index, "con", None), "execute"):
+            return None
+        shown = page.get("recalls") or {}
+        numbers = ([r.get("recall_number") for r in shown.get("shown", [])]
+                   if shown.get("total", 0) <= len(shown.get("shown", [])) else None)
+        return export_data.page_source_summary(page, bot_.index, kind, entity_id, numbers)
 
     @app.get("/api/entity/{kind}/{entity_id:path}")
     def entity(kind: str, entity_id: str, request: Request):
@@ -167,6 +215,7 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
             logging.exception("device page failed")
             raise HTTPException(status_code=503, detail={"status": "error",
                                                          "text": templates.SERVICE_DOWN}) from None
+        page["source_summary"] = source_summary(bot_, page, kind, entity_id)
         return public(page)
 
     @app.post("/api/answer")
@@ -178,8 +227,18 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
                 raise HTTPException(status_code=422, detail={
                     "status": "bad_request", "text": "Unknown entity_type."})
             entity = (body.entity.entity_type, body.entity.entity_id)
-        out = chatbot().answer(body.question, entity=entity)
+        bot_ = chatbot()
+        started, out = time.perf_counter(), None
+        try:
+            out = bot_.answer(body.question, entity=entity)
+        finally:                             # also when answer() raised: status "exception"
+            events.emit(event_sink, out=out, question=body.question,
+                        latency_ms=(time.perf_counter() - started) * 1000,
+                        model_version=model_version, dataset=dataset,
+                        entity_given=entity is not None,
+                        status=None if out is not None else "exception")
         out.pop("question", None)            # the client sent it; nothing personal echoed back
+        out.pop(pipeline.ROUTER_SIGNALS, None)   # monitoring only (in the event above)
         return public(out)
 
     app.include_router(export.make_router(chatbot, RateLimiter))   # recall finder + exports

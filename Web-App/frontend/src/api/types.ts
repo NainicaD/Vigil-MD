@@ -26,11 +26,27 @@ export interface SearchHit {
   deaths: number | null;
   injuries: number | null;
   product_codes: string[] | null;
+  /** FDA recalls linked to the result (as on its page); missing from older APIs. */
+  recalls?: number | null;
+  /** Of those recalls, how many have an FDA enforcement report. */
+  enforcement?: number | null;
+}
+
+/** What the hits hold per FDA source, each record counted once (missing from older APIs). */
+export interface SearchSummary {
+  results: number;
+  /** MAUDE reports per kind of hit present; never added across kinds (a company's reports
+   * include its devices'). */
+  maude: { kind: EntityKind; results: number; reports: number }[];
+  /** Distinct recalls linked to any hit, and how many have an enforcement report; null = unknown. */
+  recalls: number | null;
+  enforcement: number | null;
 }
 
 export interface SearchResponse {
   query: string;
   hits: SearchHit[];
+  summary?: SearchSummary;
 }
 
 // ---------------------------------------------------------------- GET /api/entity/<kind>/<id>
@@ -97,6 +113,16 @@ export interface EntityResponse {
   /** table -> ISO timestamp of its last update */
   data_as_of: Record<string, string | null>;
   sources: Source[];
+  /** The page's count per FDA source (missing from older APIs); with filters, what matches. */
+  source_summary?: PageSourceSummary | null;
+}
+
+export interface PageSourceSummary {
+  maude_reports: number;
+  recalls: number;
+  /** Of those recalls, how many have an FDA enforcement report; null = unknown. */
+  enforcement: number | null;
+  filtered: boolean;
 }
 
 // ---------------------------------------------------------------- POST /api/answer
