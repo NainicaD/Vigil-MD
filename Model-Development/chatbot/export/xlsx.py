@@ -68,6 +68,9 @@ def _about(wb, doc: Document, fmt) -> None:
     lines: list[tuple] = [(doc.title, None, True), ("", None, False)]
     lines += [(k, v, True) for k, v in doc.header] + [("", None, False)]
     lines += [("Filters", None, True)] + [(k, v, False) for k, v in doc.filters]
+    if doc.facts and not any(t.name == "Summary" for t in doc.tables):
+        lines += [("", None, False), ("Summary by source", None, True)]
+        lines += [(k.strip(), v, False) for k, v in doc.facts]
     lines += [("", None, False), ("Notes", None, True)] + [(n, None, False) for n in doc.notes]
     for r, (a, b, bold) in enumerate(lines):
         if a:

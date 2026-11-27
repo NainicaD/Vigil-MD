@@ -3,11 +3,16 @@
 Safety: reportlab's Paragraph reads <, > and & as markup, so every value is escaped
 (xml.sax.saxutils.escape) and prints as literal text. The built-in Helvetica covers Western
 text (µ, ®, accents); characters it has no glyph for (Chinese, Greek, Cyrillic, ...) are set in
-Noto Sans SC (fonts/, SIL Open Font License 1.1), embedding only the characters used.
+a subset of Noto Sans SC (fonts/, SIL Open Font License 1.1; scripts/subset_font.py), embedding
+only the characters used. Control characters are dropped; a character neither font has (seen
+in PROD: ő, ű, ᵀ, ᴹ, ⁰, ∙) prints as its closest plain form (o, T, 0, ·) or "?", never as a box.
+The Excel file keeps the original text.
 """
 from __future__ import annotations
 
 import io
+import re
+import unicodedata
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -24,7 +29,9 @@ from .document import Column, Document
 
 MEDIA_TYPE = "application/pdf"
 FALLBACK_FONT = "NotoSansSC"
-FONT_FILE = Path(__file__).with_name("fonts") / "NotoSansSC-Regular.ttf"
+FONT_FILE = Path(__file__).with_name("fonts") / "NotoSansSC-Regular-subset.ttf"
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")    # C0 (not tab/newline) and C1
+_NEAREST = {"\u2219": "\u00b7", "\u02da": "\u00b0", "\u2010": "-", "\u2033": '"'}   # ∙ ˚ ‐ ″
 PAGE = landscape(A4)
 MARGIN = 12 * mm
 # reportlab cannot split a table row across pages: a cell taller than a page stops the build.
@@ -45,18 +52,52 @@ TABLE_TITLE = ParagraphStyle("table_title", parent=H2, keepWithNext=0)
 CELL = ParagraphStyle("cell", fontName="Helvetica", fontSize=7.5, leading=9.2, textColor=_INK)
 HEAD = ParagraphStyle("head", parent=CELL, fontName="Helvetica-Bold")
 
-_font_ready = False
+_fallback_chars: set[int] | None = None
 
 
 def _fallback_font() -> str:
-    """Registers Noto Sans SC on first use (a 10 MB file: only loaded when a value needs it)."""
-    global _font_ready                                   # pylint: disable=global-statement
-    if not _font_ready:
+    """Registers the Noto Sans SC subset on first use (only loaded when a value needs it)."""
+    _fallback_has("a")
+    return FALLBACK_FONT
+
+
+def _fallback_has(ch: str) -> bool:
+    """Whether the fallback font has a glyph for ch (registers the font on first use)."""
+    global _fallback_chars                               # pylint: disable=global-statement
+    if _fallback_chars is None:
         from reportlab.pdfbase import pdfmetrics           # pylint: disable=import-outside-toplevel
         from reportlab.pdfbase.ttfonts import TTFont      # pylint: disable=import-outside-toplevel
-        pdfmetrics.registerFont(TTFont(FALLBACK_FONT, str(FONT_FILE)))
-        _font_ready = True
-    return FALLBACK_FONT
+        font = TTFont(FALLBACK_FONT, str(FONT_FILE))
+        pdfmetrics.registerFont(font)
+        _fallback_chars = set(font.face.charToGlyph)
+    return ord(ch) in _fallback_chars
+
+
+def _printable(ch: str) -> bool:
+    return ch == "\n" or _in_helvetica(ch) or _fallback_has(ch)
+
+
+def _nearest(ch: str) -> str:
+    """A character no font has → its closest plain form: a fixed choice, its compatibility form
+    (ᵀ → T, ⁰ → 0), its letter without accents (ő → o), or "?"."""
+    if ch in _NEAREST:
+        return _NEAREST[ch]
+    if unicodedata.category(ch) == "Mn":                 # a lone combining accent
+        return ""
+    for form in (unicodedata.normalize("NFKC", ch),
+                 "".join(c for c in unicodedata.normalize("NFKD", ch)
+                         if unicodedata.category(c) != "Mn")):
+        if form and form != ch and all(_printable(c) for c in form):
+            return form
+    return "?"
+
+
+def printable_text(text: str) -> str:
+    """Text the PDF can print: control characters dropped, missing glyphs replaced (_nearest)."""
+    text = _CONTROL.sub("", text)
+    if all(_in_helvetica(c) or c == "\n" for c in text):
+        return text                                      # the common case: no font lookups
+    return "".join(c if _printable(c) else _nearest(c) for c in text)
 
 
 def _in_helvetica(ch: str) -> bool:
@@ -71,7 +112,7 @@ def _in_helvetica(ch: str) -> bool:
 def markup(value) -> str:
     """A value as safe Paragraph markup: escaped, with characters Helvetica lacks in the
     fallback font, and line breaks kept."""
-    text = "" if value is None else str(value)
+    text = printable_text("" if value is None else str(value))
     out, run, plain = [], "", True
     for ch in text:
         ok = _in_helvetica(ch) or ch == "\n"

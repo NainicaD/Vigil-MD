@@ -426,7 +426,9 @@ def test_a_device_file_has_the_numbers_of_the_device_page(index_path):
     wb = load_workbook(io.BytesIO(c.get(f"/api/export/entity/device/{DEV}?format=xlsx").content))
     assert wb.sheetnames == ["About", "Summary", "Reports by year", "Problems", "Recalls"]
     summary = dict(wb["Summary"].iter_rows(min_row=2, values_only=True))
-    assert summary["Reports"] == f"{page['counts']['total_reports']:,}"
+    assert summary["MAUDE reports (adverse events)"] == f"{page['counts']['total_reports']:,}"
+    assert summary["FDA enforcement reports (of those recalls)"] == (
+        f"{page['source_summary']['enforcement']:,}")
     for event, n in page["counts"]["by_event_type"].items():
         assert summary[event] == f"{n:,}"
     years = {str(r[0]): r[-1] for r in wb["Reports by year"].iter_rows(min_row=2, values_only=True)}
@@ -622,4 +624,41 @@ def test_page_source_summary_counts_enforcement_of_the_given_recalls(index):
     assert s == {"maude_reports": 12, "recalls": 3, "enforcement": 2, "filtered": False}
     linked = data.page_source_summary(page, index, "device", DEV)        # from recall_links
     assert linked["enforcement"] == 3                                   # recalls 0-2 of 0-3
+
+
+def test_the_files_carry_the_summary_by_source(index_path):
+    c, _ = client(index_path)
+    wb = load_workbook(io.BytesIO(c.get("/api/export/search?format=xlsx&q=respironics").content))
+    about = {r[0]: r[1] for r in wb["About"].iter_rows(values_only=True) if r[0]}
+    assert "Summary by source" in about and about["FDA recalls (each counted once)"] == "5"
+    assert about["FDA enforcement reports"] == "3"
+    assert "for 2 devices" in about["MAUDE reports (adverse events)"]
+    assert about["MAUDE reports (adverse events)"].endswith("for 1 company")   # singular
+    r = c.get("/api/export/search?format=pdf&q=respironics")
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+
+
+def test_files_are_streamed_not_held_to_one_response_size(index_path):
+    c, _ = client(index_path)
+    r = c.get("/api/export/recalls?format=xlsx")
+    assert r.status_code == 200 and "content-length" not in {k.lower() for k in r.headers}
+    load_workbook(io.BytesIO(r.content))                          # the chunks make one file
+
+
+def test_characters_no_font_has_print_as_their_plain_form_not_boxes():
+    # all seen in PROD: control characters, accents and superscripts neither font has
+    assert pdf.printable_text("Cu\x90 ᵀᴹ 10⁰ Győr∙Kft˚ a\u0308\x99b") == "Cu TM 100 Gyor·Kft° ab"
+    assert pdf.printable_text("plain 5 µg Société®") == "plain 5 µg Société®"
+    assert pdf.printable_text("微创 Ⅱ αβ ㄇ") == "微创 Ⅱ αβ ㄇ"            # in the font subset
+    assert pdf.printable_text("\U0001F600") == "?"                         # an emoji: no font
+    out = pdf.build(document.recalls_document(
+        [recall(1, firm="Győr Kft\x90", reason_text="ᵀᴹ ∙ 微创")], [("Filters", "none")], None,
+        dt.datetime(2026, 11, 27, tzinfo=dt.timezone.utc)))
+    assert out.startswith(b"%PDF")
+
+
+def test_the_font_is_the_subset_and_licensed():
+    assert pdf.FONT_FILE.name == "NotoSansSC-Regular-subset.ttf"
+    assert pdf.FONT_FILE.stat().st_size < 3_000_000
+    assert (pdf.FONT_FILE.parent / "OFL.txt").exists()
 

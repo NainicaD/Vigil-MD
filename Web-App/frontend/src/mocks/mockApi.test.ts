@@ -59,3 +59,15 @@ describe("mock search and entity pages", () => {
     await expect(api.entity("device", "dev:unknown")).rejects.toBeInstanceOf(NotFoundError);
   });
 });
+
+describe("mock mode: summaries by source", () => {
+  it("search and device pages carry the same summary fields as the API", async () => {
+    const res = await api.search("acme");
+    expect(res.summary?.results).toBe(res.hits.length);
+    expect(res.hits.every((h) => typeof h.recalls === "number" && typeof h.enforcement === "number")).toBe(true);
+    const page = await api.entity(res.hits[0]!.kind, res.hits[0]!.entity_id);
+    expect(page.source_summary?.filtered).toBe(false);
+    expect(page.source_summary?.maude_reports).toBe(page.counts.total_reports);
+  });
+});
+

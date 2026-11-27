@@ -261,6 +261,7 @@ def records_view(bot, q: str, budget: ql_backend.Budget) -> dict:
                               "record_date": r.get("record_date"),
                               "mdr_report_key": r.get("mdr_report_key")})
     return {"hits": hits, "recalls": recalls, "enforcement": enforcement, "maude": maude,
+            "summary": bot.index.source_summary(hits),
             "data_as_of": bot.backend.data_as_of(["entity_recalls", "entity_reports"])}
 
 

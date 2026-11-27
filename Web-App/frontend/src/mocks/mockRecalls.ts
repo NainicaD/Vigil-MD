@@ -4,7 +4,7 @@
  */
 import type { FilteredEntity, RecallPage, RecallRow } from "../api/export";
 import { CATEGORY_OPTIONS, CLASS_OPTIONS, STATUS_OPTIONS } from "../api/export";
-import type { EntityResponse } from "../api/types";
+import type { EntityResponse, PageSourceSummary, SearchHit, SearchSummary } from "../api/types";
 
 const CAUSES: [string, string][] = [
   ["Software design", "Software"],
@@ -119,6 +119,38 @@ export function mockFilteredEntity(page: EntityResponse, filters: URLSearchParam
     recalls: { total: recalls.length, shown: recalls },
     filters: describeFilters(filters),
     unfiltered_recalls: page.recalls?.total ?? 0,
+    source_summary: {
+      maude_reports: Object.values(byType).reduce((a, b) => a + b, 0),
+      recalls: recalls.length,
+      enforcement: recalls.filter((r) => r.recall_class).length,
+      filtered: true,
+    },
+  };
+}
+
+/** A page's count per FDA source, as the API's source_summary (mock: enforcement = recalls shown with a class). */
+export function mockPageSourceSummary(page: EntityResponse, filtered: boolean): PageSourceSummary {
+  return {
+    maude_reports: page.counts?.total_reports ?? 0,
+    recalls: page.recalls?.total ?? 0,
+    enforcement: (page.recalls?.shown ?? []).filter((r) => r.recall_class).length,
+    filtered,
+  };
+}
+
+/** A search's summary by source, as the API's (mock: recalls are added up; the real API counts each once). */
+export function mockSearchSummary(hits: SearchHit[]): SearchSummary {
+  const maude = (["device", "manufacturer", "product_code"] as const)
+    .map((kind) => {
+      const of = hits.filter((h) => h.kind === kind);
+      return { kind, results: of.length, reports: of.reduce((a, h) => a + (h.reports ?? 0), 0) };
+    })
+    .filter((m) => m.results > 0);
+  return {
+    results: hits.length,
+    maude,
+    recalls: hits.reduce((a, h) => a + (h.recalls ?? 0), 0),
+    enforcement: hits.reduce((a, h) => a + (h.enforcement ?? 0), 0),
   };
 }
 

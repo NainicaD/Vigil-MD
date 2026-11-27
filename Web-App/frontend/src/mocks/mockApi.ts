@@ -13,7 +13,7 @@
 import type { Api, CallOptions } from "../api/client";
 import { NotFoundError, ServiceUnavailableError } from "../api/errors";
 import type { AnswerEntity, AnswerResponse, EntityResponse, SearchResponse } from "../api/types";
-import { mockFile, mockFilteredEntity, mockRecallPage } from "./mockRecalls";
+import { mockFile, mockFilteredEntity, mockPageSourceSummary, mockRecallPage, mockSearchSummary } from "./mockRecalls";
 
 const searchFile = import.meta.glob<SearchResponse>("./search.json", { eager: true, import: "default" });
 const entityFiles = import.meta.glob<EntityResponse>("./entities/*.json", { eager: true, import: "default" });
@@ -111,14 +111,20 @@ export function createMockApi(delays: MockDelays = { search: 200, entity: 300, a
         const hay = [h.title, h.subtitle, h.entity_id, ...(h.product_codes ?? [])].join(" ").toLowerCase();
         return words.every((w) => hay.includes(w));
       });
-      return { query, hits: copy(hits.slice(0, limit)) };
+      // Each hit's recall and enforcement counts from its mock page, when there is one.
+      const shown = copy(hits.slice(0, limit)).map((h) => {
+        const page = ENTITIES.get(`${h.kind}|${h.entity_id}`);
+        const s = page ? mockPageSourceSummary(page, false) : null;
+        return { ...h, recalls: s?.recalls ?? 0, enforcement: s?.enforcement ?? 0 };
+      });
+      return { query, hits: shown, summary: mockSearchSummary(shown) };
     },
 
     async entity(kind, entityId, { signal } = {}) {
       await sleep(delays.entity, signal);
       const found = ENTITIES.get(`${kind}|${entityId}`);
       if (!found) throw new NotFoundError();
-      return copy(found);
+      return { ...copy(found), source_summary: mockPageSourceSummary(found, false) };
     },
 
     async answer(question, entity, { signal } = {}) {

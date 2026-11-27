@@ -131,6 +131,26 @@ MAUDE_COLUMNS = [
 ]
 
 
+KIND_WORDS = {"device": ("device", "devices"), "manufacturer": ("company", "companies"),
+              "product_code": ("product code", "product codes")}
+
+
+def search_summary_facts(summary: dict | None) -> list[tuple[str, str]]:
+    """DeviceIndex.source_summary() as file lines: MAUDE per kind (not added across kinds),
+    recalls and enforcement reports each counted once."""
+    if not summary:
+        return []
+    lines = [("MAUDE reports (adverse events)", " · ".join(
+        f"{m['reports']:,} for {m['results']:,} "
+        f"{KIND_WORDS.get(m['kind'], (m['kind'],) * 2)[m['results'] != 1]}"
+        for m in summary.get("maude", [])) or "none")]
+    if summary.get("recalls") is not None:
+        lines.append(("FDA recalls (each counted once)", f"{summary['recalls']:,}"))
+    if summary.get("enforcement") is not None:
+        lines.append(("FDA enforcement reports", f"{summary['enforcement']:,}"))
+    return lines
+
+
 def as_of(value: str | None) -> str | None:
     """"2026-11-25T03:00:00+00:00" → "2026-11-25"."""
     return str(value)[:10] if value else None
@@ -151,9 +171,10 @@ def recalls_document(rows: list[dict], filters: list[tuple[str, str]], built_at:
         tables=[Table("Recalls", "Recalls, newest first", RECALL_COLUMNS, rows)])
 
 
-def search_document(hits: list, q: str, built_at: str | None, made_at: dt.datetime) -> Document:
+def search_document(hits: list, q: str, built_at: str | None, made_at: dt.datetime,
+                    summary: dict | None = None) -> Document:
     rows = _result_rows(hits)
-    return Document(
+    return Document(facts=search_summary_facts(summary),
         title="Vigil MD: search results", made_at=made_at, data_as_of=as_of(built_at),
         filters=[("Search text", q)], row_count=len(rows), row_label="search results",
         notes=[INDEX_FRESHNESS, SEARCH_COLUMN_SOURCES, COUNTS_MEANING, SOURCES, NOT_ADVICE],
@@ -171,13 +192,16 @@ def entity_document(view: dict, filters: list[tuple[str, str]], made_at: dt.date
         facts.append(("Company", e["subtitle"]))
     if e.get("product_codes"):
         facts.append(("Product codes", ", ".join(e["product_codes"])))
-    facts.append(("Reports", f"{counts['total_reports']:,}"))
+    facts.append(("MAUDE reports (adverse events)", f"{counts['total_reports']:,}"))
     for event, n in counts["by_event_type"].items():
         facts.append((f"  {event}", f"{n:,}"))
     if problems.get("no_harm_reports"):
         facts.append(("No patient harm reported", f"{problems['no_harm_reports']:,} reports"))
-    facts.append(("Recalls matching the filters",
+    facts.append(("FDA recalls matching the filters",
                   f"{view['recalls']['total']:,} of {view['unfiltered_recalls']:,}"))
+    enforcement = (view.get("source_summary") or {}).get("enforcement")
+    if enforcement is not None:
+        facts.append(("FDA enforcement reports (of those recalls)", f"{enforcement:,}"))
 
     events = sorted({ev for by in counts["by_year"].values() for ev in by})
     year_cols = ([Column("year", "Year", width=8, pdf_mm=20)]
@@ -219,7 +243,7 @@ def _result_rows(hits: list) -> list[dict]:
 def records_document(view: dict, q: str, per_result: int, made_at: dt.datetime) -> Document:
     """The "all records" file of the home screen's results (data.records_view() output)."""
     n = len(view["recalls"]) + len(view["enforcement"]) + len(view["maude"])
-    return Document(
+    return Document(facts=search_summary_facts(view.get("summary")),
         title="Vigil MD: records of the search results", made_at=made_at,
         data_as_of=oldest(view.get("data_as_of")), filters=[("Search text", q)],
         row_count=n, row_label="records",

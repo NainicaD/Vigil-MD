@@ -23,7 +23,7 @@ import os
 from typing import Callable
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import StreamingResponse
 
 from answer import pipeline
 from answer import templates
@@ -68,12 +68,24 @@ def _format(fmt: str, allowed=FORMATS) -> str:
     return fmt
 
 
-def _file(doc: document.Document, fmt: str, slug: str) -> Response:
+CHUNK = 1 << 20
+
+
+def _numbers(view: dict, f: filters.Filters) -> list[str] | None:
+    """The recalls a page's enforcement count is taken over: with filters, the matching recalls;
+    without, None (the index's links, as /api/entity), so page and file always agree."""
+    return None if f.empty else [r["recall_number"] for r in view["all_recalls"]]
+
+
+def _file(doc: document.Document, fmt: str, slug: str) -> StreamingResponse:
+    """The file, sent in 1 MiB chunks: a streamed (chunked) response is not held to Cloud
+    Run's 32 MiB limit for one HTTP/1 response; all of PROD's recalls make about 16 MB today."""
     module = FORMATS[fmt][0]
     body = module.build(doc)
     name = f"vigil-md-{slug}-{doc.made_at:%Y-%m-%d}.{fmt}"        # fixed parts only
-    return Response(content=body, media_type=module.MEDIA_TYPE,
-                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    chunks = (body[i:i + CHUNK] for i in range(0, len(body), CHUNK))
+    return StreamingResponse(chunks, media_type=module.MEDIA_TYPE,
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 def make_router(get_bot: Callable[[], pipeline.Chatbot], rate_limiter) -> APIRouter:
@@ -167,11 +179,12 @@ def make_router(get_bot: Callable[[], pipeline.Chatbot], rate_limiter) -> APIRou
             page = {k: v for k, v in view.items() if k != "all_recalls"}
             page["filters"] = filters.describe(f)
             page["source_summary"] = data.page_source_summary(
-                view, bot.index, kind, entity_id, [r["recall_number"] for r in view["all_recalls"]],
-                filtered=not f.empty)
+                view, bot.index, kind, entity_id, _numbers(view, f), filtered=not f.empty)
             page["sources"] = [{"query": s.get("query"), "tables": list(s.get("tables") or [])}
                                for s in page.get("sources", [])]       # no SQL leaves the API
             return page
+        view["source_summary"] = data.page_source_summary(
+            view, bot.index, kind, entity_id, _numbers(view, f), filtered=not f.empty)
         doc = document.entity_document(view, filters.describe(f), dt.datetime.now(dt.timezone.utc))
         return _file(doc, fmt, FILE_SLUG[kind])
 
@@ -183,7 +196,7 @@ def make_router(get_bot: Callable[[], pipeline.Chatbot], rate_limiter) -> APIRou
         idx = index()
         hits = data.search_hits(idx, q)
         doc = document.search_document(hits, q, idx.meta.get("built_at"),
-                                       dt.datetime.now(dt.timezone.utc))
+                                       dt.datetime.now(dt.timezone.utc), idx.source_summary(hits))
         return _file(doc, fmt, "search")
 
     @router.get("/api/export/records")

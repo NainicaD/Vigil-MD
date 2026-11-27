@@ -679,9 +679,14 @@ work: `filters.py` (parse and check), `data.py` (rows), `document.py` (what a fi
   `+`, `-` or `@` stays text); PDF text is escaped (`<b>` and `&` print as written); file names come
   from fixed parts only (`vigil-md-recalls-2026-11-25.xlsx`), never the visitor's text, and the
   visitor's text filters are never logged.
-- **Characters:** the PDF uses Helvetica, and Noto Sans SC ([`export/fonts/`](export/fonts/), SIL
-  Open Font License 1.1, see `OFL.txt`) only for characters Helvetica has no glyph for (Chinese,
-  Greek, Cyrillic, ...); a PDF embeds only the characters it uses.
+- **Characters:** the PDF uses Helvetica, and a 2.6 MB subset of Noto Sans SC
+  ([`export/fonts/`](export/fonts/), SIL Open Font License 1.1, see `OFL.txt`; built by
+  [`scripts/subset_font.py`](scripts/subset_font.py): the 6,763 GB2312 Chinese characters plus
+  Latin extended, Greek, Cyrillic, symbols and CJK punctuation) for characters Helvetica has no
+  glyph for; a PDF embeds only the characters it uses. On 2026-11-27 the subset covered every
+  PROD character the full 10.6 MB font covers. Control characters are dropped, and a character
+  no font has (PROD has ő, ű, ᵀ, ᴹ, ⁰, ∙) prints as its plain form (o, T, 0, ·) or "?", never a
+  box; the Excel file keeps the original text.
 
 **Recall categories** ([`device_search/recall_categories.json`](device_search/recall_categories.json))
 group the FDA `root_cause` phrase: Software, Design, Manufacturing and process, Component or
