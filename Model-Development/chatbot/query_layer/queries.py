@@ -99,6 +99,54 @@ LIMIT @limit"""
                                   "limit": ("INT64", int(limit))}, ("entity_recalls",))
 
 
+def _many(entities: list[tuple[str, str]]) -> dict:
+    """Bound parameters for several entities: their buckets, types and ids (the WHERE prunes
+    partitions on bucket and clustered blocks on entity_type/entity_id; `keys` then keeps only
+    the exact (type, id) pairs)."""
+    if not entities:
+        raise ValueError("at least one entity")
+    for kind, eid in entities:
+        entity_params(kind, eid)                       # same checks as one entity
+    return {"buckets": ("ARRAY<INT64>", sorted({config.entity_bucket(k, e.strip()) for k, e in entities})),
+            "types": ("ARRAY<STRING>", sorted({k for k, _ in entities})),
+            "ids": ("ARRAY<STRING>", sorted({e.strip() for _, e in entities})),
+            "keys": ("ARRAY<STRING>", sorted({f"{k}|{e.strip()}" for k, e in entities}))}
+
+
+MANY_FILTER = ("bucket IN UNNEST(@buckets) AND entity_type IN UNNEST(@types) "
+               "AND entity_id IN UNNEST(@ids) AND CONCAT(entity_type, '|', entity_id) IN UNNEST(@keys)")
+
+
+def recalls_many(tbl: Table, entities: list[tuple[str, str]], per_entity: int) -> Query:
+    """The newest `per_entity` recalls of each entity (the same rows as each device page),
+    with each entity's total. One query for all, so the 10 MB minimum is billed once."""
+    sql = f"""\
+SELECT entity_type, entity_id, recall_number, recall_class, record_date, recall_status, product,
+       firm, reason_text, root_cause, action, matched_by,
+       COUNT(*) OVER (PARTITION BY entity_type, entity_id) AS total_recalls
+FROM {tbl('entity_recalls')}
+WHERE {MANY_FILTER}
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY entity_type, entity_id ORDER BY record_date DESC, recall_number) <= @per_entity"""
+    return Query("recalls_many", sql, {**_many(entities), "per_entity": ("INT64", int(per_entity))},
+                 ("entity_recalls",))
+
+
+def device_reports_many(tbl: Table, device_ids: list[str], per_device: int) -> Query:
+    """The newest `per_device` MAUDE reports of each device: report key and date received only
+    (entity_reports; the large maude table is not read), with each device's total."""
+    sql = f"""\
+SELECT entity_id, source_record_id AS mdr_report_key, record_date,
+       COUNT(*) OVER (PARTITION BY entity_id) AS total_reports
+FROM {tbl('entity_reports')}
+WHERE {MANY_FILTER}
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY entity_id ORDER BY record_date DESC, source_record_id DESC) <= @per_device"""
+    return Query("device_reports_many", sql,
+                 {**_many([("device", d) for d in device_ids]), "per_device": ("INT64", int(per_device))},
+                 ("entity_reports",))
+
+
 def catalog(tbl: Table, entity_type: str, entity_id: str) -> Query:
     """The entity's title, company, product codes, top names and totals."""
     sql = f"""\

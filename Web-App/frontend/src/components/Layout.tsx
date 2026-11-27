@@ -5,6 +5,7 @@ import { config } from "../config";
 import { paths } from "../routes";
 import { ChatPanel } from "./chat/ChatPanel";
 import { ChatToggle } from "./chat/ChatToggle";
+import "./export/export.css";
 
 export function Layout({ children }: { children: ReactNode }) {
   const { open } = useChat();
@@ -16,6 +17,9 @@ export function Layout({ children }: { children: ReactNode }) {
       <header className="site-header">
         <Link to={paths.search()} className="brand">
           Vigil MD
+        </Link>
+        <Link to={paths.recalls()} className="nav-link">
+          Recalls
         </Link>
         {config.useMocks && (
           <span className="mock-badge" title="Answers come from example files, not the API">

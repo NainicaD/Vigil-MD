@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { SearchResults } from "../components/SearchResults";
+import { SourceSummary } from "../components/SourceSummary";
+import { RECORDS_PER_RESULT } from "../api/export";
+import { DownloadButtons } from "../components/export/DownloadButtons";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { MIN_QUERY_LENGTH, useSearch } from "../hooks/useSearch";
 
@@ -49,7 +52,19 @@ export function SearchPage() {
         {state.status === "loading" && <p className="hint">Searching…</p>}
         {state.status === "error" && <p className="notice">{state.message}</p>}
       </div>
+      {state.status === "done" && state.hits.length > 0 && state.summary && <SourceSummary summary={state.summary} />}
       {state.status === "done" && <SearchResults hits={state.hits} />}
+      {state.status === "done" && state.hits.length > 0 && (
+        <>
+          <DownloadButtons target={{ kind: "search", q: query.trim() }} noun="results" title="This list of results" />
+          <DownloadButtons
+            target={{ kind: "records", q: query.trim() }}
+            noun="results"
+            title="All records of these results"
+            description={`MAUDE reports, recalls and enforcement records, by source: the newest ${RECORDS_PER_RESULT} of each for the ${state.hits.length} results shown (MAUDE reports for devices only).`}
+          />
+        </>
+      )}
     </div>
   );
 }

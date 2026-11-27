@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { SERVICE_UNAVAILABLE_MESSAGE, isAbortError } from "../api/errors";
-import type { SearchHit } from "../api/types";
+import type { SearchHit, SearchSummary } from "../api/types";
 
 /** Search starts at 2 or more characters (handover §3). */
 export const MIN_QUERY_LENGTH = 2;
@@ -9,10 +9,13 @@ export const MIN_QUERY_LENGTH = 2;
 export type SearchState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "done"; query: string; hits: SearchHit[] }
+  | { status: "done"; query: string; hits: SearchHit[]; summary?: SearchSummary }
   | { status: "error"; message: string };
 
-type Result = { query: string } & ({ status: "done"; hits: SearchHit[] } | { status: "error"; message: string });
+type Result = { query: string } & (
+  | { status: "done"; hits: SearchHit[]; summary?: SearchSummary }
+  | { status: "error"; message: string }
+);
 
 /**
  * Runs a search for `query` (already debounced). A newer query cancels the older one.
@@ -27,7 +30,7 @@ export function useSearch(query: string): SearchState {
     const ctrl = new AbortController();
     api
       .search(q, { signal: ctrl.signal })
-      .then((res) => setResult({ query: q, status: "done", hits: res.hits ?? [] }))
+      .then((res) => setResult({ query: q, status: "done", hits: res.hits ?? [], summary: res.summary }))
       .catch((error: unknown) => {
         if (isAbortError(error)) return;
         setResult({ query: q, status: "error", message: SERVICE_UNAVAILABLE_MESSAGE });
@@ -38,6 +41,6 @@ export function useSearch(query: string): SearchState {
   if (q.length < MIN_QUERY_LENGTH) return { status: "idle" };
   if (!result || result.query !== q) return { status: "loading" };
   return result.status === "done"
-    ? { status: "done", query: result.query, hits: result.hits }
+    ? { status: "done", query: result.query, hits: result.hits, summary: result.summary }
     : { status: "error", message: result.message };
 }

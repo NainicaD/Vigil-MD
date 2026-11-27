@@ -8,6 +8,8 @@ export interface AppConfig {
   useMocks: boolean;
   /** Give up on a request after this long and show the "Can't reach the service" message. */
   requestTimeoutMs: number;
+  /** Downloads (PDF, Excel) wait as long as Cloud Run lets a request run (--timeout 60). */
+  downloadTimeoutMs: number;
 }
 
 export function readConfig(env: Partial<Record<string, string | undefined>>): AppConfig {
@@ -17,6 +19,7 @@ export function readConfig(env: Partial<Record<string, string | undefined>>): Ap
     // Exactly "true", the same test as api/client.ts (which lets the build drop the mocks).
     useMocks: env.VITE_USE_MOCKS === "true",
     requestTimeoutMs: 30_000,
+    downloadTimeoutMs: 60_000,
   };
 }
 

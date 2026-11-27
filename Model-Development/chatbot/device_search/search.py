@@ -70,6 +70,8 @@ class Hit:
     company_norm: str | None
     score: float
     data: dict = field(default_factory=dict)
+    recalls: int = 0                # recalls linked to the entry (entity_recalls), index v4+
+    enforcement: int = 0            # of those, with an FDA enforcement record
 
 
 @dataclass
@@ -161,7 +163,8 @@ class DeviceIndex:
                    row["reports"],
                    row["deaths"], row["injuries"],
                    [c for c in (row["product_codes"] or "").split(",") if c],
-                   row["company_norm"], round(score, 4), json.loads(row["data"] or "{}"))
+                   row["company_norm"], round(score, 4), json.loads(row["data"] or "{}"),
+                   *((row["recalls"], row["enforcement"]) if "recalls" in row.keys() else (0, 0)))
 
     def get(self, entity_id: str) -> Hit | None:
         row = self.con.execute("SELECT * FROM entities WHERE id = ?", (entity_id,)).fetchone()
@@ -170,6 +173,34 @@ class DeviceIndex:
     def by_udi(self, udi: str) -> Hit | None:
         row = self.con.execute("SELECT entity_id FROM udis WHERE udi_di = ?", (udi,)).fetchone()
         return self.get(row[0]) if row else None
+
+    def source_summary(self, hits: list[Hit]) -> dict:
+        """How many records these hits hold per FDA source, each record counted once:
+        recalls and enforcement records over the distinct recalls linked to any hit (index v4
+        recall_links; a device and its company often share a recall); MAUDE: the reports per
+        kind of hit (devices, companies, product codes), never added across kinds, because a
+        company's or product code's reports include its devices' reports (within one kind
+        two hits do not share reports). None for recalls/enforcement without the links."""
+        maude = []
+        for kind in ("device", "manufacturer", "product_code"):
+            of_kind = [h for h in hits if h.kind == kind]
+            if of_kind:
+                maude.append({"kind": kind, "results": len(of_kind),
+                              "reports": sum(h.reports or 0 for h in of_kind)})
+        out = {"results": len(hits), "maude": maude, "recalls": None, "enforcement": None}
+        has_links = self.con.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' "
+                                     "AND name = 'recall_links'").fetchone()
+        if hits and has_links:
+            ids = [h.id for h in hits]
+            marks = ",".join("?" * len(ids))
+            row = self.con.execute(
+                f"SELECT COUNT(DISTINCT l.recall_number), COUNT(DISTINCT e.recall_number) "
+                f"FROM recall_links AS l LEFT JOIN enforcement AS e ON e.recall_number = l.recall_number "
+                f"WHERE l.entry_id IN ({marks})", ids).fetchone()
+            out["recalls"], out["enforcement"] = int(row[0]), int(row[1])
+        elif has_links:
+            out["recalls"] = out["enforcement"] = 0
+        return out
 
     def search(self, text: str, limit: int = 10, candidates: int = 3000) -> list[Hit]:
         """Ranked hits for free text (a search box query or the device words of a question).

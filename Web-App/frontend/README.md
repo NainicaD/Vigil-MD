@@ -67,7 +67,8 @@ In `.env` (copy of `.env.example`), `.env.local`, or the environment of the buil
 | `VITE_USE_MOCKS` | not set (off) | Exactly `true` = answer from `src/mocks/`; anything else = call the API. |
 | `DEV_API_PROXY` | empty | `npm run dev` only, never in the build: forward `/api` to a local API, e.g. `http://127.0.0.1:8000`. |
 
-A request that gets no answer within **30 seconds** is abandoned (see `src/config.ts`).
+A request that gets no answer within **30 seconds** is abandoned; a PDF or Excel download
+waits **60 seconds**, as long as Cloud Run lets a request run (see `src/config.ts`).
 
 ## Run against a local API
 
@@ -98,8 +99,10 @@ ESLint also blocks, as errors: `console` calls (questions can contain health det
 
 | Page | Address | What it shows |
 |---|---|---|
-| Search | `/` (`/?q=…`) | A search box. Searches 300 ms after typing stops, from 2 characters. Results grouped as Devices / Companies / Product codes, each with its title, company and report count, in the API's order. A result opens its device page. No results: *"Nothing found. Try the brand name, the company or the 3-letter product code."* |
-| Device page | `/device/<kind>/<entity_id>` | Name, company, product codes; total reports with the API's `counts_note` beside them; reports by event type; reports per year (bars, plus a table by event type); top device and patient problems and the "no patient harm reported" count; recalls in the API's order (newest first) with class, date, status, reason and more details; sources and data date. `found: false`: a note that there is no data. Unknown entry: "Page not found". Failure: the service message and **Try again**. |
+| Search | `/` (`/?q=…`) | A search box. Searches 300 ms after typing stops, from 2 characters. Results grouped as Devices / Companies / Product codes, each with its title, company and its count from each FDA source, labelled (**MAUDE** reports, **Recalls**, **Enforcement**; a legend under the list says what each source is), in the API's order. An API without `recalls`/`enforcement` shows MAUDE only. Above the list, a **summary by source** (the API's `summary`): "What these 10 results hold, by source": MAUDE adverse-event reports per kind of result (devices, companies, product codes; not added together), FDA device recalls and FDA enforcement reports (each counted once); not shown when the API sends no summary. A result opens its device page. No results: *"Nothing found. Try the brand name, the company or the 3-letter product code."* |
+| Device page | `/device/<kind>/<entity_id>` | Under the name, a **summary by source** (the API's `source_summary`): "What this device holds, by source" (with filters: "What matches the filters …"): MAUDE adverse-event reports, FDA device recalls, FDA enforcement reports. Name, company, product codes; total reports with the API's `counts_note` beside them; reports by event type; reports per year (bars, plus a table by event type); top device and patient problems and the "no patient harm reported" count; recalls in the API's order (newest first) with class, date, status, reason and more details; sources and data date. `found: false`: a note that there is no data. Unknown entry: "Page not found". Failure: the service message and **Try again**. |
+| Recalls (recall finder) | `/recalls` (`?category=…&class=…&page=…`) | Every recall across all devices. A filter bar (category, class, status, years, text in product/firm/reason, manufacturer picked from the search box's manufacturer hits, 3-letter product code) kept in the address, so a shared link shows the same results; "Clear filters" resets. The count ("1,284 recalls match"), a table of 50 per page (newest first) and **Download PDF** / **Download Excel** for exactly what the filters select. Over the PDF limit (1,000) the PDF button is off and says why; Excel stays available. |
+| Downloads | recall finder, device page, search | **Download PDF** / **Download Excel**, off while a file is made ("Preparing file…"). The file is fetched (not a plain link), so an error from the API (413 too many rows, 429 too many downloads, 503) shows as its `text` next to the buttons. The device page has the same filter bar (plus event type for the report counts) above its cards; with filters it shows the filtered data, the same the file holds. The search page shows two sets under the results when there are hits: **This list of results** (the list with each result's counts) and **All records of these results** (one sheet or section per FDA source: the newest 50 recalls of each result, their enforcement records, the newest 50 MAUDE reports of each device result). |
 | Assistant | panel on every page | Opened from the header ("Ask the assistant") or a device page's button. On a device page it sends that device as `entity` and says so; elsewhere `entity: null`. Conversation kept on screen for the session only. Enter sends, Shift+Enter is a new line, Esc closes. Side panel on wide screens, full screen at 720 px and below. |
 
 Assistant replies, by `status` (handover §5):
@@ -173,6 +176,9 @@ call goes through `src/api/client.ts`.
 | `GET {base}/search?q=<text>&limit=10` | | Search page |
 | `GET {base}/entity/<kind>/<entity_id>` | `kind`: `device`, `manufacturer`, `product_code`; both parts URL-encoded (`dev:…` → `dev%3A…`) | Device page |
 | `POST {base}/answer` | `{"question": "...", "entity": null}` or `{"question": "...", "entity": {"entity_type": "...", "entity_id": "..."}}` | Assistant |
+| `GET {base}/recalls?<filters>&page=1` | filters as in `src/api/export.ts` | Recall finder |
+| `GET {base}/export/entity/<kind>/<id>?format=json&<filters>` | | Device page with filters |
+| `GET {base}/export/recalls\|entity/…\|search\|records?format=pdf\|xlsx&…` | the same filters (search, records: `q`) | Download buttons (a file, saved through an object URL) |
 
 Errors: HTTP 404 → "Page not found" on a device page. Any other error whose JSON body has a
 `text` (the API sends `{status, text}` for 429 rate limit, 413 budget and 503 data down) → that
@@ -207,25 +213,27 @@ Web-App/frontend/
 ├── .env.example  .nvmrc  .npmrc  .gitignore  package.json  package-lock.json
 ├── index.html  vite.config.ts  tsconfig.json  eslint.config.js
 └── src/
-    ├── main.tsx, App.tsx       entry point; routes: /, /device/:kind/:entityId
-    ├── config.ts               build-time settings (API base URL, mocks, 30 s timeout)
+    ├── main.tsx, App.tsx       entry point; routes: /, /device/:kind/:entityId, /recalls
+    ├── config.ts               build-time settings (API base URL, mocks, 30 s / 60 s download timeout)
     ├── routes.ts               page addresses
     ├── styles.css              all styles (colour tokens for light and dark mode)
     ├── api/
     │   ├── types.ts            the contract's shapes
     │   ├── client.ts           the only code that calls the API (timeout, errors, mock switch)
+    │   ├── export.ts           filters, export addresses, download and save (recall finder, exports)
     │   └── errors.ts           "Can't reach the service…", not found, cancelled
     ├── chat/                   the assistant conversation (in memory) and the device-page entity
-    ├── hooks/                  useSearch, useEntity, useDebouncedValue
+    ├── hooks/                  useSearch, useEntity (with filters), useRecalls, useDebouncedValue
     ├── lib/                    formatting, safe-text parsing, status rules, data date
     ├── components/
     │   ├── SafeText.tsx        safe rendering of the bot's text
     │   ├── SearchResults.tsx
     │   ├── Layout.tsx          header (assistant toggle), page, panel, footer
     │   ├── chat/               ChatPanel, BotReply (status table), ChatToggle
-    │   └── device/             ReportCounts, YearChart, ProblemsList, RecallsList, DataSources
-    ├── pages/                  SearchPage, DevicePage
-    ├── mocks/                  example data and the mock API
+    │   ├── device/             ReportCounts, YearChart, ProblemsList, RecallsList, DataSources
+    │   └── export/             FilterBar, DownloadButtons, export.css
+    ├── pages/                  SearchPage, DevicePage, RecallsPage
+    ├── mocks/                  example data and the mock API (mockRecalls.ts: example recalls, a placeholder file)
     └── test/setup.ts           test setup (jsdom matchers)
 ```
 

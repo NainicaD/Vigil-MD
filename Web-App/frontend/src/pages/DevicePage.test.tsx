@@ -58,6 +58,23 @@ describe("DevicePage (handover §3, §4)", () => {
     expect(screen.getByRole("region", { name: "Data sources" })).toHaveTextContent("Data as of: 2026-11-08");
   });
 
+  it("summarizes the page by FDA source, and says when filters apply", async () => {
+    entity.mockResolvedValue({ ...(insulin as EntityResponse),
+      source_summary: { maude_reports: 5092, recalls: 2, enforcement: 1, filtered: false } });
+    renderAt("/device/device/dev%3A000000acme03");
+    const box = await screen.findByRole("region", { name: "What this device holds, by source" });
+    expect(box).toHaveTextContent("MAUDE5,092 adverse-event reports");
+    expect(box).toHaveTextContent("Recalls2 FDA device recalls");
+    expect(box).toHaveTextContent("Enforcement1 FDA enforcement report");
+  });
+
+  it("shows no source summary from an API without one", async () => {
+    entity.mockResolvedValue(insulin as EntityResponse);
+    renderAt("/device/device/dev%3A000000acme03");
+    await screen.findByRole("region", { name: "Reports" });
+    expect(screen.queryByRole("region", { name: /by source/ })).toBeNull();
+  });
+
   it("never calls counts failures or rates", async () => {
     entity.mockResolvedValue(insulin as EntityResponse);
     const { container } = renderAt("/device/device/dev%3A000000acme03");

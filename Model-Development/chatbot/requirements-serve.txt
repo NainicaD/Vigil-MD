@@ -6,3 +6,6 @@ joblib>=1.4
 google-cloud-bigquery==3.46.2
 fastapi==0.162.2
 uvicorn==0.54.0
+# Exports of search results (export/): PDF and Excel files, pure Python.
+reportlab==5.1.0
+XlsxWriter==3.3.1

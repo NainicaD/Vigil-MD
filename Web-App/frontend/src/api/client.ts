@@ -5,6 +5,7 @@
  */
 import { config, type AppConfig } from "../config";
 import { ApiMessageError, NotFoundError, ServiceUnavailableError } from "./errors";
+import type { FilteredEntity, RecallPage } from "./export";
 import type {
   AnswerEntity,
   AnswerRequest,
@@ -23,6 +24,10 @@ export interface Api {
   search(query: string, options?: CallOptions & { limit?: number }): Promise<SearchResponse>;
   entity(kind: EntityKind, entityId: string, options?: CallOptions): Promise<EntityResponse>;
   answer(question: string, entity: AnswerEntity | null, options?: CallOptions): Promise<AnswerResponse>;
+  /** Recall finder and exports (api/export.ts builds the addresses). */
+  recalls(filters: URLSearchParams, page: number, options?: CallOptions): Promise<RecallPage>;
+  entityFiltered(kind: EntityKind, entityId: string, filters: URLSearchParams, options?: CallOptions): Promise<FilteredEntity>;
+  download(path: string, options?: CallOptions): Promise<Blob>;
 }
 
 /** Path for one entity. IDs contain ":" (dev:…) and spaces (manufacturer names). */
@@ -32,14 +37,22 @@ export function entityPath(kind: EntityKind, entityId: string): string {
 
 type Fetch = typeof fetch;
 
-export function createHttpApi(cfg: Pick<AppConfig, "apiBaseUrl" | "requestTimeoutMs">, fetchFn: Fetch = fetch): Api {
-  async function request<T>(path: string, init: RequestInit & CallOptions): Promise<T> {
+export function createHttpApi(
+  cfg: Pick<AppConfig, "apiBaseUrl" | "requestTimeoutMs"> & Partial<Pick<AppConfig, "downloadTimeoutMs">>,
+  fetchFn: Fetch = fetch,
+): Api {
+  async function request<T>(
+    path: string,
+    init: RequestInit & CallOptions,
+    read: (res: Response) => Promise<unknown> = (res) => res.json(),
+    timeoutMs: number = cfg.requestTimeoutMs,
+  ): Promise<T> {
     const timeout = new AbortController();
     let timedOut = false;
     const timer = setTimeout(() => {
       timedOut = true;
       timeout.abort();
-    }, cfg.requestTimeoutMs);
+    }, timeoutMs);
 
     // Cancel when either the caller or the timeout says so.
     const caller = init.signal;
@@ -75,7 +88,7 @@ export function createHttpApi(cfg: Pick<AppConfig, "apiBaseUrl" | "requestTimeou
         throw new ServiceUnavailableError("server");
       }
       try {
-        return (await res.json()) as T;
+        return (await read(res)) as T;
       } catch (error) {
         if (timedOut) throw new ServiceUnavailableError("timeout", error);
         if (caller?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -99,6 +112,19 @@ export function createHttpApi(cfg: Pick<AppConfig, "apiBaseUrl" | "requestTimeou
       const body: AnswerRequest = { question, entity };
       return request<AnswerResponse>("/answer", { method: "POST", body: JSON.stringify(body), signal });
     },
+    recalls(filters, page, { signal } = {}) {
+      const params = new URLSearchParams(filters);
+      params.set("page", String(page));
+      return request<RecallPage>(`/recalls?${params}`, { method: "GET", signal });
+    },
+    entityFiltered(kind, entityId, filters, { signal } = {}) {
+      return request<FilteredEntity>(`/export${entityPath(kind, entityId)}?format=json&${filters}`, { method: "GET", signal });
+    },
+    download(path, { signal } = {}) {
+      // A large Excel file can take longer than other requests: wait as long as Cloud Run does.
+      const timeoutMs = cfg.downloadTimeoutMs ?? cfg.requestTimeoutMs;
+      return request<Blob>(path, { method: "GET", signal }, (res) => res.blob(), timeoutMs);
+    },
   };
 }
 
@@ -119,4 +145,7 @@ export const api: Api = {
   search: async (...args) => (await apiPromise).search(...args),
   entity: async (...args) => (await apiPromise).entity(...args),
   answer: async (...args) => (await apiPromise).answer(...args),
+  recalls: async (...args) => (await apiPromise).recalls(...args),
+  entityFiltered: async (...args) => (await apiPromise).entityFiltered(...args),
+  download: async (...args) => (await apiPromise).download(...args),
 };

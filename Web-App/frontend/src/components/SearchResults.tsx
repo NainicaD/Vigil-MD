@@ -1,9 +1,12 @@
 import { Link } from "react-router-dom";
 import { ENTITY_KINDS, type EntityKind, type SearchHit } from "../api/types";
-import { KIND_GROUP_LABEL, KIND_LABEL, formatReports } from "../lib/format";
+import { KIND_GROUP_LABEL, KIND_LABEL, formatNumber, formatReports } from "../lib/format";
 import { paths } from "../routes";
 
 export const NO_RESULTS_MESSAGE = "Nothing found. Try the brand name, the company or the 3-letter product code.";
+/** What each source label on a result means. */
+export const SOURCES_LEGEND =
+  "MAUDE: FDA adverse-event reports · Recalls: FDA device recalls · Enforcement: FDA enforcement reports";
 
 /** Results grouped by kind (devices, companies, product codes), each in the API's order. */
 export function SearchResults({ hits }: { hits: SearchHit[] }) {
@@ -41,6 +44,7 @@ export function SearchResults({ hits }: { hits: SearchHit[] }) {
           ))}
         </ul>
       )}
+      <p className="hint sources-legend">{SOURCES_LEGEND}</p>
     </div>
   );
 }
@@ -48,14 +52,30 @@ export function SearchResults({ hits }: { hits: SearchHit[] }) {
 function HitItem({ hit }: { hit: SearchHit }) {
   const reports = formatReports(hit.reports);
   const kind = KIND_LABEL[hit.kind as EntityKind] ?? hit.kind;
+  const hasSources = typeof hit.recalls === "number" || typeof hit.enforcement === "number";
   return (
     <li>
       <Link className="hit" to={paths.device(hit.kind, hit.entity_id)}>
         <span className="tag">{kind}</span>
         <span className="hit-title">{hit.title}</span>
         {hit.subtitle && <span className="hit-subtitle">{hit.subtitle}</span>}
-        {reports && <span className="hit-reports">{reports}</span>}
+        {(reports || hasSources) && (
+          <span className="hit-reports hit-sources">
+            {reports && <Source name="MAUDE" value={reports} />}
+            {hasSources && <Source name="Recalls" value={formatNumber(hit.recalls ?? 0)} />}
+            {hasSources && <Source name="Enforcement" value={formatNumber(hit.enforcement ?? 0)} />}
+          </span>
+        )}
       </Link>
     </li>
+  );
+}
+
+/** One source's count on a result, labelled with the source ("MAUDE 1,234 reports"). */
+function Source({ name, value }: { name: string; value: string }) {
+  return (
+    <span className="source">
+      <span className="source-name">{name}</span> {value}
+    </span>
   );
 }

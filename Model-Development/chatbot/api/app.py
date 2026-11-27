@@ -40,6 +40,8 @@ from pydantic import BaseModel, Field
 from answer import pipeline
 from api import events
 from answer import templates
+from api import export
+from export import data as export_data
 from query_layer import backend as ql_backend
 from query_layer import config
 from query_layer import summary
@@ -48,7 +50,7 @@ from query_router import guardrails
 MAX_QUESTION_CHARS = 1000
 MAX_QUERY_CHARS = 200
 HIT_FIELDS = ("id", "kind", "entity_id", "title", "subtitle", "reports", "deaths", "injuries",
-              "product_codes")
+              "product_codes", "recalls", "enforcement")
 # Per client: questions and device pages read BigQuery, so they are limited; search is local.
 RATE_LIMIT = int(os.environ.get("VIGIL_RATE_LIMIT_PER_MINUTE", "30"))
 RESULT_CACHE = int(os.environ.get("VIGIL_RESULT_CACHE", "2000"))
@@ -181,8 +183,19 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
     @app.get("/api/search")
     def search(q: str = Query(min_length=2, max_length=MAX_QUERY_CHARS),
                limit: int = Query(10, ge=1, le=25)):
-        hits = chatbot().index.search(q, limit=limit)
-        return {"query": q, "hits": [{k: getattr(h, k) for k in HIT_FIELDS} for h in hits]}
+        index = chatbot().index
+        hits = index.search(q, limit=limit)
+        return {"query": q, "hits": [{k: getattr(h, k) for k in HIT_FIELDS} for h in hits],
+                "summary": index.source_summary(hits)}      # per FDA source, each record once
+
+    def source_summary(bot_, page, kind, entity_id):
+        """The page's count per FDA source; None if the index cannot say (a test fake)."""
+        if not hasattr(getattr(bot_.index, "con", None), "execute"):
+            return None
+        shown = page.get("recalls") or {}
+        numbers = ([r.get("recall_number") for r in shown.get("shown", [])]
+                   if shown.get("total", 0) <= len(shown.get("shown", [])) else None)
+        return export_data.page_source_summary(page, bot_.index, kind, entity_id, numbers)
 
     @app.get("/api/entity/{kind}/{entity_id:path}")
     def entity(kind: str, entity_id: str, request: Request):
@@ -202,6 +215,7 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
             logging.exception("device page failed")
             raise HTTPException(status_code=503, detail={"status": "error",
                                                          "text": templates.SERVICE_DOWN}) from None
+        page["source_summary"] = source_summary(bot_, page, kind, entity_id)
         return public(page)
 
     @app.post("/api/answer")
@@ -226,6 +240,8 @@ def create_app(bot: pipeline.Chatbot | None = None, dataset: str | None = None,
         out.pop("question", None)            # the client sent it; nothing personal echoed back
         out.pop(pipeline.ROUTER_SIGNALS, None)   # monitoring only (in the event above)
         return public(out)
+
+    app.include_router(export.make_router(chatbot, RateLimiter))   # recall finder + exports
 
     dist = web_dist or os.environ.get("VIGIL_WEB_DIST")
     if dist and Path(dist).is_dir():

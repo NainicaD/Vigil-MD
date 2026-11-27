@@ -3,7 +3,7 @@ import { readConfig } from "./config";
 
 describe("readConfig", () => {
   it("defaults to /api on the same origin, mocks off", () => {
-    expect(readConfig({})).toEqual({ apiBaseUrl: "/api", useMocks: false, requestTimeoutMs: 30_000 });
+    expect(readConfig({})).toEqual({ apiBaseUrl: "/api", useMocks: false, requestTimeoutMs: 30_000, downloadTimeoutMs: 60_000 });
   });
 
   it("reads VITE_API_BASE_URL and drops a trailing slash", () => {

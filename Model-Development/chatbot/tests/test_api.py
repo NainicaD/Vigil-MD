@@ -22,6 +22,9 @@ class FakeSearchIndex(test_answer.FakeIndex):
         del text
         return [test_answer.hit()][:limit]
 
+    def source_summary(self, hits):
+        return {"results": len(hits), "maude": [], "recalls": None, "enforcement": None}
+
 
 def client(labels=("counts",), rows=None, fake=None, rate_limit=30, resolution=None,
            event_sink=lambda event: None):
@@ -59,6 +62,7 @@ def test_search_returns_the_contract_fields_only():
     assert r.status_code == 200
     hit = r.json()["hits"][0]
     assert set(hit) == set(api.HIT_FIELDS) and hit["entity_id"] == DEV
+    assert set(r.json()) == {"query", "hits", "summary"}
     assert not bq.calls                       # local index, no BigQuery
 
 
@@ -202,7 +206,7 @@ REPO = CHATBOT.parents[1]
 
 def test_the_image_copies_every_package_the_api_imports():
     dockerfile = (CHATBOT / "Dockerfile").read_text()
-    for package in ("answer", "api", "device_search", "query_layer", "query_router"):
+    for package in ("answer", "api", "device_search", "export", "query_layer", "query_router"):
         assert f"COPY Model-Development/chatbot/{package} {package}" in dockerfile, package
     # the router: retrained by default, or the published one with its checksums checked
     assert "ARG MODEL=train" in dockerfile and "FROM model-${MODEL} AS model" in dockerfile
