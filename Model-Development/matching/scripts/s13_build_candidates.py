@@ -61,10 +61,17 @@ def check_dataset(dataset: str) -> None:
         raise ValueError(f"--dataset must be {bq_utils.PROD_DATASET} or vigil_md_dev*, got {dataset!r}")
 
 
-def select_sql(project: str, dataset: str) -> str:
-    """The candidate SELECT on one dataset, checked to read only that dataset. Pure."""
+UDI_CHECK_ONLY = "-- udi_check only"      # SQL lines kept only in mode udi_check
+
+
+def select_sql(project: str, dataset: str, mode: str = "pool") -> str:
+    """The candidate SELECT on one dataset, checked to read only that dataset. Pure.
+    Lines marked UDI_CHECK_ONLY (the event type, a slice of s14) are dropped in mode 'pool', so
+    the daily run's query, its cost and its table's columns are as before."""
     check_dataset(dataset)
     sql = bq_utils.load_query_file(SQL_FILE).parts[0][1]
+    if mode != "udi_check":
+        sql = "\n".join(line for line in sql.split("\n") if UDI_CHECK_ONLY not in line)
     for ph, table in bq_utils.TABLE_PLACEHOLDERS.items():
         sql = sql.replace(ph, f"{project}.{dataset}.{table}")
     assert_select_datasets(sql, {dataset})
@@ -83,7 +90,8 @@ def target_table(project: str, dataset: str, mode: str = "pool") -> str:
 
 def create_sql(project: str, dataset: str, mode: str = "pool") -> str:
     """CREATE OR REPLACE TABLE in vigil_md_model only. Pure."""
-    return f"CREATE OR REPLACE TABLE `{target_table(project, dataset, mode)}` AS\n{select_sql(project, dataset)}"
+    return (f"CREATE OR REPLACE TABLE `{target_table(project, dataset, mode)}` AS\n"
+            f"{select_sql(project, dataset, mode)}")
 
 
 def siblings_sql(project: str, dataset: str, mode: str = "pool") -> str:

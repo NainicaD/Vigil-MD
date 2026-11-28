@@ -24,6 +24,7 @@ pool AS (
     t.catalog_number,
     t.product_code,
     t.udi_di,
+    t.event_type,  -- udi_check only
     UPPER(REGEXP_REPLACE(TRIM(t.model_number_raw), r'[\s\-_./]', '')) AS model_key_raw,
     UPPER(REGEXP_REPLACE(TRIM(t.catalog_number), r'[\s\-_./]', '')) AS catalog_key_raw
   FROM `__MAUDE__` AS t
@@ -199,6 +200,7 @@ SELECT
   k.model_number_raw AS key_m_model_raw,
   k.catalog_number AS key_m_catalog_raw,
   k.product_code AS key_m_pc,
+  k.event_type AS meta_event_type,  -- udi_check only (a slice of s14)
   gr.rep.mfr AS key_g_mfr,
   gr.rep.device_name_raw AS key_g_name,
   gr.rep.model_number_raw AS key_g_model_raw,

@@ -511,6 +511,8 @@ python scripts/analysis/bias_mitigation.py --project vigil-md-1792696816        
 
 `docs/BIAS_REPORT.md` is written by hand from these files. After a re-run, compare `summary.json` with the report and update its numbers.
 
+**Model metrics by slice** (both models, file in and file out, no BigQuery): `scripts/analysis/model_metrics_report.py` writes `reports/models/MODEL_METRICS.md` from the matching model's weekly UDI check (`check_report.json`, with the slices of `s14_udi_agreement.py`) and the query router's test-set evaluation (`query_router.evaluate --out`, with the slices of `query_router/bias.py`). The matching numbers come from prod rows whose device is known from their UDI; the router has no labelled live traffic, so its numbers come from the hand-written test set. Usage is in the script's docstring.
+
 ---
 
 ## Data versioning with DVC

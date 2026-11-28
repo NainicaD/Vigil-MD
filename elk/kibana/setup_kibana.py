@@ -60,6 +60,16 @@ RULES = {
         "Alert: UDI agreement precision below 0.90",
         "message:matching_udi_agreement and precision < 0.90",
         (1, "d"), ">", 0, "1d"),
+    # The same levels per slice of the weekly check (s14 slices: model number, multi-match,
+    # manufacturer, product code, event type, ...): only slices with enough links whose whole 95%
+    # interval is under the level (s14 sets it, sent as slice_level: the record's "level" is the log
+    # level; small slices are never flagged).
+    "vigil-md-udi-slice-warn": (
+        "Warning: a slice's UDI agreement precision is under 0.95",
+        "message:matching_udi_slice and slice_level:warn", (1, "d"), ">", 0, "1d"),
+    "vigil-md-udi-slice-alert": (
+        "Alert: a slice's UDI agreement precision is under 0.90",
+        "message:matching_udi_slice and slice_level:alert", (1, "d"), ">", 0, "1d"),
     "vigil-md-memory-high": (
         "Scoring chunk above 3000 MB", "message:matching_chunk_scored and max_rss_mb > 3000",
         (15, "m"), ">", 0, "15m"),
