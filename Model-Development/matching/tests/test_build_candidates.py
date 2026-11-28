@@ -70,6 +70,18 @@ def test_mode_picks_the_pool_or_a_sample_of_udi_linked_rows():
     assert "AS cand_group_key" in final and "AS true_group_key" in final
 
 
+def test_event_type_is_read_only_in_the_weekly_check():
+    pool, check = s13.select_sql("p", "vigil_md_prod"), s13.select_sql("p", "vigil_md_prod", "udi_check")
+    assert "event_type" not in pool                       # the daily run reads and writes no more
+    assert "t.event_type," in check and "k.event_type AS meta_event_type," in check
+    # the pool query is the file without the marked lines, nothing else changed
+    raw = s13.SQL_FILE.read_text()
+    assert raw.count(s13.UDI_CHECK_ONLY) == 2
+    assert check.count("\n") == pool.count("\n") + 2
+    assert "event_type" not in s13.create_sql("p", "vigil_md_prod")
+    assert "AS meta_event_type" in s13.create_sql("p", "vigil_md_prod", "udi_check")
+
+
 def test_udi_check_never_replaces_the_pools_table():
     assert s13.target_table("p", "vigil_md_dev", "udi_check") == "p.vigil_md_model.match_candidates_check_vigil_md_dev"
     assert s13.create_sql("p", "vigil_md_dev", "udi_check").startswith(

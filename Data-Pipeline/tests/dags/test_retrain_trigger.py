@@ -78,6 +78,11 @@ def test_trigger_levels_match_the_alerts():
     assert "precision < 0.90" in K.RULES["vigil-md-udi-precision-alert"][1]
     assert "score_psi > 0.2" in K.RULES["vigil-md-score-drift"][1]
     assert C.RETRAIN_PRECISION == 0.90 and C.RETRAIN_PSI == 0.2
+    # per slice: s14 sets level from the same 0.95 / 0.90, Kibana fires on it
+    assert "slice_level:alert" in K.RULES["vigil-md-udi-slice-alert"][1]
+    assert "slice_level:warn" in K.RULES["vigil-md-udi-slice-warn"][1]
+    s14 = (ROOT.parent / "Model-Development" / "matching" / "scripts" / "s14_udi_agreement.py").read_text()
+    assert "WARN, ALERT = 0.95, 0.90" in s14
 
 
 # ── GitHub calls ─────────────────────────────────────────────────────────────

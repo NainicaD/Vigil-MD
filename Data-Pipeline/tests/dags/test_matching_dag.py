@@ -198,6 +198,32 @@ def test_send_report_sends_one_agreement_record(check_mod, monkeypatch, tmp_path
                                   "ie_gate": ""})
     (msg, fields), = sent
     assert msg == "matching_udi_agreement" and fields["precision"] == 0.97 and fields["run_id"] == "scheduled__1"
+    assert fields["n_slice_alert"] == 0 and fields["n_slice_warn"] == 0
+
+
+def test_send_report_sends_one_record_per_slice(check_mod, monkeypatch, tmp_path):
+    import json
+    sent = []
+    monkeypatch.setattr(check_mod, "send_to_elk", lambda msg, fields: sent.append((msg, fields)))
+    monkeypatch.setattr(check_mod, "matching_files",
+                        lambda run_id, work_dir: {"check_report": str(tmp_path / "r.json")})
+    slices = [{"slice": "matches", "value": "2 or more model groups", "rows": 900, "links": 800,
+               "links_right": 552, "precision": 0.69, "precision_ci": [0.657, 0.721],
+               "model_recall": 0.7, "level": "alert"},
+              {"slice": "event_type", "value": "Death", "rows": 50, "links": 40, "links_right": 39,
+               "precision": 0.975, "precision_ci": [0.871, 0.996], "model_recall": None, "level": "small"}]
+    (tmp_path / "r.json").write_text(json.dumps({"precision": 0.94, "bundle_version": "v1.1.0",
+                                                 "slices": slices, "slice_flags": ["alert: ..."]}))
+    check_mod.send_report(run_id="scheduled__2", params={"dataset": "vigil_md_prod", "sample_per_10k": 100,
+                                                         "bundle": "b", "ie_gate": ""})
+    (m0, overall), (m1, s1), (m2, s2) = sent
+    assert m0 == "matching_udi_agreement" and "slices" not in overall          # the list stays in the file
+    assert overall["n_slice_alert"] == 1 and overall["slice_flags"] == ["alert: ..."]
+    assert m1 == m2 == "matching_udi_slice"
+    assert (s1["slice"], s1["slice_level"], s1["precision_ci_low"], s1["bundle_version"]) == (
+        "matches", "alert", 0.657, "v1.1.0")
+    assert "level" not in s1                    # logger.py's log-level field is left alone
+    assert s2["model_recall"] is None and s2["run_id"] == "scheduled__2"
 
 
 def test_full_flag_from_s13_makes_the_load_replace_every_link(mod, monkeypatch, tmp_path):

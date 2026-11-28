@@ -11,8 +11,13 @@ Tasks:
                          and a parquet file, with true_group_key and sibling keys.
   2. score             — s12, with checkpoints (2 retries continue from the last chunk).
   3. evaluate          — s14_udi_agreement.py → check_report.json: precision, recall,
-                         candidate recall, model recall.
-  4. send_report       — one ELK record "matching_udi_agreement".
+                         candidate recall, model recall, and the same per slice (model number,
+                         one or several matched model groups, manufacturer tier and large
+                         manufacturers, product code, event type, match kind, candidates) with
+                         95% intervals; slices clearly under 0.95 / 0.90 are flagged.
+  4. send_report       — one ELK record "matching_udi_agreement" (with n_slice_alert /
+                         n_slice_warn and slice_flags) and one "matching_udi_slice" per slice;
+                         Kibana rules warn and alert per slice as for the overall precision.
   5. decide_retrain    — precision below retrain_precision (default 0.90, the Kibana alert level)
                          starts the GitHub workflow model-training.yml on retrain_ref (it retrains
                          and publishes only a model that passes the gate), at most once per 7 days;
@@ -91,11 +96,26 @@ def evaluate(**context):
 
 
 def send_report(**context):
+    """The overall numbers as one ELK record (matching_udi_agreement, with the flagged slices as
+    text), and one record per slice (matching_udi_slice) for the per-slice Kibana rules."""
     p = _params(context)
     report = json.loads(Path(p["files"]["check_report"]).read_text())
-    send_to_elk("matching_udi_agreement", {**report, "dataset": p["dataset"],
-                                           "sample_per_10k": p["sample_per_10k"],
-                                           "run_id": context["run_id"]})
+    common = {"dataset": p["dataset"], "sample_per_10k": p["sample_per_10k"], "run_id": context["run_id"],
+              "bundle_version": report.get("bundle_version"), "ie_gate": report.get("ie_gate")}
+    slices = report.pop("slices", [])
+    levels = [s["level"] for s in slices]
+    send_to_elk("matching_udi_agreement", {**report, **common,
+                                           "n_slice_alert": levels.count("alert"),
+                                           "n_slice_warn": levels.count("warn")})
+    for s in slices:
+        ci = s.get("precision_ci") or [None, None]
+        send_to_elk("matching_udi_slice", {**common, "slice": s["slice"], "value": s["value"],
+                                           "rows": s["rows"], "links": s["links"],
+                                           "precision": s["precision"], "precision_ci_low": ci[0],
+                                           "precision_ci_high": ci[1],
+                                           "model_recall": s["model_recall"],
+                                           # not "level": logger.py's field for the log level
+                                           "slice_level": s["level"]})
 
 
 def decide_retrain(**context):
